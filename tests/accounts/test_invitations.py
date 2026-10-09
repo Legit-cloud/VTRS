@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.accounts.models import Device, Invitation, Membership
 from apps.core.domain.permissions import Role
+from apps.core.rls import system_context
 from apps.geography.domain.synthetic import synthetic_master_data
 from apps.geography.models import PollingUnit, Ward
 from apps.geography.services import import_master_data
@@ -194,7 +195,8 @@ def test_ward_officer_invited_by_email(geography, admin_client, api_client, inbo
         format="json",
     )
     assert done.status_code == 200
-    membership = Membership.objects.get(role="WARD_OFFICER")
+    with system_context():
+        membership = Membership.objects.get(role="WARD_OFFICER")
     assert membership.scope_ids == [ward.id]
     assert membership.granted_permissions == ["evidence.view"]
 

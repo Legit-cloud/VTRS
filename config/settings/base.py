@@ -236,9 +236,9 @@ VTRS_FIELD_ENCRYPTION_ACTIVE_KEY = env("VTRS_FIELD_ENCRYPTION_ACTIVE_KEY", "k1")
 VTRS_BLIND_INDEX_KEY = env("VTRS_BLIND_INDEX_KEY")
 
 VTRS_INVITATION_TTL_HOURS = 72
-# Open decision (PB-06): how many agents may cover one polling unit per election. With more
-# than one, their submissions are flagged DUPLICATE_SOURCE for review (M3/M5).
-VTRS_MAX_AGENTS_PER_POLLING_UNIT = int(env("VTRS_MAX_AGENTS_PER_POLLING_UNIT", "1"))
+# PB-06 (decided): up to three agents may cover one polling unit per election. A second
+# agent's submission for the same unit is flagged DUPLICATE_SOURCE for review (M3/M5).
+VTRS_MAX_AGENTS_PER_POLLING_UNIT = int(env("VTRS_MAX_AGENTS_PER_POLLING_UNIT", "3"))
 VTRS_INVITATION_LINK = env("VTRS_INVITATION_LINK", "vtrs://invite?token={token}")
 VTRS_MIN_APP_VERSION = env("VTRS_MIN_APP_VERSION", "1.0.0")
 

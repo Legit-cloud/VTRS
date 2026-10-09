@@ -27,10 +27,19 @@ def _set(name: str, value: str) -> None:
         cursor.execute("SELECT set_config(%s, %s, true)", [name, value])
 
 
+def _get(name: str) -> str:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT current_setting(%s, true)", [name])
+        return cursor.fetchone()[0] or ""
+
+
 def reset_context() -> None:
+    """Start from no tenant and no system access. Called at the start of every API request."""
     _require_transaction()
-    _set(CURRENT_ORG, "")
-    _set(SYSTEM, "off")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT set_config(%s, '', true), set_config(%s, 'off', true)", [CURRENT_ORG, SYSTEM]
+        )
 
 
 def set_tenant(organization_id: UUID) -> None:
@@ -40,13 +49,16 @@ def set_tenant(organization_id: UUID) -> None:
 
 @contextmanager
 def system_context() -> Iterator[None]:
+    """Cross-tenant access for the block. Nests safely: on exit the previous value is restored,
+    so an inner block cannot switch off an outer one."""
     _require_transaction()
+    previous = _get(SYSTEM) or "off"
     _set(SYSTEM, "on")
     try:
         yield
     finally:
         try:
-            _set(SYSTEM, "off")
+            _set(SYSTEM, previous)
         except DatabaseError:
             # The transaction is already failing and will roll back, taking the setting with it.
             pass

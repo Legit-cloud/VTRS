@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 from django.conf import settings
+from django.db import transaction
 from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import BasePermission
 
@@ -40,12 +41,15 @@ class PolicyPermission(BasePermission):
     """
 
     def has_permission(self, request: "Request", view: "APIView") -> bool:
+        # Every request starts with no tenant and no system access, public ones included, so
+        # nothing set by an earlier statement in the same transaction can carry over.
+        if transaction.get_connection().in_atomic_block:
+            rls.reset_context()
         if getattr(view, "public", False) is True:
             return True
         perm = required_permission_for(view, request.method or "")
         if not perm:
             return False
-        rls.reset_context()
         actor = resolve_actor(request)
         if actor is None:
             raise NotAuthenticated()

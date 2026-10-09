@@ -52,7 +52,12 @@ def django_db_setup(django_db_setup, django_db_blocker):
 
 @pytest.fixture(autouse=True)
 def _run_as_app_role(request):
-    if "db" not in request.fixturenames and not request.node.get_closest_marker("django_db"):
+    marker = request.node.get_closest_marker("django_db")
+    if marker is not None and marker.kwargs.get("transaction"):
+        # Concurrency tests commit on several real connections; there is no surrounding
+        # transaction to scope SET LOCAL to, so they run as the database owner.
+        return
+    if "db" not in request.fixturenames and marker is None:
         return
     request.getfixturevalue("db")
     with connection.cursor() as cursor:

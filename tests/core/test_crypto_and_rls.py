@@ -106,6 +106,30 @@ def test_system_context_sees_everything_and_closes(make_member):
     assert Organization.objects.count() == 0
 
 
+@pytest.mark.django_db
+def test_nested_system_context_does_not_switch_off_the_outer_one(make_member):
+    """Regression: an inner block used to reset the flag to 'off' on exit, so the rest of the
+    outer block (e.g. creating a membership while accepting an invitation) was refused."""
+    member = make_member()
+    rls.reset_context()
+    with rls.system_context():
+        with rls.system_context():
+            pass
+        assert Membership.objects.filter(user=member.user).exists()
+    assert not Membership.objects.filter(user=member.user).exists()
+
+
+@pytest.mark.django_db
+def test_each_request_starts_without_tenant_context(make_member, client_as):
+    """Regression: a tenant set by one request must not leak into the next in the same
+    transaction (it hid the nesting bug from the API tests)."""
+    client = client_as(make_member())
+    assert client.get("/api/v1/me").status_code == 200  # sets app.current_org
+    client.credentials()
+    client.get("/api/v1/health/live")  # a public request resets it
+    assert Organization.objects.count() == 0
+
+
 def test_rls_context_requires_a_transaction():
     with pytest.raises(RuntimeError):
         rls.set_tenant(uuid4())

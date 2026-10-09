@@ -174,19 +174,37 @@ def test_agents_from_another_organization_do_not_exist(admin, client, make_membe
     assert _assign(client, election, outsider, geo["pu_a"]).status_code == 404
 
 
-def test_duplicates_and_the_per_unit_cap(admin, client, make_member, geo, settings):
+def test_up_to_three_agents_per_polling_unit(admin, client, make_member, geo):
+    """PB-06: at most three agents per polling unit per election."""
     election = _election(admin.organization, geo)
     org = admin.organization
-    first = make_member(Role.PU_AGENT, scope_ids=[geo["pu_a"].id], organization=org)
-    second = make_member(Role.PU_AGENT, scope_ids=[geo["pu_a"].id], organization=org)
-    assert _assign(client, election, first, geo["pu_a"]).status_code == 201
-    assert _assign(client, election, first, geo["pu_a"]).json()["code"] == "already_assigned"
+    agents = [
+        make_member(Role.PU_AGENT, scope_ids=[geo["pu_a"].id], organization=org) for _ in range(4)
+    ]
+    for agent in agents[:3]:
+        assert _assign(client, election, agent, geo["pu_a"]).status_code == 201
+    assert _assign(client, election, agents[0], geo["pu_a"]).json()["code"] == "already_assigned"
+    fourth = _assign(client, election, agents[3], geo["pu_a"])
+    assert fourth.status_code == 409
+    assert fourth.json()["code"] == "polling_unit_fully_assigned"
+    # The cap is per election: the same unit can be staffed again for another election.
+    other = _election(org, geo)
+    assert _assign(client, other, agents[3], geo["pu_a"]).status_code == 201
+
+
+def test_cap_holds_after_a_revocation(admin, client, make_member, geo):
+    election = _election(admin.organization, geo)
+    org = admin.organization
+    agents = [
+        make_member(Role.PU_AGENT, scope_ids=[geo["pu_a"].id], organization=org) for _ in range(4)
+    ]
+    created = [_assign(client, election, a, geo["pu_a"]).json() for a in agents[:3]]
+    client.post(f"/api/v1/assignments/{created[0]['id']}/revoke", HTTP_IDEMPOTENCY_KEY="rv")
+    assert _assign(client, election, agents[3], geo["pu_a"]).status_code == 201
     assert (
-        _assign(client, election, second, geo["pu_a"]).json()["code"]
+        _assign(client, election, agents[0], geo["pu_a"]).json()["code"]
         == "polling_unit_fully_assigned"
     )
-    settings.VTRS_MAX_AGENTS_PER_POLLING_UNIT = 2  # PB-06 allows two agents per unit
-    assert _assign(client, election, second, geo["pu_a"]).status_code == 201
 
 
 def test_no_deployment_after_polls_close(admin, client, make_member, geo):
