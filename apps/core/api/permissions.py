@@ -1,9 +1,12 @@
 from typing import TYPE_CHECKING
 
+from django.conf import settings
 from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import BasePermission
 
+from apps.core import rls
 from apps.core.authz import authorize
+from apps.core.errors import MfaRequired
 
 from .actors import resolve_actor
 
@@ -16,7 +19,8 @@ class PolicyPermission(BasePermission):
     """Default permission for every view.
 
     A view must declare `public = True` or a `required_permission`; anything else is denied.
-    The resolved actor is attached to the request for selectors and services.
+    For protected views this also pins the database session to the actor's organization (RLS),
+    enforces mandatory MFA, and attaches the actor to the request.
     """
 
     def has_permission(self, request: "Request", view: "APIView") -> bool:
@@ -25,9 +29,18 @@ class PolicyPermission(BasePermission):
         perm = getattr(view, "required_permission", None)
         if not perm:
             return False
+        rls.reset_context()
         actor = resolve_actor(request)
         if actor is None:
             raise NotAuthenticated()
+        rls.set_tenant(actor.organization_id)
         request.actor = actor  # type: ignore[attr-defined]
+        if (
+            settings.VTRS_ENFORCE_MFA
+            and actor.requires_mfa
+            and actor.mfa_at is None
+            and not getattr(view, "allow_without_mfa", False)
+        ):
+            raise MfaRequired()
         authorize(actor, perm)
         return True

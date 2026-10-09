@@ -3,6 +3,9 @@ from uuid import UUID
 
 from django.db import connection
 from django.utils import timezone
+from drf_spectacular.utils import extend_schema, inline_serializer
+from drf_spectacular.views import SpectacularAPIView
+from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -42,10 +45,18 @@ class StrictQueryParamsMixin:
             raise ValidationError({name: ["Must be a UUID."]}) from None
 
 
+class SchemaView(SpectacularAPIView):
+    """OpenAPI contract for the web and mobile clients. Mounted only when enabled."""
+
+    public = True
+    authentication_classes = ()
+
+
 class LiveView(APIView):
     public = True
     authentication_classes = ()
 
+    @extend_schema(responses={200: inline_serializer("Live", {"status": serializers.CharField()})})
     def get(self, request: Request) -> Response:
         return Response({"status": "ok"})
 
@@ -54,6 +65,7 @@ class ReadyView(APIView):
     public = True
     authentication_classes = ()
 
+    @extend_schema(responses={200: inline_serializer("Ready", {"status": serializers.CharField()})})
     def get(self, request: Request) -> Response:
         try:
             with connection.cursor() as cursor:
@@ -69,5 +81,8 @@ class ServerTimeView(APIView):
     public = True
     authentication_classes = ()
 
+    @extend_schema(
+        responses={200: inline_serializer("ServerTime", {"now": serializers.DateTimeField()})}
+    )
     def get(self, request: Request) -> Response:
         return Response({"now": timezone.now().isoformat()})

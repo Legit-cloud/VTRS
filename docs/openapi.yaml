@@ -1,0 +1,1449 @@
+openapi: 3.0.3
+info:
+  title: VTRS API
+  version: 1.0.0
+  description: Vote Tracking & Recording Solution. Results shown are provisional party
+    data, never an official declaration.
+paths:
+  /api/v1/auth/invitations/accept:
+    post:
+      operationId: auth_invitations_accept_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationAcceptRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeResponse'
+          description: ''
+  /api/v1/auth/invitations/complete:
+    post:
+      operationId: auth_invitations_complete_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationCompleteRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/login:
+    post:
+      operationId: auth_login_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+          description: ''
+  /api/v1/auth/login/mfa:
+    post:
+      operationId: auth_login_mfa_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaLoginRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/auth/logout:
+    post:
+      operationId: auth_logout_create
+      tags:
+      - auth
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/auth/mfa/step-up:
+    post:
+      operationId: auth_mfa_step_up_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaCodeRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessToken'
+          description: ''
+  /api/v1/auth/mfa/totp/confirm:
+    post:
+      operationId: auth_mfa_totp_confirm_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaCodeRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TotpConfirm'
+          description: ''
+  /api/v1/auth/mfa/totp/setup:
+    post:
+      operationId: auth_mfa_totp_setup_create
+      tags:
+      - auth
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TotpSetup'
+          description: ''
+  /api/v1/auth/organizations:
+    post:
+      operationId: auth_organizations_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterOrganizationRequest'
+        required: true
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationResponse'
+          description: ''
+  /api/v1/auth/otp/request:
+    post:
+      operationId: auth_otp_request_create
+      description: Resend the code for an existing challenge (60-second cooldown,
+        hourly budgets).
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpRequestRequest'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+          description: ''
+  /api/v1/auth/otp/verify:
+    post:
+      operationId: auth_otp_verify_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpVerifyRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OtpVerifyResponse'
+          description: ''
+  /api/v1/auth/password/forgot:
+    post:
+      operationId: auth_password_forgot_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordForgotRequest'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChallengeResponse'
+          description: ''
+  /api/v1/auth/password/reset:
+    post:
+      operationId: auth_password_reset_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+        required: true
+      responses:
+        '204':
+          description: No response body
+  /api/v1/auth/refresh:
+    post:
+      operationId: auth_refresh_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPair'
+          description: ''
+  /api/v1/geography/lgas:
+    get:
+      operationId: geography_lgas_list
+      description: Rejects query parameters a view does not explicitly allow (spec
+        section 9).
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - geography
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedLgaList'
+          description: ''
+  /api/v1/geography/polling-units:
+    get:
+      operationId: geography_polling_units_list
+      description: Rejects query parameters a view does not explicitly allow (spec
+        section 9).
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - geography
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPollingUnitList'
+          description: ''
+  /api/v1/geography/wards:
+    get:
+      operationId: geography_wards_list
+      description: Rejects query parameters a view does not explicitly allow (spec
+        section 9).
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - geography
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedWardList'
+          description: ''
+  /api/v1/health/live:
+    get:
+      operationId: health_live_retrieve
+      tags:
+      - health
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Live'
+          description: ''
+  /api/v1/health/ready:
+    get:
+      operationId: health_ready_retrieve
+      tags:
+      - health
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ready'
+          description: ''
+  /api/v1/invitations:
+    get:
+      operationId: invitations_list
+      description: Rejects query parameters a view does not explicitly allow (spec
+        section 9).
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - invitations
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInvitationList'
+          description: ''
+    post:
+      operationId: invitations_create
+      description: Rejects query parameters a view does not explicitly allow (spec
+        section 9).
+      tags:
+      - team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+          description: ''
+  /api/v1/invitations/{invitation_id}/revoke:
+    post:
+      operationId: invitations_revoke_create
+      parameters:
+      - in: path
+        name: invitation_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+          description: ''
+  /api/v1/me:
+    get:
+      operationId: me_retrieve
+      tags:
+      - me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+          description: ''
+  /api/v1/time:
+    get:
+      operationId: time_retrieve
+      description: Lets clients measure clock skew; `server_received_at` stays authoritative.
+      tags:
+      - time
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServerTime'
+          description: ''
+  /api/v1/users:
+    get:
+      operationId: users_list
+      description: Rejects query parameters a view does not explicitly allow (spec
+        section 9).
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - users
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMemberList'
+          description: ''
+  /api/v1/users/{user_id}:
+    get:
+      operationId: users_retrieve
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+          description: ''
+  /api/v1/users/{user_id}/deactivate:
+    post:
+      operationId: users_deactivate_create
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+          description: ''
+  /api/v1/users/{user_id}/devices/{device_id}/revoke:
+    post:
+      operationId: users_devices_revoke_create
+      parameters:
+      - in: path
+        name: device_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: user_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+          description: ''
+  /api/v1/users/{user_id}/membership:
+    put:
+      operationId: users_membership_update
+      parameters:
+      - in: path
+        name: user_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MembershipUpdateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+          description: ''
+components:
+  schemas:
+    AccessToken:
+      type: object
+      properties:
+        access_token:
+          type: string
+        access_expires_at:
+          type: string
+          format: date-time
+      required:
+      - access_expires_at
+      - access_token
+    ChallengeResponse:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        channel:
+          type: string
+        destination_hint:
+          type: string
+      required:
+      - challenge_id
+    ClientEnum:
+      enum:
+      - WEB
+      - MOBILE
+      type: string
+      description: |-
+        * `WEB` - WEB
+        * `MOBILE` - MOBILE
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        app_version:
+          type: string
+          maxLength: 32
+        status:
+          $ref: '#/components/schemas/StatusEnum'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        last_seen_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - app_version
+      - created_at
+      - id
+      - platform
+    DeviceRegistrationRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        platform:
+          $ref: '#/components/schemas/PlatformEnum'
+        app_version:
+          type: string
+          minLength: 1
+          maxLength: 32
+        public_key:
+          type: string
+          default: ''
+          maxLength: 4096
+        push_token:
+          type: string
+          default: ''
+          maxLength: 4096
+      required:
+      - app_version
+      - platform
+    GrantedPermissionsEnum:
+      enum:
+      - elections.configure
+      - candidates.manage
+      - users.manage
+      - assignments.manage
+      - results.submit
+      - results.view
+      - results.review
+      - anomalies.view
+      - anomalies.resolve
+      - evidence.view
+      - evidence.export
+      - reports.export
+      - audit.view
+      - dashboard.view
+      - geography.view
+      type: string
+      description: |-
+        * `elections.configure` - elections.configure
+        * `candidates.manage` - candidates.manage
+        * `users.manage` - users.manage
+        * `assignments.manage` - assignments.manage
+        * `results.submit` - results.submit
+        * `results.view` - results.view
+        * `results.review` - results.review
+        * `anomalies.view` - anomalies.view
+        * `anomalies.resolve` - anomalies.resolve
+        * `evidence.view` - evidence.view
+        * `evidence.export` - evidence.export
+        * `reports.export` - reports.export
+        * `audit.view` - audit.view
+        * `dashboard.view` - dashboard.view
+        * `geography.view` - geography.view
+    Invitation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        scope_type:
+          $ref: '#/components/schemas/ScopeTypeEnum'
+        scope_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        granted_permissions:
+          type: array
+          items:
+            type: string
+            maxLength: 40
+        full_name:
+          type: string
+          maxLength: 150
+        email:
+          type: string
+          readOnly: true
+        phone:
+          type: string
+          readOnly: true
+        status:
+          type: string
+          readOnly: true
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - email
+      - expires_at
+      - id
+      - phone
+      - role
+      - scope_type
+      - status
+    InvitationAcceptRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+      - token
+    InvitationCompleteRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        token:
+          type: string
+          minLength: 1
+          maxLength: 128
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 1
+          pattern: ^\d{6}$
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        device:
+          allOf:
+          - $ref: '#/components/schemas/DeviceRegistrationRequest'
+          nullable: true
+      required:
+      - challenge_id
+      - code
+      - password
+      - token
+    InvitationCreateRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        scope_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 500
+        granted_permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/GrantedPermissionsEnum'
+          maxItems: 20
+        full_name:
+          type: string
+          default: ''
+          maxLength: 150
+        email:
+          type: string
+          default: ''
+          maxLength: 254
+        phone:
+          type: string
+          default: ''
+          maxLength: 32
+      required:
+      - role
+    Lga:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        inec_code:
+          type: string
+          maxLength: 32
+        name:
+          type: string
+          maxLength: 100
+        state_code:
+          type: string
+          readOnly: true
+      required:
+      - id
+      - inec_code
+      - name
+      - state_code
+    Live:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+      - status
+    LoginRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          maxLength: 254
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        client:
+          allOf:
+          - $ref: '#/components/schemas/ClientEnum'
+          default: WEB
+        device_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - identifier
+      - password
+    LoginResponse:
+      type: object
+      properties:
+        mfa_required:
+          type: boolean
+        mfa_token:
+          type: string
+        mfa_enrolment_required:
+          type: boolean
+        token_type:
+          type: string
+        access_token:
+          type: string
+        access_expires_at:
+          type: string
+          format: date-time
+        refresh_token:
+          type: string
+        refresh_expires_at:
+          type: string
+          format: date-time
+        session_id:
+          type: string
+          format: uuid
+      required:
+      - mfa_required
+    Me:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        email:
+          type: string
+        phone:
+          type: string
+        organization:
+          type: object
+          additionalProperties: {}
+        role:
+          type: string
+        scope:
+          $ref: '#/components/schemas/Scope'
+        permissions:
+          type: array
+          items:
+            type: string
+        mfa_enabled:
+          type: boolean
+        mfa_required:
+          type: boolean
+      required:
+      - email
+      - full_name
+      - mfa_enabled
+      - mfa_required
+      - organization
+      - permissions
+      - phone
+      - role
+      - scope
+      - user_id
+    Member:
+      type: object
+      description: Team listing. Contact details are masked (DG-02 data minimisation).
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        email:
+          type: string
+          readOnly: true
+        phone:
+          type: string
+          readOnly: true
+        status:
+          type: string
+        mfa_enabled:
+          type: boolean
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        scope:
+          allOf:
+          - $ref: '#/components/schemas/Scope'
+          readOnly: true
+        granted_permissions:
+          type: array
+          items:
+            type: string
+            maxLength: 40
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - email
+      - full_name
+      - mfa_enabled
+      - phone
+      - role
+      - scope
+      - status
+      - user_id
+    MembershipUpdateRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        scope_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 500
+        granted_permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/GrantedPermissionsEnum'
+          maxItems: 20
+      required:
+      - role
+    MfaCodeRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 16
+      required:
+      - code
+    MfaLoginRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        mfa_token:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        code:
+          type: string
+          minLength: 1
+          maxLength: 16
+      required:
+      - code
+      - mfa_token
+    OtpChannelEnum:
+      enum:
+      - SMS
+      - EMAIL
+      type: string
+      description: |-
+        * `SMS` - SMS
+        * `EMAIL` - EMAIL
+    OtpRequestRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        bot_token:
+          type: string
+          maxLength: 4096
+      required:
+      - challenge_id
+    OtpVerifyRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 1
+          pattern: ^\d{6}$
+      required:
+      - challenge_id
+      - code
+    OtpVerifyResponse:
+      type: object
+      properties:
+        purpose:
+          type: string
+        organization_status:
+          type: string
+        reset_token:
+          type: string
+      required:
+      - purpose
+    PaginatedInvitationList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invitation'
+    PaginatedLgaList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Lga'
+    PaginatedMemberList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Member'
+    PaginatedPollingUnitList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PollingUnit'
+    PaginatedWardList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Ward'
+    PasswordForgotRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          maxLength: 254
+        bot_token:
+          type: string
+          maxLength: 4096
+      required:
+      - identifier
+    PasswordResetRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        reset_token:
+          type: string
+          minLength: 1
+          maxLength: 128
+        new_password:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+      - new_password
+      - reset_token
+    PlatformEnum:
+      enum:
+      - ANDROID
+      - IOS
+      type: string
+      description: |-
+        * `ANDROID` - ANDROID
+        * `IOS` - IOS
+    PollingUnit:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        inec_code:
+          type: string
+          maxLength: 32
+        name:
+          type: string
+          maxLength: 255
+        ward_id:
+          type: string
+          format: uuid
+          readOnly: true
+        lga_id:
+          type: string
+          format: uuid
+          readOnly: true
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        registered_voters:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+          nullable: true
+      required:
+      - id
+      - inec_code
+      - lga_id
+      - name
+      - ward_id
+    Ready:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+      - status
+    RefreshRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        refresh_token:
+          type: string
+          minLength: 1
+          maxLength: 128
+        device_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - refresh_token
+    RegisterOrganizationRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        organization_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        legal_name:
+          type: string
+          default: ''
+          maxLength: 200
+        admin_name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        email:
+          type: string
+          minLength: 1
+          maxLength: 254
+        phone:
+          type: string
+          minLength: 1
+          maxLength: 32
+        password:
+          type: string
+          writeOnly: true
+          minLength: 1
+          maxLength: 128
+        otp_channel:
+          $ref: '#/components/schemas/OtpChannelEnum'
+        bot_token:
+          type: string
+          maxLength: 4096
+      required:
+      - admin_name
+      - email
+      - organization_name
+      - otp_channel
+      - password
+      - phone
+    RegistrationResponse:
+      type: object
+      properties:
+        organization_id:
+          type: string
+          format: uuid
+        challenge_id:
+          type: string
+          format: uuid
+      required:
+      - challenge_id
+      - organization_id
+    RoleEnum:
+      enum:
+      - PARTY_ADMIN
+      - LGA_OFFICER
+      - WARD_OFFICER
+      - PU_AGENT
+      type: string
+      description: |-
+        * `PARTY_ADMIN` - PARTY_ADMIN
+        * `LGA_OFFICER` - LGA_OFFICER
+        * `WARD_OFFICER` - WARD_OFFICER
+        * `PU_AGENT` - PU_AGENT
+    Scope:
+      type: object
+      properties:
+        type:
+          type: string
+        ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      required:
+      - ids
+      - type
+    ScopeTypeEnum:
+      enum:
+      - ORG
+      - LGA
+      - WARD
+      - PU
+      type: string
+      description: |-
+        * `ORG` - ORG
+        * `LGA` - LGA
+        * `WARD` - WARD
+        * `PU` - PU
+    ServerTime:
+      type: object
+      properties:
+        now:
+          type: string
+          format: date-time
+      required:
+      - now
+    Status:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+      - status
+    StatusEnum:
+      enum:
+      - ACTIVE
+      - REVOKED
+      type: string
+      description: |-
+        * `ACTIVE` - Active
+        * `REVOKED` - Revoked
+    TokenPair:
+      type: object
+      properties:
+        token_type:
+          type: string
+        access_token:
+          type: string
+        access_expires_at:
+          type: string
+          format: date-time
+        refresh_token:
+          type: string
+        refresh_expires_at:
+          type: string
+          format: date-time
+        session_id:
+          type: string
+          format: uuid
+      required:
+      - access_expires_at
+      - access_token
+      - refresh_expires_at
+      - refresh_token
+      - session_id
+      - token_type
+    TotpConfirm:
+      type: object
+      properties:
+        access_token:
+          type: string
+        access_expires_at:
+          type: string
+          format: date-time
+        recovery_codes:
+          type: array
+          items:
+            type: string
+      required:
+      - access_expires_at
+      - access_token
+      - recovery_codes
+    TotpSetup:
+      type: object
+      properties:
+        secret_base32:
+          type: string
+        otpauth_uri:
+          type: string
+      required:
+      - otpauth_uri
+      - secret_base32
+    Ward:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        inec_code:
+          type: string
+          maxLength: 32
+        name:
+          type: string
+          maxLength: 100
+        lga_id:
+          type: string
+          format: uuid
+          readOnly: true
+      required:
+      - id
+      - inec_code
+      - lga_id
+      - name
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

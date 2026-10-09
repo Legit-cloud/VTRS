@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.db import connections
 from django.http import Http404
 from rest_framework import exceptions
 from rest_framework.response import Response
@@ -36,6 +37,18 @@ class Forbidden(exceptions.APIException):
     default_code = "forbidden"
 
 
+class MfaRequired(exceptions.APIException):
+    status_code = 403
+    default_detail = "This role requires multi-factor authentication. Enrol a second factor."
+    default_code = "mfa_required"
+
+
+class StepUpRequired(exceptions.APIException):
+    status_code = 403
+    default_detail = "Confirm your second factor again to perform this action."
+    default_code = "mfa_step_up_required"
+
+
 class IdempotencyConflict(exceptions.APIException):
     status_code = 409
     default_detail = "This Idempotency-Key was already used with a different request."
@@ -44,7 +57,7 @@ class IdempotencyConflict(exceptions.APIException):
 
 class InvalidIdempotencyKey(exceptions.APIException):
     status_code = 400
-    default_detail = "Idempotency-Key must be 1-128 characters of [A-Za-z0-9_.:-]."
+    default_detail = "An Idempotency-Key header of 1-128 characters [A-Za-z0-9_.:-] is required."
     default_code = "invalid_idempotency_key"
 
 
@@ -83,11 +96,31 @@ def problem_response(status_code: int, code: str, detail: str, errors: Any = Non
     return Response(body, status=status_code, content_type=PROBLEM_CONTENT_TYPE)
 
 
+class CommitsSideEffects:
+    """Mixin for errors raised *after* deliberate writes that must survive the failed request.
+
+    DRF rolls back the per-request transaction on every handled error. Failed sign-in counters,
+    OTP attempt counts and refresh-token reuse revocations are exactly the writes that must
+    not be undone, so exceptions carrying this mixin keep the transaction. They are only raised
+    once the service's own savepoint has committed cleanly.
+    """
+
+    commits_side_effects = True
+
+
+def _keep_request_transaction() -> None:
+    for conn in connections.all(initialized_only=True):
+        if conn.settings_dict.get("ATOMIC_REQUESTS") and conn.in_atomic_block:
+            conn.set_rollback(False)
+
+
 def problem_exception_handler(exc: Exception, context: dict[str, Any]) -> Response:
     # Imported lazily: this module is loaded while DRF's own settings are initialising.
     from rest_framework.views import exception_handler
 
     response = exception_handler(exc, context)
+    if getattr(exc, "commits_side_effects", False):
+        _keep_request_transaction()
     if response is None:
         logger.exception("unhandled_error", exc_info=exc)
         return problem_response(500, "server_error", "An unexpected error occurred.")
