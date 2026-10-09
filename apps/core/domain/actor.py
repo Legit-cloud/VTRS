@@ -2,10 +2,11 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
-from .permissions import Perm, Role, effective_permissions
+from .permissions import Perm, Role, effective_permissions, requires_mfa
 
 
 class ScopeKind(StrEnum):
@@ -40,6 +41,9 @@ class Actor:
     role: Role
     scope: Scope
     granted: frozenset[Perm] = field(default_factory=frozenset)
+    session_id: UUID | None = None
+    # When this session last passed a second factor; None if it never has.
+    mfa_at: datetime | None = None
 
     def __post_init__(self) -> None:
         # Fail closed on an inconsistent membership rather than guessing a scope.
@@ -50,5 +54,12 @@ class Actor:
     def permissions(self) -> frozenset[Perm]:
         return effective_permissions(self.role, self.granted)
 
+    @property
+    def requires_mfa(self) -> bool:
+        return requires_mfa(self.role, self.permissions)
+
     def has_perm(self, perm: Perm) -> bool:
         return perm in self.permissions
+
+    def mfa_within(self, max_age: timedelta, now: datetime) -> bool:
+        return self.mfa_at is not None and now - self.mfa_at <= max_age

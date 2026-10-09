@@ -86,8 +86,9 @@ def test_sealer_respects_the_lag_window():
 
 
 def _bypass_triggers():
-    # Simulates an insider with superuser access. Only possible in tests run as superuser.
+    # Simulates an insider with superuser access: drop to the superuser, then disable triggers.
     with connection.cursor() as cursor:
+        cursor.execute("RESET ROLE")
         cursor.execute("SET LOCAL session_replication_role = replica")
 
 

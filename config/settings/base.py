@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,8 @@ def database_from_url(url: str) -> dict[str, Any]:
         # PgBouncer transaction pooling: no persistent connections, no server-side cursors.
         "CONN_MAX_AGE": 0,
         "DISABLE_SERVER_SIDE_CURSORS": True,
+        # Each request is one transaction, so the RLS tenant setting (SET LOCAL) covers it.
+        "ATOMIC_REQUESTS": True,
         "OPTIONS": {"options": "-c statement_timeout=5000 -c lock_timeout=2000"},
     }
 
@@ -53,16 +56,24 @@ ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")
 INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
+    "django.contrib.postgres",
     "rest_framework",
+    "drf_spectacular",
+    "django_otp",
+    "django_otp.plugins.otp_totp",
     "apps.core",
     "apps.audit",
+    "apps.organizations",
     "apps.accounts",
     "apps.geography",
+    "apps.elections",
+    "apps.assignments",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.RequestContextMiddleware",
+    "apps.core.middleware.MinimumAppVersionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -106,8 +117,9 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 64 * 1024
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "apps.core.api.authentication.BearerChallengeAuthentication"
+        "apps.accounts.api.authentication.AccessTokenAuthentication"
     ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_PERMISSION_CLASSES": ["apps.core.api.permissions.PolicyPermission"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
@@ -165,10 +177,84 @@ LOGGING: dict[str, Any] = {
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
 }
 
+SPECTACULAR_SETTINGS = {
+    "TITLE": "VTRS API",
+    "DESCRIPTION": (
+        "Vote Tracking & Recording Solution. Results shown are provisional party data, "
+        "never an official declaration."
+    ),
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SCHEMA_PATH_PREFIX": "/api/v1",
+    # Several models have a `status`; give each enum a stable name for generated clients.
+    "ENUM_NAME_OVERRIDES": {
+        "ElectionStatusEnum": "apps.elections.domain.rules.ElectionStatus",
+        "UserStatusEnum": "apps.accounts.models.UserStatus",
+        # Devices and assignments share the ACTIVE/REVOKED choice set.
+        "ActiveRevokedStatusEnum": "apps.assignments.models.AssignmentStatus",
+    },
+}
+# The schema endpoint is off unless enabled (never on the public production hostname).
+VTRS_EXPOSE_SCHEMA = env_bool("VTRS_EXPOSE_SCHEMA", False)
+
+EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(env("EMAIL_PORT", "1025"))
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "VTRS <no-reply@vtrs.invalid>")
+
+OTP_TOTP_ISSUER = "VTRS"
+
 # --- VTRS ---------------------------------------------------------------------------------
-# Resolves the acting user (role, organization, scope) for a request. Accounts replaces the
-# default once memberships exist (M1).
-VTRS_ACTOR_RESOLVER = "apps.core.api.actors.actor_from_user"
+# Resolves the acting user (role, organization, scope) for a request.
+VTRS_ACTOR_RESOLVER = "apps.core.api.actors.actor_from_auth"
+
+# Identity (spec section 7). Keys and peppers come from the secrets vault in production.
+VTRS_JWT_PRIVATE_KEY = env("VTRS_JWT_PRIVATE_KEY")
+VTRS_JWT_KEY_ID = env("VTRS_JWT_KEY_ID", "k1")
+# Retired keys still accepted for verification during rotation: {"kid": "<public PEM>"}.
+VTRS_JWT_PUBLIC_KEYS: dict[str, str] = json.loads(env("VTRS_JWT_PUBLIC_KEYS", "{}"))
+VTRS_JWT_ISSUER = "vtrs"
+VTRS_JWT_AUDIENCE = "vtrs-api"
+VTRS_ACCESS_TOKEN_SECONDS = 600
+VTRS_MOBILE_SESSION_DAYS = 7
+VTRS_WEB_SESSION_HOURS = 12
+VTRS_ENFORCE_MFA = True
+VTRS_MFA_STEP_UP_SECONDS = 600
+
+VTRS_OTP_PEPPER = env("VTRS_OTP_PEPPER")
+VTRS_OTP_HOURLY_PER_DESTINATION = 5
+VTRS_OTP_HOURLY_PER_IP = 20
+VTRS_SMS_ALLOWED_PREFIXES = env_list("VTRS_SMS_ALLOWED_PREFIXES", "+234")
+VTRS_SMS_PROVIDER = env("VTRS_SMS_PROVIDER")
+# Open decision: bot challenge provider. "disabled" is refused by production settings.
+VTRS_BOT_CHALLENGE_PROVIDER = env("VTRS_BOT_CHALLENGE_PROVIDER", "disabled")
+
+# {"kid": "<base64 32-byte key>"}; the active key encrypts, all keys decrypt.
+VTRS_FIELD_ENCRYPTION_KEYS: dict[str, str] = json.loads(env("VTRS_FIELD_ENCRYPTION_KEYS"))
+VTRS_FIELD_ENCRYPTION_ACTIVE_KEY = env("VTRS_FIELD_ENCRYPTION_ACTIVE_KEY", "k1")
+VTRS_BLIND_INDEX_KEY = env("VTRS_BLIND_INDEX_KEY")
+
+VTRS_INVITATION_TTL_HOURS = 72
+# PB-06 (decided): up to three agents may cover one polling unit per election. A second
+# agent's submission for the same unit is flagged DUPLICATE_SOURCE for review (M3/M5).
+VTRS_MAX_AGENTS_PER_POLLING_UNIT = int(env("VTRS_MAX_AGENTS_PER_POLLING_UNIT", "3"))
+VTRS_INVITATION_LINK = env("VTRS_INVITATION_LINK", "vtrs://invite?token={token}")
+VTRS_MIN_APP_VERSION = env("VTRS_MIN_APP_VERSION", "1.0.0")
+
+VTRS_THROTTLE_RATES = {
+    "login_ip": "5/min",
+    "login_account": "5/min",
+    "otp_ip": "10/min",
+    "registration_ip": "5/hour",
+    "password_ip": "5/min",
+    "invitation_ip": "10/min",
+    "refresh_ip": "60/min",
+}
+
+# Feature flags for open decisions (section 22). All off by default.
+VTRS_FEATURE_FACE_VERIFICATION = False  # FR-6.1.3, PB-08, SEC-09
+VTRS_FEATURE_WHATSAPP_ALERTS = False  # FR-6.12.3
 
 # Outbox topic -> (celery task name, queue). Topics without a route are marked published.
 VTRS_OUTBOX_ROUTES: dict[str, tuple[str, str]] = {}

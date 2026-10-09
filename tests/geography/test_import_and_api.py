@@ -113,14 +113,14 @@ def test_generate_synthetic_command(tmp_path):
 
 
 @pytest.mark.parametrize("role", list(Role))
-def test_every_role_can_read_master_data(small_geography, client_as, make_actor, role):
-    response = client_as(make_actor(role)).get("/api/v1/geography/lgas")
+def test_every_role_can_read_master_data(small_geography, client_as, make_member, role):
+    response = client_as(make_member(role)).get("/api/v1/geography/lgas")
     assert response.status_code == 200
     assert [r["inec_code"] for r in response.json()["results"]] == ["SYN-01", "SYN-02", "SYN-03"]
 
 
-def test_filters_and_keyset_pagination(small_geography, client_as, make_actor):
-    client = client_as(make_actor())
+def test_filters_and_keyset_pagination(small_geography, client_as, make_member):
+    client = client_as(make_member())
     lga = Lga.objects.get(inec_code="SYN-01")
     wards = client.get("/api/v1/geography/wards", {"lga": lga.id}).json()["results"]
     assert {w["lga_id"] for w in wards} == {str(lga.id)}
@@ -131,8 +131,8 @@ def test_filters_and_keyset_pagination(small_geography, client_as, make_actor):
     assert "previous" in page and "count" not in page  # keyset, no offsets or totals
 
 
-def test_unknown_and_malformed_query_params(small_geography, client_as, make_actor):
-    client = client_as(make_actor())
+def test_unknown_and_malformed_query_params(small_geography, client_as, make_member):
+    client = client_as(make_member())
     response = client.get("/api/v1/geography/wards", {"lga_id": "x"})
     assert response.status_code == 400
     assert response.json()["code"] == "unknown_query_parameter"
@@ -143,7 +143,7 @@ def test_unknown_and_malformed_query_params(small_geography, client_as, make_act
     assert response.json()["errors"] == {"lga": ["Must be a UUID."]}
 
 
-def test_master_data_is_read_only_over_the_api(small_geography, client_as, make_actor):
-    response = client_as(make_actor()).post("/api/v1/geography/lgas", {}, format="json")
+def test_master_data_is_read_only_over_the_api(small_geography, client_as, make_member):
+    response = client_as(make_member()).post("/api/v1/geography/lgas", {}, format="json")
     assert response.status_code == 405
     assert response.json()["code"] == "method_not_allowed"

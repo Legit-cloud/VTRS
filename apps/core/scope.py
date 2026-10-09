@@ -37,3 +37,13 @@ class ScopedQuerySet(models.QuerySet):
                 f"{self.model.__name__} must declare SCOPE_LOOKUPS with an 'org' entry"
             )
         return self.filter(scope_q(actor.scope, actor.organization_id, lookups))
+
+    def in_organization(self, actor: Actor) -> "ScopedQuerySet":
+        """Organization-wide reference data (elections, contests, candidates): every member of
+        the organization may read it, whatever their geographic scope."""
+        lookups: Mapping[str, str] | None = getattr(self.model, "SCOPE_LOOKUPS", None)
+        if not lookups or "org" not in lookups:
+            raise ImproperlyConfigured(
+                f"{self.model.__name__} must declare SCOPE_LOOKUPS with an 'org' entry"
+            )
+        return self.filter(**{lookups["org"]: actor.organization_id})

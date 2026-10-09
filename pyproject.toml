@@ -7,7 +7,8 @@ extend-exclude = ["**/migrations/*"]
 select = ["E", "F", "W", "I", "B", "UP", "S", "DJ", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"config/settings/*.py" = ["F403", "F405"]
+# Settings star-import base after setting environment defaults.
+"config/settings/*.py" = ["F403", "F405", "E402"]
 "tests/**/*.py" = ["S101", "S105", "S106"]
 # Django Meta lists and internal tables without a display name.
 "apps/**/models.py" = ["RUF012", "DJ008"]
@@ -40,10 +41,25 @@ include_external_packages = true
 name = "App layering"
 type = "layers"
 layers = ["(api)", "(services)", "(selectors)", "(models)", "(domain)"]
-containers = ["apps.core", "apps.audit", "apps.accounts", "apps.geography"]
+containers = [
+    "apps.core",
+    "apps.audit",
+    "apps.organizations",
+    "apps.accounts",
+    "apps.geography",
+    "apps.notifications",
+    "apps.elections",
+    "apps.assignments",
+]
 
 [[tool.importlinter.contracts]]
 name = "Domain code is pure Python"
 type = "forbidden"
-source_modules = ["apps.core.domain", "apps.audit.domain", "apps.geography.domain"]
+source_modules = [
+    "apps.core.domain",
+    "apps.audit.domain",
+    "apps.accounts.domain",
+    "apps.geography.domain",
+    "apps.elections.domain",
+]
 forbidden_modules = ["django", "rest_framework", "celery", "psycopg"]

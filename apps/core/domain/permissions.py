@@ -83,6 +83,13 @@ def effective_permissions(role: Role, granted: Iterable[Perm] = ()) -> frozenset
     return ROLE_PERMISSIONS[role] | (frozenset(granted) & GRANTABLE_PERMISSIONS[role])
 
 
+def requires_mfa(role: Role, permissions: frozenset[Perm]) -> bool:
+    """MFA is mandatory for admins and for anyone who can export data or evidence packs."""
+    return role is Role.PARTY_ADMIN or bool(
+        permissions & {Perm.EVIDENCE_EXPORT, Perm.REPORTS_EXPORT}
+    )
+
+
 def can_assign_role(granter: Role, target: Role) -> bool:
     """Users may only grant roles at or below their own."""
     return ROLE_RANK[target] <= ROLE_RANK[granter]
