@@ -15,10 +15,26 @@ if TYPE_CHECKING:  # DRF imports this module while rest_framework.views is initi
     from rest_framework.views import APIView
 
 
+def required_permission_for(view: object, method: str) -> str | None:
+    per_method = getattr(view, "required_permissions", None) or {}
+    if method == "HEAD":
+        method = "GET"
+    return per_method.get(method) or getattr(view, "required_permission", None)
+
+
+def declared_permissions(view: object) -> set[str]:
+    """Every permission a view can require, for policy and matrix tests."""
+    perms = set((getattr(view, "required_permissions", None) or {}).values())
+    if single := getattr(view, "required_permission", None):
+        perms.add(single)
+    return perms
+
+
 class PolicyPermission(BasePermission):
     """Default permission for every view.
 
-    A view must declare `public = True` or a `required_permission`; anything else is denied.
+    A view must declare `public = True`, a `required_permission`, or `required_permissions`
+    (a per-HTTP-method mapping); anything else is denied.
     For protected views this also pins the database session to the actor's organization (RLS),
     enforces mandatory MFA, and attaches the actor to the request.
     """
@@ -26,7 +42,7 @@ class PolicyPermission(BasePermission):
     def has_permission(self, request: "Request", view: "APIView") -> bool:
         if getattr(view, "public", False) is True:
             return True
-        perm = getattr(view, "required_permission", None)
+        perm = required_permission_for(view, request.method or "")
         if not perm:
             return False
         rls.reset_context()

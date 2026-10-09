@@ -16,7 +16,8 @@ from apps.core.errors import UnknownQueryParameter, problem_response
 
 
 class StrictQueryParamsMixin:
-    """Rejects query parameters a view does not explicitly allow (spec section 9)."""
+    # Rejects query parameters a view does not explicitly allow (spec section 9). A comment,
+    # not a docstring: OpenAPI would otherwise use it as every list endpoint's description.
 
     allowed_query_params: frozenset[str] = frozenset()
     pagination_query_params = frozenset({"cursor", "limit"})

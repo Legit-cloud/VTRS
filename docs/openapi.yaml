@@ -5,6 +5,84 @@ info:
   description: Vote Tracking & Recording Solution. Results shown are provisional party
     data, never an official declaration.
 paths:
+  /api/v1/assignments:
+    get:
+      operationId: assignments_list
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - assignments
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssignmentList'
+          description: ''
+    post:
+      operationId: assignments_create
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      tags:
+      - assignments
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignmentCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: ''
+  /api/v1/assignments/{assignment_id}/revoke:
+    post:
+      operationId: assignments_revoke_create
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: assignment_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - assignments
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assignment'
+          description: ''
   /api/v1/auth/invitations/accept:
     post:
       operationId: auth_invitations_accept_create
@@ -247,11 +325,407 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenPair'
           description: ''
+  /api/v1/candidates/{candidate_id}:
+    get:
+      operationId: candidates_retrieve
+      parameters:
+      - in: path
+        name: candidate_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - candidates
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Candidate'
+          description: ''
+    patch:
+      operationId: candidates_partial_update
+      parameters:
+      - in: header
+        name: If-Match
+        schema:
+          type: string
+        description: ETag from your last read
+        required: true
+      - in: path
+        name: candidate_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - candidates
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCandidateUpdateRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Candidate'
+          description: ''
+    delete:
+      operationId: candidates_destroy
+      parameters:
+      - in: path
+        name: candidate_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - candidates
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/contests/{contest_id}:
+    get:
+      operationId: contests_retrieve
+      parameters:
+      - in: path
+        name: contest_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - contests
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contest'
+          description: ''
+    patch:
+      operationId: contests_partial_update
+      parameters:
+      - in: header
+        name: If-Match
+        schema:
+          type: string
+        description: ETag from your last read
+        required: true
+      - in: path
+        name: contest_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - contests
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedContestUpdateRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contest'
+          description: ''
+    delete:
+      operationId: contests_destroy
+      parameters:
+      - in: path
+        name: contest_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - contests
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/contests/{contest_id}/candidates:
+    get:
+      operationId: contests_candidates_list
+      parameters:
+      - in: path
+        name: contest_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - contests
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Candidate'
+          description: ''
+    post:
+      operationId: contests_candidates_create
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: contest_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - contests
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CandidateCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Candidate'
+          description: ''
+  /api/v1/elections:
+    get:
+      operationId: elections_list
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedElectionList'
+          description: ''
+    post:
+      operationId: elections_create
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      tags:
+      - elections
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ElectionCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Election'
+          description: ''
+  /api/v1/elections/{election_id}:
+    get:
+      operationId: elections_retrieve
+      parameters:
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Election'
+          description: ''
+    patch:
+      operationId: elections_partial_update
+      parameters:
+      - in: header
+        name: If-Match
+        schema:
+          type: string
+        description: ETag from your last read
+        required: true
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - elections
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedElectionUpdateRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Election'
+          description: ''
+  /api/v1/elections/{election_id}/contests:
+    get:
+      operationId: elections_contests_list
+      parameters:
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Contest'
+          description: ''
+    post:
+      operationId: elections_contests_create
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - elections
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContestCreateRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Contest'
+          description: ''
+  /api/v1/elections/{election_id}/lock:
+    post:
+      operationId: elections_lock_create
+      description: Freeze contests and candidates (FR-6.3.3). Needs a fresh second
+        factor.
+      parameters:
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Election'
+          description: ''
+  /api/v1/elections/{election_id}/transition:
+    post:
+      operationId: elections_transition_create
+      parameters:
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - elections
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransitionRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Election'
+          description: ''
   /api/v1/geography/lgas:
     get:
       operationId: geography_lgas_list
-      description: Rejects query parameters a view does not explicitly allow (spec
-        section 9).
       parameters:
       - name: cursor
         required: false
@@ -279,8 +753,6 @@ paths:
   /api/v1/geography/polling-units:
     get:
       operationId: geography_polling_units_list
-      description: Rejects query parameters a view does not explicitly allow (spec
-        section 9).
       parameters:
       - name: cursor
         required: false
@@ -308,8 +780,6 @@ paths:
   /api/v1/geography/wards:
     get:
       operationId: geography_wards_list
-      description: Rejects query parameters a view does not explicitly allow (spec
-        section 9).
       parameters:
       - name: cursor
         required: false
@@ -361,8 +831,6 @@ paths:
   /api/v1/invitations:
     get:
       operationId: invitations_list
-      description: Rejects query parameters a view does not explicitly allow (spec
-        section 9).
       parameters:
       - name: cursor
         required: false
@@ -389,8 +857,6 @@ paths:
           description: ''
     post:
       operationId: invitations_create
-      description: Rejects query parameters a view does not explicitly allow (spec
-        section 9).
       tags:
       - team
       requestBody:
@@ -443,6 +909,23 @@ paths:
               schema:
                 $ref: '#/components/schemas/Me'
           description: ''
+  /api/v1/me/assignments:
+    get:
+      operationId: me_assignments_list
+      description: What the agent app shows before capture (FR-6.2.5, AC-04).
+      tags:
+      - me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MyAssignment'
+          description: ''
   /api/v1/time:
     get:
       operationId: time_retrieve
@@ -459,8 +942,6 @@ paths:
   /api/v1/users:
     get:
       operationId: users_list
-      description: Rejects query parameters a view does not explicitly allow (spec
-        section 9).
       parameters:
       - name: cursor
         required: false
@@ -594,6 +1075,248 @@ components:
       required:
       - access_expires_at
       - access_token
+    ActiveRevokedStatusEnum:
+      enum:
+      - ACTIVE
+      - REVOKED
+      type: string
+      description: |-
+        * `ACTIVE` - Active
+        * `REVOKED` - Revoked
+    AssignedElection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        election_date:
+          type: string
+          format: date
+        status:
+          type: string
+        capture_open:
+          type: boolean
+        config_version:
+          type: integer
+        polls_open_at:
+          type: string
+          format: date-time
+          nullable: true
+        polls_close_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - capture_open
+      - config_version
+      - election_date
+      - id
+      - name
+      - polls_close_at
+      - polls_open_at
+      - status
+    AssignedPollingUnit:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        inec_code:
+          type: string
+        name:
+          type: string
+        ward:
+          type: string
+        lga:
+          type: string
+        latitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        longitude:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+          nullable: true
+        registered_voters:
+          type: integer
+          nullable: true
+      required:
+      - id
+      - inec_code
+      - latitude
+      - lga
+      - longitude
+      - name
+      - registered_voters
+      - ward
+    Assignment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        election_id:
+          type: string
+          format: uuid
+          readOnly: true
+        agent_id:
+          type: string
+          format: uuid
+          readOnly: true
+        agent_name:
+          type: string
+          readOnly: true
+        polling_unit_id:
+          type: string
+          format: uuid
+          readOnly: true
+        polling_unit_code:
+          type: string
+          readOnly: true
+        ward_id:
+          type: string
+          format: uuid
+          readOnly: true
+        lga_id:
+          type: string
+          format: uuid
+          readOnly: true
+        status:
+          $ref: '#/components/schemas/ActiveRevokedStatusEnum'
+        valid_from:
+          type: string
+          format: date-time
+        valid_to:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - agent_id
+      - agent_name
+      - created_at
+      - election_id
+      - id
+      - lga_id
+      - polling_unit_code
+      - polling_unit_id
+      - ward_id
+    AssignmentCreateRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        election_id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        polling_unit_id:
+          type: string
+          format: uuid
+      required:
+      - agent_id
+      - election_id
+      - polling_unit_id
+    Candidate:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        contest_id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 200
+        party_name:
+          type: string
+          maxLength: 200
+        party_acronym:
+          type: string
+          maxLength: 20
+        ballot_order:
+          type: integer
+          maximum: 32767
+          minimum: 0
+        is_own_party:
+          type: boolean
+        config_version:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        row_version:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+      required:
+      - ballot_order
+      - config_version
+      - contest_id
+      - id
+      - name
+      - party_acronym
+      - party_name
+    CandidateBallot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        party_acronym:
+          type: string
+        ballot_order:
+          type: integer
+      required:
+      - ballot_order
+      - id
+      - name
+      - party_acronym
+    CandidateCreateRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        party_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        party_acronym:
+          type: string
+          minLength: 1
+          pattern: ^[A-Za-z0-9-]{1,20}$
+        ballot_order:
+          type: integer
+          maximum: 200
+          minimum: 1
+        is_own_party:
+          type: boolean
+          default: false
+      required:
+      - ballot_order
+      - name
+      - party_acronym
+      - party_name
     ChallengeResponse:
       type: object
       properties:
@@ -614,6 +1337,110 @@ components:
       description: |-
         * `WEB` - WEB
         * `MOBILE` - MOBILE
+    Contest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        election_id:
+          type: string
+          format: uuid
+          readOnly: true
+        office:
+          $ref: '#/components/schemas/OfficeEnum'
+        title:
+          type: string
+          maxLength: 200
+        jurisdiction_level:
+          $ref: '#/components/schemas/JurisdictionLevelEnum'
+        jurisdiction_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        sheet_fields:
+          type: array
+          items:
+            type: string
+            maxLength: 20
+        row_version:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - election_id
+      - id
+      - jurisdiction_ids
+      - jurisdiction_level
+      - office
+      - title
+    ContestBallot:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        office:
+          type: string
+        title:
+          type: string
+        sheet_fields:
+          type: array
+          items:
+            type: string
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/CandidateBallot'
+      required:
+      - candidates
+      - id
+      - office
+      - sheet_fields
+      - title
+    ContestCreateRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        office:
+          $ref: '#/components/schemas/OfficeEnum'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        jurisdiction_level:
+          $ref: '#/components/schemas/JurisdictionLevelEnum'
+        jurisdiction_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 400
+        sheet_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/SheetFieldsEnum'
+          maxItems: 4
+      required:
+      - jurisdiction_ids
+      - jurisdiction_level
+      - office
+      - title
+    CountPolicyEnum:
+      enum:
+      - REPORTED
+      - VERIFIED
+      type: string
+      description: |-
+        * `REPORTED` - Reported
+        * `VERIFIED` - Verified
     Device:
       type: object
       properties:
@@ -627,7 +1454,7 @@ components:
           type: string
           maxLength: 32
         status:
-          $ref: '#/components/schemas/StatusEnum'
+          $ref: '#/components/schemas/ActiveRevokedStatusEnum'
         created_at:
           type: string
           format: date-time
@@ -662,6 +1489,118 @@ components:
       required:
       - app_version
       - platform
+    Election:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 200
+        state_id:
+          type: string
+          format: uuid
+        election_date:
+          type: string
+          format: date
+        status:
+          $ref: '#/components/schemas/ElectionStatusEnum'
+        count_policy:
+          $ref: '#/components/schemas/CountPolicyEnum'
+        review_enabled:
+          type: boolean
+        polls_open_at:
+          type: string
+          format: date-time
+          nullable: true
+        polls_close_at:
+          type: string
+          format: date-time
+          nullable: true
+        config_version:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        config_hash:
+          type: string
+          maxLength: 64
+        row_version:
+          type: integer
+          maximum: 2147483647
+          minimum: 0
+        locked_at:
+          type: string
+          format: date-time
+          nullable: true
+        opened_at:
+          type: string
+          format: date-time
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - election_date
+      - id
+      - name
+      - state_id
+    ElectionCreateRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        state_id:
+          type: string
+          format: uuid
+        election_date:
+          type: string
+          format: date
+        count_policy:
+          allOf:
+          - $ref: '#/components/schemas/CountPolicyEnum'
+          default: REPORTED
+        review_enabled:
+          type: boolean
+          default: false
+        polls_open_at:
+          type: string
+          format: date-time
+          nullable: true
+        polls_close_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - election_date
+      - name
+      - state_id
+    ElectionStatusEnum:
+      enum:
+      - DRAFT
+      - CONFIGURED
+      - LOCKED
+      - LIVE
+      - CLOSED
+      - RECONCILED
+      type: string
+      description: |-
+        * `DRAFT` - DRAFT
+        * `CONFIGURED` - CONFIGURED
+        * `LOCKED` - LOCKED
+        * `LIVE` - LIVE
+        * `CLOSED` - CLOSED
+        * `RECONCILED` - RECONCILED
     GrantedPermissionsEnum:
       enum:
       - elections.configure
@@ -814,6 +1753,16 @@ components:
           maxLength: 32
       required:
       - role
+    JurisdictionLevelEnum:
+      enum:
+      - STATE
+      - LGA
+      - WARD
+      type: string
+      description: |-
+        * `STATE` - STATE
+        * `LGA` - LGA
+        * `WARD` - WARD
     Lga:
       type: object
       properties:
@@ -1017,6 +1966,45 @@ components:
       required:
       - code
       - mfa_token
+    MyAssignment:
+      type: object
+      properties:
+        assignment_id:
+          type: string
+          format: uuid
+        election:
+          $ref: '#/components/schemas/AssignedElection'
+        polling_unit:
+          $ref: '#/components/schemas/AssignedPollingUnit'
+        contests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContestBallot'
+      required:
+      - assignment_id
+      - contests
+      - election
+      - polling_unit
+    OfficeEnum:
+      enum:
+      - PRESIDENTIAL
+      - GOVERNORSHIP
+      - SENATORIAL
+      - HOUSE_OF_REPRESENTATIVES
+      - STATE_ASSEMBLY
+      - LGA_CHAIRMAN
+      - COUNCILLOR
+      - OTHER
+      type: string
+      description: |-
+        * `PRESIDENTIAL` - Presidential
+        * `GOVERNORSHIP` - Governorship
+        * `SENATORIAL` - Senatorial
+        * `HOUSE_OF_REPRESENTATIVES` - House Of Representatives
+        * `STATE_ASSEMBLY` - State Assembly
+        * `LGA_CHAIRMAN` - Lga Chairman
+        * `COUNCILLOR` - Councillor
+        * `OTHER` - Other
     OtpChannelEnum:
       enum:
       - SMS
@@ -1062,6 +2050,44 @@ components:
           type: string
       required:
       - purpose
+    PaginatedAssignmentList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Assignment'
+    PaginatedElectionList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Election'
     PaginatedInvitationList:
       type: object
       required:
@@ -1185,6 +2211,74 @@ components:
       required:
       - new_password
       - reset_token
+    PatchedCandidateUpdateRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        party_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        party_acronym:
+          type: string
+          minLength: 1
+          pattern: ^[A-Za-z0-9-]{1,20}$
+        ballot_order:
+          type: integer
+          maximum: 200
+          minimum: 1
+        is_own_party:
+          type: boolean
+    PatchedContestUpdateRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        office:
+          $ref: '#/components/schemas/OfficeEnum'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        jurisdiction_level:
+          $ref: '#/components/schemas/JurisdictionLevelEnum'
+        jurisdiction_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          maxItems: 400
+        sheet_fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/SheetFieldsEnum'
+          maxItems: 4
+    PatchedElectionUpdateRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        election_date:
+          type: string
+          format: date
+        count_policy:
+          $ref: '#/components/schemas/CountPolicyEnum'
+        review_enabled:
+          type: boolean
+        polls_open_at:
+          type: string
+          format: date-time
+          nullable: true
+        polls_close_at:
+          type: string
+          format: date-time
+          nullable: true
     PlatformEnum:
       enum:
       - ANDROID
@@ -1354,6 +2448,18 @@ components:
           format: date-time
       required:
       - now
+    SheetFieldsEnum:
+      enum:
+      - accredited
+      - valid
+      - rejected
+      - total_cast
+      type: string
+      description: |-
+        * `accredited` - accredited
+        * `valid` - valid
+        * `rejected` - rejected
+        * `total_cast` - total_cast
     Status:
       type: object
       properties:
@@ -1361,14 +2467,18 @@ components:
           type: string
       required:
       - status
-    StatusEnum:
+    ToEnum:
       enum:
-      - ACTIVE
-      - REVOKED
+      - DRAFT
+      - CONFIGURED
+      - LIVE
+      - CLOSED
       type: string
       description: |-
-        * `ACTIVE` - Active
-        * `REVOKED` - Revoked
+        * `DRAFT` - DRAFT
+        * `CONFIGURED` - CONFIGURED
+        * `LIVE` - LIVE
+        * `CLOSED` - CLOSED
     TokenPair:
       type: object
       properties:
@@ -1420,6 +2530,14 @@ components:
       required:
       - otpauth_uri
       - secret_base32
+    TransitionRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        to:
+          $ref: '#/components/schemas/ToEnum'
+      required:
+      - to
     Ward:
       type: object
       properties:

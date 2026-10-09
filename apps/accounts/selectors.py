@@ -28,6 +28,20 @@ def member_for(actor: Actor, user_id: UUID) -> Membership:
     return membership
 
 
+def agent_for(actor: Actor, user_id: UUID) -> Membership:
+    """An active agent in the actor's organization, for deployment (assignments.manage)."""
+    authorize(actor, Perm.ASSIGNMENTS_MANAGE)
+    membership = (
+        Membership.objects.in_organization(actor)
+        .select_related("user")
+        .filter(user_id=user_id, status=MembershipStatus.ACTIVE)
+        .first()
+    )
+    if membership is None:
+        raise NotFound()
+    return membership
+
+
 def devices_of(actor: Actor, membership: Membership) -> QuerySet[Device]:
     """Devices of a member the actor can already see (pass the result of `member_for`)."""
     authorize(actor, Perm.USERS_MANAGE)

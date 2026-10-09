@@ -66,6 +66,8 @@ INSTALLED_APPS = [
     "apps.organizations",
     "apps.accounts",
     "apps.geography",
+    "apps.elections",
+    "apps.assignments",
 ]
 
 MIDDLEWARE = [
@@ -185,6 +187,13 @@ SPECTACULAR_SETTINGS = {
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
     "SCHEMA_PATH_PREFIX": "/api/v1",
+    # Several models have a `status`; give each enum a stable name for generated clients.
+    "ENUM_NAME_OVERRIDES": {
+        "ElectionStatusEnum": "apps.elections.domain.rules.ElectionStatus",
+        "UserStatusEnum": "apps.accounts.models.UserStatus",
+        # Devices and assignments share the ACTIVE/REVOKED choice set.
+        "ActiveRevokedStatusEnum": "apps.assignments.models.AssignmentStatus",
+    },
 }
 # The schema endpoint is off unless enabled (never on the public production hostname).
 VTRS_EXPOSE_SCHEMA = env_bool("VTRS_EXPOSE_SCHEMA", False)
@@ -227,6 +236,9 @@ VTRS_FIELD_ENCRYPTION_ACTIVE_KEY = env("VTRS_FIELD_ENCRYPTION_ACTIVE_KEY", "k1")
 VTRS_BLIND_INDEX_KEY = env("VTRS_BLIND_INDEX_KEY")
 
 VTRS_INVITATION_TTL_HOURS = 72
+# Open decision (PB-06): how many agents may cover one polling unit per election. With more
+# than one, their submissions are flagged DUPLICATE_SOURCE for review (M3/M5).
+VTRS_MAX_AGENTS_PER_POLLING_UNIT = int(env("VTRS_MAX_AGENTS_PER_POLLING_UNIT", "1"))
 VTRS_INVITATION_LINK = env("VTRS_INVITATION_LINK", "vtrs://invite?token={token}")
 VTRS_MIN_APP_VERSION = env("VTRS_MIN_APP_VERSION", "1.0.0")
 

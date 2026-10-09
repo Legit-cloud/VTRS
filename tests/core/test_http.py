@@ -7,6 +7,7 @@ import pytest
 from django.urls import URLPattern, URLResolver, get_resolver
 from rest_framework.views import APIView
 
+from apps.core.api.permissions import required_permission_for
 from apps.core.logging import JsonFormatter, mask_text, scrub
 
 pytestmark = pytest.mark.django_db
@@ -21,18 +22,22 @@ def _walk(patterns):
 
 
 def test_every_api_view_declares_a_policy():
-    """Spec section 8: a view without `required_permission` or `public = True` fails CI."""
+    """Spec section 8: every HTTP method of every view is public or names a permission."""
     views = []
     for pattern in _walk(get_resolver().url_patterns):
         view = getattr(pattern.callback, "cls", None) or getattr(
             pattern.callback, "view_class", None
         )
-        if view is not None and issubclass(view, APIView):
-            views.append(view)
-            declared = getattr(view, "public", False) is True or bool(
-                getattr(view, "required_permission", None)
+        if view is None or not issubclass(view, APIView):
+            continue
+        views.append(view)
+        if getattr(view, "public", False) is True:
+            continue
+        methods = [m.upper() for m in view.http_method_names if m not in {"options", "head"}]
+        for method in (m for m in methods if hasattr(view, m.lower())):
+            assert required_permission_for(view, method), (
+                f"{view.__module__}.{view.__name__}.{method.lower()} declares no access policy"
             )
-            assert declared, f"{view.__module__}.{view.__name__} declares no access policy"
     assert views
 
 

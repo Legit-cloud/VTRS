@@ -95,6 +95,22 @@ Production must provide these from the secrets vault: `VTRS_JWT_PRIVATE_KEY` (Ed
 and `VTRS_BOT_CHALLENGE_PROVIDER`. Production settings refuse to start with the fake SMS
 provider or with the bot challenge disabled.
 
+## Elections and deployment
+
+- **Lifecycle:** `DRAFT ⇄ CONFIGURED → LOCKED → LIVE → CLOSED`. Contests and candidates can
+  change only before `LOCKED`. Locking needs a fresh second factor and records a SHA-256
+  fingerprint of the whole configuration (`config_hash`). Results capture opens at `LIVE`.
+- **Contests:** a contest covers a set of states, LGAs or wards, so a senatorial district is
+  just the list of its LGAs. Each contest says which result-sheet totals it captures.
+- **Config changes:** every change bumps the election's `config_version`, which agents sync
+  against. Edits need the `ETag` from the last read in `If-Match`; a stale edit gets 412.
+- **Assignments:** an agent can only be deployed to a polling unit that is inside the
+  election's state and among the agent's authorized units. `VTRS_MAX_AGENTS_PER_POLLING_UNIT`
+  (default 1) caps how many agents can cover one polling unit.
+- **Agent view:** `GET /api/v1/me/assignments` returns each assigned polling unit with its
+  ballot (only the contests that cover it, candidates in ballot order). It also says whether
+  capture is open.
+
 ## API contract
 
 `docs/openapi.yaml` is the contract web and mobile build against, and a test keeps it in
