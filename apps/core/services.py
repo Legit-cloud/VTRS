@@ -5,6 +5,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
+from importlib import import_module
 from typing import Any
 from uuid import UUID
 
@@ -44,7 +45,22 @@ def _dispatch(event: OutboxEvent) -> None:
         logger.info("outbox_no_route", extra={"topic": event.topic})
         return
     task_name, queue = route
-    current_app.send_task(task_name, args=[str(event.id), event.topic, event.payload], queue=queue)
+    args = [str(event.id), event.topic, event.payload]
+    if current_app.conf.task_always_eager and _load_task(task_name):
+        # Tests and local scripts: run in-process (send_task would only queue a message).
+        current_app.tasks[task_name].apply(args=args, throw=True)
+        return
+    current_app.send_task(task_name, args=args, queue=queue)
+
+
+def _load_task(task_name: str) -> bool:
+    """Task modules load lazily in web processes; import the handler's module if it exists."""
+    if task_name not in current_app.tasks:
+        try:
+            import_module(task_name.rsplit(".", 1)[0])
+        except ModuleNotFoundError:
+            return False
+    return task_name in current_app.tasks
 
 
 def _publish_quietly(event_id: UUID) -> None:

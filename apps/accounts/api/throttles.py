@@ -62,3 +62,16 @@ class InvitationIpThrottle(_PerIp):
 
 class RefreshIpThrottle(_PerIp):
     scope = "refresh_ip"
+
+
+class SubmitThrottle(_SettingsRateThrottle):
+    """Per agent (one active device each): enough to flush a 50-item backlog in a minute."""
+
+    scope = "submit_device"
+
+    def get_cache_key(self, request: Request, view: Any) -> str | None:
+        user = getattr(request, "user", None)
+        ident = getattr(user, "id", None)
+        if ident is None:
+            return None
+        return self.cache_format % {"scope": self.scope, "ident": ident}

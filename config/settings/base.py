@@ -68,6 +68,9 @@ INSTALLED_APPS = [
     "apps.geography",
     "apps.elections",
     "apps.assignments",
+    "apps.results",
+    "apps.evidence",
+    "apps.anomalies",
 ]
 
 MIDDLEWARE = [
@@ -151,6 +154,17 @@ CELERY_BEAT_SCHEDULE = {
     "core.purge_expired": {"task": "apps.core.tasks.purge_expired", "schedule": 3600.0},
     "audit.seal": {"task": "apps.audit.tasks.seal_audit_events", "schedule": 5.0},
     "audit.partitions": {"task": "apps.audit.tasks.ensure_audit_partitions", "schedule": 86400.0},
+    "evidence.reconcile_uploads": {
+        "task": "apps.evidence.tasks.reconcile_pending_uploads",
+        "schedule": 300.0,
+    },
+    "evidence.partitions": {
+        "task": "apps.evidence.tasks.ensure_custody_partitions",
+        "schedule": 86400.0,
+    },
+}
+CELERY_TASK_ROUTES = {
+    "apps.evidence.tasks.verify_evidence": {"queue": "evidence"},
 }
 VTRS_CELERY_QUEUES = (
     "ingest",
@@ -242,7 +256,22 @@ VTRS_MAX_AGENTS_PER_POLLING_UNIT = int(env("VTRS_MAX_AGENTS_PER_POLLING_UNIT", "
 VTRS_INVITATION_LINK = env("VTRS_INVITATION_LINK", "vtrs://invite?token={token}")
 VTRS_MIN_APP_VERSION = env("VTRS_MIN_APP_VERSION", "1.0.0")
 
+# Evidence storage (spec section 12): "s3" (RustFS locally, any S3-compatible store) or "local".
+VTRS_EVIDENCE_STORAGE = env("VTRS_EVIDENCE_STORAGE", "s3")
+VTRS_EVIDENCE_LOCAL_ROOT = env("VTRS_EVIDENCE_LOCAL_ROOT", str(BASE_DIR / "var" / "evidence"))
+VTRS_S3_ENDPOINT_URL = env("VTRS_S3_ENDPOINT_URL", "")
+VTRS_S3_BUCKET = env("VTRS_S3_BUCKET", "vtrs-evidence")
+VTRS_S3_REGION = env("VTRS_S3_REGION", "us-east-1")
+VTRS_S3_ACCESS_KEY = env("VTRS_S3_ACCESS_KEY", "")
+VTRS_S3_SECRET_KEY = env("VTRS_S3_SECRET_KEY", "")
+VTRS_EVIDENCE_UPLOAD_URL_SECONDS = 900
+VTRS_EVIDENCE_DOWNLOAD_URL_SECONDS = 60
+VTRS_EVIDENCE_MAX_PIXELS = 40_000_000
+# Open decision: production malware scanner (ClamAV or managed). Prod refuses this stand-in.
+VTRS_MALWARE_SCANNER = env("VTRS_MALWARE_SCANNER", "apps.evidence.scanning.EicarOnlyScanner")
+
 VTRS_THROTTLE_RATES = {
+    "submit_device": "60/min",
     "login_ip": "5/min",
     "login_account": "5/min",
     "otp_ip": "10/min",
@@ -257,7 +286,10 @@ VTRS_FEATURE_FACE_VERIFICATION = False  # FR-6.1.3, PB-08, SEC-09
 VTRS_FEATURE_WHATSAPP_ALERTS = False  # FR-6.12.3
 
 # Outbox topic -> (celery task name, queue). Topics without a route are marked published.
-VTRS_OUTBOX_ROUTES: dict[str, tuple[str, str]] = {}
+# result.version_accepted gains its consumers (rollups, anomaly rules) in M4/M5.
+VTRS_OUTBOX_ROUTES: dict[str, tuple[str, str]] = {
+    "evidence.uploaded": ("apps.evidence.tasks.verify_evidence", "evidence"),
+}
 VTRS_OUTBOX_RELAY_MIN_AGE_SECONDS = 5
 VTRS_OUTBOX_RETENTION_DAYS = 7
 VTRS_IDEMPOTENCY_TTL_HOURS = 48

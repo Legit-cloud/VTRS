@@ -723,6 +723,72 @@ paths:
               schema:
                 $ref: '#/components/schemas/Election'
           description: ''
+  /api/v1/evidence/{evidence_id}/complete:
+    post:
+      operationId: evidence_complete_create
+      parameters:
+      - in: path
+        name: evidence_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - evidence
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceState'
+          description: ''
+  /api/v1/evidence/{evidence_id}/download-url:
+    post:
+      operationId: evidence_download_url_create
+      description: A 60-second download link. Issuing it is recorded in the file's
+        chain of custody.
+      parameters:
+      - in: path
+        name: evidence_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - evidence
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrl'
+          description: ''
+  /api/v1/evidence/uploads:
+    post:
+      operationId: evidence_uploads_create
+      description: Request a presigned upload for a photo of your own submission (or
+        a fresh URL).
+      tags:
+      - evidence
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRequestRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidenceUploadEntry'
+          description: ''
   /api/v1/geography/lgas:
     get:
       operationId: geography_lgas_list
@@ -925,6 +991,52 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/MyAssignment'
+          description: ''
+  /api/v1/sync/status:
+    get:
+      operationId: sync_status_list
+      parameters:
+      - in: query
+        name: ids
+        schema:
+          type: string
+        description: Comma-separated version ids (max 50)
+      tags:
+      - sync
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SyncStatus'
+          description: ''
+  /api/v1/sync/submissions:
+    post:
+      operationId: sync_submissions_create
+      description: |-
+        Batch of up to 10 offline submissions. Always 200 with one outcome per item: SYNCED,
+        REQUIRES_REVIEW (accepted, flagged) or FAILED (do not retry; correct as a new version).
+        Retrying an item with the same version_id is safe and returns `replayed: true`.
+      tags:
+      - sync
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmissionBatchRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionResult'
           description: ''
   /api/v1/time:
     get:
@@ -1489,6 +1601,16 @@ components:
       required:
       - app_version
       - platform
+    DownloadUrl:
+      type: object
+      properties:
+        url:
+          type: string
+        expires_in:
+          type: integer
+      required:
+      - expires_in
+      - url
     Election:
       type: object
       properties:
@@ -1601,6 +1723,59 @@ components:
         * `LIVE` - LIVE
         * `CLOSED` - CLOSED
         * `RECONCILED` - RECONCILED
+    EvidenceState:
+      type: object
+      properties:
+        evidence_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+      required:
+      - evidence_id
+      - status
+    EvidenceStatus:
+      type: object
+      properties:
+        evidence_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+      required:
+      - evidence_id
+      - status
+    EvidenceUploadEntry:
+      type: object
+      properties:
+        evidence_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        upload:
+          $ref: '#/components/schemas/EvidenceUploadSchema'
+      required:
+      - evidence_id
+      - status
+    EvidenceUploadSchema:
+      type: object
+      properties:
+        method:
+          type: string
+        url:
+          type: string
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        expires_in:
+          type: integer
+      required:
+      - expires_in
+      - headers
+      - method
+      - url
     GrantedPermissionsEnum:
       enum:
       - elections.configure
@@ -1763,6 +1938,16 @@ components:
         * `STATE` - STATE
         * `LGA` - LGA
         * `WARD` - WARD
+    KindEnum:
+      enum:
+      - EC8A
+      - EC8B
+      - EC8C
+      type: string
+      description: |-
+        * `EC8A` - EC8A
+        * `EC8B` - EC8B
+        * `EC8C` - EC8C
     Lga:
       type: object
       properties:
@@ -1966,6 +2151,16 @@ components:
       required:
       - code
       - mfa_token
+    MimeEnum:
+      enum:
+      - image/jpeg
+      - image/png
+      - image/webp
+      type: string
+      description: |-
+        * `image/jpeg` - image/jpeg
+        * `image/png` - image/png
+        * `image/webp` - image/webp
     MyAssignment:
       type: object
       properties:
@@ -2467,6 +2662,109 @@ components:
           type: string
       required:
       - status
+    SubmissionBatchRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          maxItems: 10
+          minItems: 1
+      required:
+      - items
+    SubmissionOutcome:
+      type: object
+      properties:
+        version_id:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          $ref: '#/components/schemas/SubmissionOutcomeStatusEnum'
+        http_status:
+          type: integer
+        replayed:
+          type: boolean
+        code:
+          type: string
+        detail:
+          type: string
+        version_no:
+          type: integer
+        state:
+          type: string
+        is_head:
+          type: boolean
+        flags:
+          type: array
+          items:
+            type: string
+        evidence_uploads:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceUploadEntry'
+        errors: {}
+      required:
+      - http_status
+      - replayed
+      - status
+      - version_id
+    SubmissionOutcomeStatusEnum:
+      enum:
+      - SYNCED
+      - REQUIRES_REVIEW
+      - FAILED
+      type: string
+      description: |-
+        * `SYNCED` - SYNCED
+        * `REQUIRES_REVIEW` - REQUIRES_REVIEW
+        * `FAILED` - FAILED
+    SubmissionResult:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SubmissionOutcome'
+      required:
+      - items
+    SyncStatus:
+      type: object
+      properties:
+        version_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/SyncStatusStatusEnum'
+        state:
+          type: string
+        version_no:
+          type: integer
+        is_head:
+          type: boolean
+        server_received_at:
+          type: string
+          format: date-time
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceStatus'
+      required:
+      - status
+      - version_id
+    SyncStatusStatusEnum:
+      enum:
+      - SYNCED
+      - REQUIRES_REVIEW
+      - UNKNOWN
+      type: string
+      description: |-
+        * `SYNCED` - SYNCED
+        * `REQUIRES_REVIEW` - REQUIRES_REVIEW
+        * `UNKNOWN` - UNKNOWN
     ToEnum:
       enum:
       - DRAFT
@@ -2538,6 +2836,35 @@ components:
           $ref: '#/components/schemas/ToEnum'
       required:
       - to
+    UploadRequestRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        evidence_id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/KindEnum'
+        size:
+          type: integer
+          maximum: 8388608
+          minimum: 1
+        mime:
+          $ref: '#/components/schemas/MimeEnum'
+        sha256:
+          type: string
+          minLength: 1
+          pattern: ^[0-9a-fA-F]{64}$
+        version_id:
+          type: string
+          format: uuid
+      required:
+      - evidence_id
+      - kind
+      - mime
+      - sha256
+      - size
+      - version_id
     Ward:
       type: object
       properties:

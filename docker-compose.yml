@@ -34,17 +34,17 @@ services:
     ports:
       - "6381:6379"
 
-  minio:
-    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
-    command: ["server", "/data", "--console-address", ":9001"]
+  # S3-compatible object storage for evidence. RustFS (Apache-2.0) replaces MinIO, whose
+  # images are no longer published; it enforces x-amz-checksum-sha256 on presigned uploads.
+  objectstore:
+    image: rustfs/rustfs:1.0.1@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-vtrs-dev}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-vtrs-dev-password}
+      RUSTFS_ACCESS_KEY: ${OBJECTSTORE_ACCESS_KEY:-vtrs-dev}
+      RUSTFS_SECRET_KEY: ${OBJECTSTORE_SECRET_KEY:-vtrs-dev-password}
     ports:
       - "9000:9000"
-      - "9001:9001"
     volumes:
-      - miniodata:/data
+      - objectdata:/data
 
   mailpit:
     image: axllent/mailpit:v1.24
@@ -54,4 +54,4 @@ services:
 
 volumes:
   pgdata:
-  miniodata:
+  objectdata:

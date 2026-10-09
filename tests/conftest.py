@@ -39,7 +39,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO vtrs_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO vtrs_app;
 """
 # Migrations that narrow the app role's grants, re-applied after the blanket grant above.
-RESTRICTING_MIGRATIONS = ["apps.audit.migrations.0002_audit_storage"]
+RESTRICTING_MIGRATIONS = [
+    "apps.audit.migrations.0002_audit_storage",
+    "apps.results.migrations.0002_integrity",
+    "apps.evidence.migrations.0003_custody_and_rls",
+]
 
 
 @pytest.fixture(scope="session")
@@ -73,6 +77,11 @@ def as_superuser():
             cursor.execute("RESET ROLE")
 
     return _switch
+
+
+@pytest.fixture(autouse=True)
+def _evidence_root(settings, tmp_path):
+    settings.VTRS_EVIDENCE_LOCAL_ROOT = str(tmp_path / "evidence")
 
 
 @pytest.fixture(autouse=True)
