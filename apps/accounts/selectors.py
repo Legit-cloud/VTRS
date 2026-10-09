@@ -9,7 +9,7 @@ from apps.core.authz import AUTHENTICATED, authorize
 from apps.core.domain.actor import Actor
 from apps.core.domain.permissions import Perm
 
-from .models import Device, Invitation, Membership, MembershipStatus
+from .models import Device, DeviceStatus, Invitation, Membership, MembershipStatus
 
 
 def members_for(actor: Actor) -> QuerySet[Membership]:
@@ -26,6 +26,18 @@ def member_for(actor: Actor, user_id: UUID) -> Membership:
     if membership is None:
         raise NotFound()
     return membership
+
+
+def session_device(actor: Actor) -> Device | None:
+    """The active device this session was opened on (agents sign in from one device)."""
+    authorize(actor, AUTHENTICATED)
+    if actor.session_id is None:
+        return None
+    return Device.objects.filter(
+        session__id=actor.session_id,
+        session__user_id=actor.user_id,
+        status=DeviceStatus.ACTIVE,
+    ).first()
 
 
 def agent_for(actor: Actor, user_id: UUID) -> Membership:

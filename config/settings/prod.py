@@ -8,6 +8,10 @@ if VTRS_BOT_CHALLENGE_PROVIDER == "disabled":
     raise ImproperlyConfigured("Production needs a bot challenge provider (anti SMS-pumping)")
 if VTRS_SMS_PROVIDER.endswith("FakeSmsProvider"):
     raise ImproperlyConfigured("Production cannot use the fake SMS provider")
+if VTRS_MALWARE_SCANNER.endswith("EicarOnlyScanner"):
+    raise ImproperlyConfigured("Production needs a real malware scanner for evidence")
+if VTRS_EVIDENCE_STORAGE != "s3":
+    raise ImproperlyConfigured("Production evidence must live in private object storage")
 
 SECURE_SSL_REDIRECT = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

@@ -10,6 +10,7 @@ os.environ.setdefault(
 os.environ.setdefault("REDIS_CACHE_URL", "redis://localhost:6379/0")
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("VTRS_EXPOSE_SCHEMA", "true")
+os.environ.setdefault("VTRS_EVIDENCE_STORAGE", "local")
 apply_defaults()
 
 from .base import *

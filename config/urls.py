@@ -6,6 +6,8 @@ urlpatterns: list[URLPattern | URLResolver] = [
     path("api/v1/", include("apps.accounts.api.urls")),
     path("api/v1/", include("apps.elections.api.urls")),
     path("api/v1/", include("apps.assignments.api.urls")),
+    path("api/v1/", include("apps.results.api.urls")),
+    path("api/v1/", include("apps.evidence.api.urls")),
     path("api/v1/geography/", include("apps.geography.api.urls")),
 ]
 

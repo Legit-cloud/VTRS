@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 from django.urls import URLPattern, URLResolver, get_resolver, reverse
+from django.utils import timezone
 
 from apps.accounts.models import Device, Invitation
 from apps.assignments.models import AgentAssignment
@@ -24,9 +25,11 @@ from apps.core.domain.permissions import Perm, Role, effective_permissions
 from apps.core.ids import uuid7
 from apps.core.rls import system_context
 from apps.elections.models import Candidate, Contest, Election
+from apps.evidence.models import EvidenceFile
 from apps.geography.domain.synthetic import synthetic_master_data
 from apps.geography.models import Lga, PollingUnit, State, Ward
 from apps.geography.services import import_master_data
+from apps.results.models import PuResult, ResultVersion
 
 pytestmark = pytest.mark.django_db
 
@@ -184,6 +187,67 @@ def _if_match(t: Any) -> dict:
     return {"HTTP_IF_MATCH": f'"{t.row_version}"'}
 
 
+def _evidence(w: World, relation: str) -> EvidenceFile:
+    """A verified photo uploaded by *another* agent at the relation's polling unit."""
+    pu = w.pu(relation)
+    org = w.org_for(relation)
+    uploader = w.make_member(Role.PU_AGENT, scope_ids=[pu.id], organization=org)
+    election = _election(w, relation)
+    with system_context():
+        contest = election.contests.get()
+        pu_result = PuResult.objects.create(
+            organization=org,
+            election=election,
+            contest=contest,
+            polling_unit=pu,
+            ward=pu.ward,
+            lga=pu.lga,
+            state=w.state,
+        )
+        version = ResultVersion.objects.create(
+            id=uuid7(),
+            organization=org,
+            pu_result=pu_result,
+            contest=contest,
+            polling_unit=pu,
+            ward=pu.ward,
+            lga=pu.lga,
+            version_no=1,
+            valid=10,
+            device_captured_at=timezone.now(),
+            server_received_at=timezone.now(),
+            submitted_by=uploader.user,
+            app_version="1.0.0",
+            config_version=1,
+            payload_hash="0" * 64,
+            state="SUBMITTED",
+        )
+        evidence_id = uuid7()
+        return EvidenceFile.objects.create(
+            id=evidence_id,
+            organization=org,
+            result_version=version,
+            polling_unit=pu,
+            ward=pu.ward,
+            lga=pu.lga,
+            uploaded_by=uploader.user,
+            kind="EC8A",
+            object_key=f"org/{org.id}/{evidence_id}.jpg",
+            size=10,
+            mime="image/jpeg",
+            sha256_client="0" * 64,
+            status="VERIFIED",
+        )
+
+
+def _admin_in_org(role: Role, relation: str) -> bool:
+    return role is Role.PARTY_ADMIN and relation != "other_org"
+
+
+def _never(role: Role, relation: str) -> bool:
+    return False
+
+
 @dataclass(frozen=True)
 class Endpoint:
     route: str
@@ -193,7 +257,11 @@ class Endpoint:
     kwargs: Callable[[Any], dict] = lambda t: {}
     body: Callable[[Any, World], dict] = lambda t, w: {}
     headers: Callable[[Any], dict] = lambda t: {}
+    query: dict = None  # type: ignore[assignment]
     ok: int = 200
+    # For endpoints with their own visibility rules (e.g. agents see only their own uploads):
+    # (role, relation) -> visible. Roles that hold the permission but can't see get 404.
+    visible: Callable[[Role, str], bool] | None = None
 
 
 _user = {"kwargs": lambda t: {"user_id": t.user.id}}
@@ -347,6 +415,40 @@ ENDPOINTS = [
         kwargs=lambda t: {"assignment_id": t.id},
     ),
     Endpoint("my-assignments", "get", Perm.RESULTS_SUBMIT),
+    # results and evidence
+    Endpoint("sync-submissions", "post", Perm.RESULTS_SUBMIT, body=lambda t, w: {"items": [{}]}),
+    Endpoint("sync-status", "get", Perm.RESULTS_SUBMIT, query={"ids": str(uuid7())}),
+    Endpoint(
+        "evidence-uploads",
+        "post",
+        Perm.RESULTS_SUBMIT,
+        _evidence,
+        body=lambda t, w: {
+            "version_id": str(t.result_version_id),
+            "evidence_id": str(uuid7()),
+            "kind": "EC8A",
+            "size": 10,
+            "mime": "image/jpeg",
+            "sha256": "0" * 64,
+        },
+        visible=_never,  # someone else's submission
+    ),
+    Endpoint(
+        "evidence-complete",
+        "post",
+        Perm.RESULTS_SUBMIT,
+        _evidence,
+        kwargs=lambda t: {"evidence_id": t.id},
+        visible=_never,  # someone else's upload
+    ),
+    Endpoint(
+        "evidence-download-url",
+        "post",
+        Perm.EVIDENCE_VIEW,
+        _evidence,
+        kwargs=lambda t: {"evidence_id": t.id},
+        visible=_admin_in_org,  # agents hold evidence.view only for their own uploads
+    ),
 ]
 
 # Self-service routes that act only on the caller's own session; covered by their own tests.
@@ -365,6 +467,8 @@ def _has(role: Role, perm: Perm | str) -> bool:
 def _expected(endpoint: Endpoint, role: Role, relation: str) -> int:
     if not _has(role, endpoint.perm):
         return 403
+    if endpoint.visible is not None:
+        return endpoint.ok if endpoint.visible(role, relation) else 404
     if relation == "other_org":
         return 404
     return endpoint.ok
@@ -387,7 +491,7 @@ def test_matrix(world, client_as, endpoint, role, relation):
     call = getattr(client, endpoint.method)
     headers = endpoint.headers(target) if target is not None else {}
     if endpoint.method in {"get", "delete"}:
-        response = call(url, **headers)
+        response = call(url, endpoint.query or {}, **headers)
     else:
         body = endpoint.body(target, world) if _has(role, endpoint.perm) else {}
         response = call(url, body, format="json", HTTP_IDEMPOTENCY_KEY=str(uuid7()), **headers)
@@ -449,6 +553,7 @@ def _dummy_kwargs(endpoint: Endpoint) -> dict:
         "contest_id",
         "candidate_id",
         "assignment_id",
+        "evidence_id",
     }
     route = next(
         p for p in _flatten(get_resolver().url_patterns) if p.name == endpoint.route
