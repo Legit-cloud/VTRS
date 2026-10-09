@@ -1,0 +1,49 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["**/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "DJ", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"config/settings/*.py" = ["F403", "F405"]
+"tests/**/*.py" = ["S101", "S105", "S106"]
+# Django Meta lists and internal tables without a display name.
+"apps/**/models.py" = ["RUF012", "DJ008"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers"
+markers = ["slow: full-size data sets"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+strict_optional = true
+ignore_missing_imports = true
+exclude = ["migrations/"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"
+
+# Layering (spec section 5): within an app, imports only flow downward.
+# api -> services -> selectors -> models -> domain. Layers are optional so new apps
+# can grow into them; modules outside the layers (tasks, management commands) are free.
+[tool.importlinter]
+root_packages = ["apps"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "App layering"
+type = "layers"
+layers = ["(api)", "(services)", "(selectors)", "(models)", "(domain)"]
+containers = ["apps.core", "apps.audit", "apps.accounts", "apps.geography"]
+
+[[tool.importlinter.contracts]]
+name = "Domain code is pure Python"
+type = "forbidden"
+source_modules = ["apps.core.domain", "apps.audit.domain", "apps.geography.domain"]
+forbidden_modules = ["django", "rest_framework", "celery", "psycopg"]
