@@ -2042,6 +2042,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/Member'
           description: ''
+  /api/v1/webhooks/twilio/status:
+    post:
+      operationId: webhooks_twilio_status_create
+      description: |-
+        Twilio delivery receipts. Public, so the signature is the only gate: anything that does
+        not verify is refused before it can touch a delivery record.
+      tags:
+      - webhooks
+      responses:
+        '204':
+          description: No response body
 components:
   schemas:
     AccessToken:

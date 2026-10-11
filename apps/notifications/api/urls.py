@@ -20,4 +20,9 @@ urlpatterns = [
         name="my-notification-read",
     ),
     path("me/push-token", views.PushTokenView.as_view(), name="my-push-token"),
+    path(
+        "webhooks/twilio/status",
+        views.TwilioStatusWebhookView.as_view(),
+        name="twilio-status-webhook",
+    ),
 ]

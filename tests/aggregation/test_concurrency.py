@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User, UserStatus
 from apps.aggregation import services
-from apps.aggregation.models import Rollup, RollupVote
+from apps.aggregation.models import Rollup, RollupDirty, RollupVote
 from apps.core.crypto import blind_index
 from apps.core.ids import uuid7
 from apps.elections.models import Candidate, Contest, Election
@@ -142,3 +142,37 @@ def test_concurrent_recomputes_converge():
         if problems:
             failures.append(f"round {round_no}: {problems[:3]}")
     assert not failures, failures
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_busy_contest_is_not_waited_on_and_its_marks_are_kept():
+    org, contest = _seed()
+    services.rebuild_contest(organization_id=org.id, contest_id=contest.id)
+    ward = Ward.objects.order_by("inec_code").first()
+    held, release = threading.Event(), threading.Event()
+
+    def holder():
+        try:
+            with transaction.atomic():
+                services._lock_contest(contest.id)
+                held.set()
+                release.wait(timeout=15)
+        finally:
+            connection.close()
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    assert held.wait(timeout=10)
+    try:
+        services.mark_dirty(organization_id=org.id, contest_id=contest.id, ward_id=ward.id)
+        busy = services.drain_contest(organization_id=org.id, contest_id=contest.id, wait=False)
+        assert busy == {"busy": True}
+        with transaction.atomic():
+            assert RollupDirty.objects.count() == 1  # still there for whoever drains next
+    finally:
+        release.set()
+        thread.join()
+    done = services.drain_contest(organization_id=org.id, contest_id=contest.id, wait=False)
+    assert done["wards_refreshed"] == 1
+    with transaction.atomic():
+        assert RollupDirty.objects.count() == 0

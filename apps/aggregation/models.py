@@ -115,3 +115,26 @@ class ReconciliationSnapshot(models.Model):
 
     class Meta:
         db_table = "reconciliation_snapshot"
+
+
+class RollupDirty(models.Model):
+    """A ward whose figures changed and whose rollups have not been refreshed yet.
+
+    Events only mark; whichever worker holds the contest's lock drains every mark that has piled
+    up and refreshes each affected ward, LGA and the state once. Under a burst the number of
+    refreshes follows the number of drains, not the number of results."""
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    organization = models.ForeignKey(
+        "organizations.Organization", on_delete=models.PROTECT, related_name="+"
+    )
+    contest = models.ForeignKey("elections.Contest", on_delete=models.CASCADE, related_name="+")
+    ward = models.ForeignKey("geography.Ward", on_delete=models.CASCADE, related_name="+")
+    marked_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "rollup_dirty"
+        constraints = [
+            models.UniqueConstraint(fields=["contest", "ward"], name="rollup_dirty_one_per_ward")
+        ]
+        indexes = [models.Index(fields=["marked_at"], name="rollup_dirty_age_idx")]

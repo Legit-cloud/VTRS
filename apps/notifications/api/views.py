@@ -1,10 +1,13 @@
+import hmac
 from typing import Any
 from uuid import UUID
 
+from django.conf import settings
 from django.db.models import QuerySet
 from drf_spectacular.utils import OpenApiParameter, extend_schema
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.generics import ListAPIView
+from rest_framework.parsers import FormParser
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,6 +17,7 @@ from apps.core.authz import AUTHENTICATED
 from apps.core.domain.permissions import Perm
 from apps.core.pagination import KeysetPagination
 from apps.notifications import selectors, services
+from apps.notifications.providers import twilio_signature
 
 from . import serializers as s
 
@@ -109,4 +113,36 @@ class PushTokenView(APIView):
         data = s.PushTokenSerializer(data=request.data)
         data.is_valid(raise_exception=True)
         services.register_push_token(request.actor, data.validated_data["token"])  # type: ignore[attr-defined]
+        return Response(status=204)
+
+
+class TwilioStatusWebhookView(APIView):
+    """Twilio delivery receipts. Public, so the signature is the only gate: anything that does
+    not verify is refused before it can touch a delivery record."""
+
+    public = True
+    authentication_classes = ()
+    parser_classes = (FormParser,)
+
+    @extend_schema(request=None, responses={204: None})
+    def post(self, request: Request) -> Response:
+        token = settings.VTRS_TWILIO_AUTH_TOKEN
+        base = settings.VTRS_PUBLIC_BASE_URL.rstrip("/")
+        if not (token and base):
+            raise PermissionDenied()
+        params = {key: str(value) for key, value in request.POST.items()}
+        expected = twilio_signature(base + request.path, params, token)
+        supplied = request.headers.get("X-Twilio-Signature", "")
+        if not hmac.compare_digest(expected, supplied):
+            raise PermissionDenied()
+        status = params.get("MessageStatus", "")
+        message_id = params.get("MessageSid", "")
+        if message_id and status in {"delivered", "read", "undelivered", "failed"}:
+            channel = "WHATSAPP" if params.get("To", "").startswith("whatsapp:") else "SMS"
+            services.record_receipt(
+                channel=channel,
+                provider_message_id=message_id,
+                delivered=status in {"delivered", "read"},
+                detail=params.get("ErrorCode", "") or status,
+            )
         return Response(status=204)

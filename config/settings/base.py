@@ -52,6 +52,8 @@ def database_from_url(url: str) -> dict[str, Any]:
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = False
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")
+# Exact origins of the web portal (https://portal.example.org), for CORS and WebSockets.
+VTRS_CORS_ALLOWED_ORIGINS = env_list("VTRS_CORS_ALLOWED_ORIGINS")
 
 INSTALLED_APPS = [
     "daphne",
@@ -81,6 +83,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "apps.core.middleware.ApiBoundaryMiddleware",
     "apps.core.middleware.RequestContextMiddleware",
     "apps.core.middleware.MinimumAppVersionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -165,7 +168,11 @@ CHANNEL_LAYERS = {
 CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 3600}
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Each worker slot reserves four messages. With one, a worker that has handed its slots to
+# running tasks stops reading until a polling tick, and short tasks queue up behind that gap
+# (measured: 300 tasks took 62 s at 1 and 3.7 s at 4). Give the `reports` queue its own worker
+# with `--prefetch-multiplier=1`, so a long export never holds messages other workers could run.
+CELERY_WORKER_PREFETCH_MULTIPLIER = 4
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_TASK_DEFAULT_QUEUE = "default"
 CELERY_TASK_SOFT_TIME_LIMIT = 60
@@ -189,6 +196,14 @@ CELERY_BEAT_SCHEDULE = {
     },
     "anomalies.missing_evidence": {
         "task": "apps.anomalies.tasks.check_missing_evidence",
+        "schedule": 300.0,
+    },
+    "aggregation.drain": {
+        "task": "apps.aggregation.tasks.drain_stale_marks",
+        "schedule": 10.0,
+    },
+    "aggregation.self_heal": {
+        "task": "apps.aggregation.tasks.self_heal_rollups",
         "schedule": 300.0,
     },
     "reports.purge": {
@@ -289,6 +304,21 @@ VTRS_SMS_ALLOWED_PREFIXES = env_list("VTRS_SMS_ALLOWED_PREFIXES", "+234")
 VTRS_SMS_PROVIDER = env("VTRS_SMS_PROVIDER")
 # Open decision: bot challenge provider. "disabled" is refused by production settings.
 VTRS_BOT_CHALLENGE_PROVIDER = env("VTRS_BOT_CHALLENGE_PROVIDER", "disabled")
+# turnstile, hcaptcha or recaptcha: the secret key from the provider's console.
+VTRS_BOT_CHALLENGE_SECRET = env("VTRS_BOT_CHALLENGE_SECRET", "")
+
+# Public base URL of this API (used to tell providers where to send delivery receipts).
+VTRS_PUBLIC_BASE_URL = env("VTRS_PUBLIC_BASE_URL", "")
+
+# Twilio (SMS and WhatsApp). Used when the provider settings name the Twilio adapters.
+VTRS_TWILIO_ACCOUNT_SID = env("VTRS_TWILIO_ACCOUNT_SID", "")
+VTRS_TWILIO_AUTH_TOKEN = env("VTRS_TWILIO_AUTH_TOKEN", "")
+VTRS_TWILIO_SMS_FROM = env("VTRS_TWILIO_SMS_FROM", "")
+VTRS_TWILIO_MESSAGING_SERVICE_SID = env("VTRS_TWILIO_MESSAGING_SERVICE_SID", "")
+VTRS_TWILIO_WHATSAPP_FROM = env("VTRS_TWILIO_WHATSAPP_FROM", "")
+
+# Firebase Cloud Messaging: the service account JSON, as the secrets vault holds it.
+VTRS_FCM_SERVICE_ACCOUNT_JSON = env("VTRS_FCM_SERVICE_ACCOUNT_JSON", "")
 
 # {"kid": "<base64 32-byte key>"}; the active key encrypts, all keys decrypt.
 VTRS_FIELD_ENCRYPTION_KEYS: dict[str, str] = json.loads(env("VTRS_FIELD_ENCRYPTION_KEYS"))
@@ -328,6 +358,9 @@ VTRS_RETENTION_YEARS = {"evidence": 7, "results": 10, "audit": 10, "notification
 VTRS_EVIDENCE_MAX_PIXELS = 40_000_000
 # Open decision: production malware scanner (ClamAV or managed). Prod refuses this stand-in.
 VTRS_MALWARE_SCANNER = env("VTRS_MALWARE_SCANNER", "apps.evidence.scanning.EicarOnlyScanner")
+VTRS_CLAMD_HOST = env("VTRS_CLAMD_HOST", "localhost")
+VTRS_CLAMD_PORT = int(env("VTRS_CLAMD_PORT", "3310"))
+VTRS_CLAMD_TIMEOUT_SECONDS = float(env("VTRS_CLAMD_TIMEOUT_SECONDS", "20"))
 
 VTRS_THROTTLE_RATES = {
     "submit_device": "60/min",

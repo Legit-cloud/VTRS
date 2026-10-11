@@ -249,6 +249,28 @@ reconciliation (`VTRS_RETENTION_YEARS`). Nothing is deleted automatically.
 with legal sign-off can act on it. Evidence is never purged while an election is not
 RECONCILED.
 
+## Providers, hardening and operations
+
+- **Providers (PB-07).** Select by dotted path: `VTRS_SMS_PROVIDER` and
+  `VTRS_WHATSAPP_PROVIDER` (`TwilioSmsProvider`, `TwilioWhatsAppProvider`; delivery receipts
+  arrive on `POST /api/v1/webhooks/twilio/status`, verified by signature), `VTRS_PUSH_PROVIDER`
+  (`FcmPushProvider`, HTTP v1 with a service account), `VTRS_BOT_CHALLENGE_PROVIDER`
+  (`turnstile`, `hcaptcha` or `recaptcha`, fail-closed) and `VTRS_MALWARE_SCANNER`
+  (`ClamAvScanner`, clamd over TCP; a scan that cannot finish is an error, never "clean").
+  Every outbound call goes through one HTTP seam (https only, timeouts, no redirects).
+- **Boundary.** CORS is an exact-origin allowlist (`VTRS_CORS_ALLOWED_ORIGINS`), also used for
+  WebSocket origins; API responses are `no-store` with a restrictive CSP; oversized bodies are
+  413 and NUL characters in query strings 400, never 500.
+- **Dependencies.** `pip-audit` is clean at the pinned ranges. Re-run it (and `bandit -r apps
+  config`) before each release.
+- **Workers.** Celery's Django fixup is disabled and the prefetch multiplier is 4; see
+  `config/celery.py` and `docs/runbook.md` for why and how to run them.
+- **Key rotation.** `python manage.py reencrypt_fields [--dry-run]` re-seals encrypted columns
+  onto the active key after rotating `VTRS_FIELD_ENCRYPTION_KEYS`.
+- **Simulation and load.** `VTRS_ALLOW_SIMULATION=1 python manage.py simulate_election_day
+  --agents 1000` (development or staging only).
+- **Documents.** `docs/threat-model.md`, `docs/runbook.md` and `docs/pilot-readiness.md`.
+
 ## API contract
 
 `docs/openapi.yaml` is the contract web and mobile build against, and a test keeps it in

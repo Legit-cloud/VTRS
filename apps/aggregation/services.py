@@ -10,6 +10,7 @@ workers never interleave a read of a child row with a write of its parent.
 
 import logging
 from collections.abc import Iterable, Mapping
+from datetime import timedelta
 from typing import Any, cast
 from uuid import UUID
 
@@ -25,6 +26,7 @@ from apps.core.authz import authorize
 from apps.core.domain.actor import Actor
 from apps.core.domain.canonical import payload_hash, to_json_compatible
 from apps.core.domain.permissions import Perm
+from apps.core.rls import system_context
 from apps.elections import selectors as elections
 from apps.elections.models import Candidate, Contest, Election
 from apps.geography.models import PollingUnit, Ward
@@ -34,7 +36,7 @@ from apps.results.models import ResultVersion, VoteLine
 from . import realtime
 from .domain.tally import RollupLevel
 from .errors import ReconciliationBlocked, RollupsDrifted
-from .models import ReconciliationSnapshot, Rollup, RollupVote
+from .models import ReconciliationSnapshot, Rollup, RollupDirty, RollupVote
 
 logger = logging.getLogger("vtrs.aggregation")
 
@@ -53,11 +55,14 @@ FIGURES = (
 )
 
 
-def _lock_contest(contest_id: UUID) -> None:
+def _lock_contest(contest_id: UUID, *, wait: bool = True) -> bool:
+    """Take the contest's lock for this transaction. Returns False (without waiting) when
+    `wait` is off and somebody else holds it."""
+    function = "pg_advisory_xact_lock" if wait else "pg_try_advisory_xact_lock"
     with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", [f"rollup:{contest_id}"]
-        )
+        cursor.execute(f"SELECT {function}(hashtextextended(%s, 0))", [f"rollup:{contest_id}"])
+        row = cursor.fetchone()
+    return True if wait else bool(row and row[0])
 
 
 def _covered_wards(contest: Contest) -> QuerySet[Ward]:
@@ -243,9 +248,14 @@ def _compute_state(contest: Contest, candidate_ids: list[UUID], now: Any) -> Rol
 # --- Entry points -----------------------------------------------------------------------------
 
 
-def _open(organization_id: UUID, contest_id: UUID) -> tuple[Contest, list[UUID]] | None:
+def _open(
+    organization_id: UUID, contest_id: UUID, *, wait: bool = True
+) -> tuple[Contest, list[UUID]] | None:
+    """Set the tenant, take the lock and load the contest. None means "nothing to do":
+    the contest is gone, or (with `wait` off) another worker is already refreshing it."""
     rls.set_tenant(organization_id)
-    _lock_contest(contest_id)
+    if not _lock_contest(contest_id, wait=wait):
+        return None
     contest = Contest.objects.select_related("election").filter(id=contest_id).first()
     if contest is None:
         return None
@@ -340,6 +350,7 @@ def _rebuild(contest: Contest, candidate_ids: list[UUID]) -> int:
     ]
     planned.append((RollupLevel.STATE, state_id, None, None, None, state_figures, state_votes))
     _write_rows(contest, planned, candidate_ids, now)
+    RollupDirty.objects.filter(contest=contest).delete()
 
     return len(wards)
 
@@ -406,47 +417,130 @@ def _is_complete(contest: Contest) -> bool:
     return state and wards == _covered_wards(contest).count()
 
 
-def recompute_ward(*, organization_id: UUID, contest_id: UUID, ward_id: UUID) -> dict[str, Any]:
-    """Refresh one ward and the LGA and state above it. Safe to run any number of times.
+def mark_dirty(*, organization_id: UUID, contest_id: UUID, ward_id: UUID) -> None:
+    """Record that a ward needs refreshing. Commits on its own, before any waiting for the lock,
+    so another worker that gets the lock first will pick this mark up too."""
+    with transaction.atomic():
+        rls.set_tenant(organization_id)
+        RollupDirty.objects.bulk_create(
+            [RollupDirty(organization_id=organization_id, contest_id=contest_id, ward_id=ward_id)],
+            ignore_conflicts=True,
+        )
+
+
+MAX_DRAIN_ROUNDS = 20
+MAX_DRAIN_PASSES = 3
+
+
+def _drain_once(*, organization_id: UUID, contest_id: UUID, wait: bool = True) -> dict[str, Any]:
+    """Refresh every marked ward of a contest, then the LGAs above them and the state, once per
+    round, until nothing is marked.
 
     If the contest's rows are not all there yet (a result arrived before the worker built
-    them), it builds them all instead, so a parent is never summed from a partial set."""
+    them), it builds them all instead, so a parent is never summed from a partial set. Safe to
+    run any number of times; a run that finds nothing marked does nothing. With `wait` off, a
+    run that finds the contest being refreshed by someone else returns `{"busy": True}`
+    immediately: that someone will see the mark, and the caller may retry shortly."""
     with transaction.atomic():
-        opened = _open(organization_id, contest_id)
+        opened = _open(organization_id, contest_id, wait=wait)
         if opened is None:
-            return {}
+            busy = not wait and Contest.objects.filter(id=contest_id).exists()
+            return {"busy": True} if busy else {}
         contest, candidate_ids = opened
-        ward = _covered_wards(contest).filter(id=ward_id).first()
-        if ward is None:
+        refreshed: list[tuple[UUID, UUID]] = []
+        state_revision = 0
+        for _ in range(MAX_DRAIN_ROUNDS):
+            marks = RollupDirty.objects.filter(contest=contest)
+            ward_ids = list(marks.values_list("ward_id", flat=True))
+            if not ward_ids:
+                break
+            marks.filter(ward_id__in=ward_ids).delete()
+            wards = list(_covered_wards(contest).filter(id__in=ward_ids))
+            if not wards:
+                continue
+            if not _is_complete(contest):
+                _rebuild(contest, candidate_ids)
+            else:
+                now = timezone.now()
+                for ward in wards:
+                    _compute_ward(contest, ward, candidate_ids, now)
+                for lga_id in {ward.lga_id for ward in wards}:
+                    _compute_lga(contest, lga_id, candidate_ids, now)
+                _compute_state(contest, candidate_ids, now)
+            refreshed.extend((ward.id, ward.lga_id) for ward in wards)
+        if not refreshed:
             return {}
-        if not _is_complete(contest):
-            _rebuild(contest, candidate_ids)
-        else:
-            now = timezone.now()
-            _compute_ward(contest, ward, candidate_ids, now)
-            _compute_lga(contest, ward.lga_id, candidate_ids, now)
-            _compute_state(contest, candidate_ids, now)
         state_row = Rollup.objects.get(
             contest=contest, level=RollupLevel.STATE, area_id=contest.election.state_id
         )
-        election_id, lga_id, revision = contest.election_id, ward.lga_id, state_row.revision
-        transaction.on_commit(
-            lambda: realtime.announce(
-                election_id=election_id,
-                contest_id=contest_id,
-                lga_id=lga_id,
-                ward_id=ward_id,
-                revision=revision,
-            )
-        )
+        election_id, state_revision = contest.election_id, state_row.revision
+
+        def announce_all() -> None:
+            for ward_id, lga_id in dict.fromkeys(refreshed):
+                realtime.announce(
+                    election_id=election_id,
+                    contest_id=contest_id,
+                    lga_id=lga_id,
+                    ward_id=ward_id,
+                    revision=state_revision,
+                )
+
+        transaction.on_commit(announce_all)
         return {
             "contest_id": contest_id,
-            "election_id": contest.election_id,
-            "ward_id": ward.id,
-            "lga_id": ward.lga_id,
+            "election_id": election_id,
+            "ward_ids": [w for w, _ in dict.fromkeys(refreshed)],
+            "wards_refreshed": len(set(refreshed)),
             "state_id": contest.election.state_id,
-            "state_revision": state_row.revision,
+            "state_revision": state_revision,
         }
+
+
+def drain_contest(*, organization_id: UUID, contest_id: UUID, wait: bool = True) -> dict[str, Any]:
+    """Drain, then look once more after the lock is released: a mark that landed while this
+    pass was finishing is picked up here instead of waiting for the periodic sweep."""
+    merged: dict[str, Any] = {}
+    for _ in range(MAX_DRAIN_PASSES):
+        result = _drain_once(organization_id=organization_id, contest_id=contest_id, wait=wait)
+        if result.get("busy"):
+            return merged or result  # somebody else holds it and will see the marks
+        if result:
+            merged = {
+                **result,
+                "wards_refreshed": merged.get("wards_refreshed", 0) + result["wards_refreshed"],
+            }
+        with transaction.atomic():
+            rls.set_tenant(organization_id)
+            more = RollupDirty.objects.filter(contest_id=contest_id).exists()
+        if not more:
+            break
+    return merged
+
+
+def recompute_ward(
+    *, organization_id: UUID, contest_id: UUID, ward_id: UUID, wait: bool = True
+) -> dict[str, Any]:
+    """Mark one ward and refresh whatever is marked. The outbox handler's entry point (with
+    `wait` off, so a busy contest never ties up a worker thread)."""
+    mark_dirty(organization_id=organization_id, contest_id=contest_id, ward_id=ward_id)
+    return drain_contest(organization_id=organization_id, contest_id=contest_id, wait=wait)
+
+
+def drain_stale(*, older_than_seconds: int = 20, limit: int = 100) -> int:
+    """Beat task: marks that are still there after a while mean an event was lost or a worker
+    died between marking and draining. Drain them."""
+    cutoff = timezone.now() - timedelta(seconds=older_than_seconds)
+    with transaction.atomic(), system_context():
+        pending = list(
+            RollupDirty.objects.filter(marked_at__lte=cutoff)
+            .values_list("organization_id", "contest_id")
+            .distinct()[:limit]
+        )
+    return sum(
+        1
+        for org, contest in pending
+        if drain_contest(organization_id=org, contest_id=contest, wait=False).get("wards_refreshed")
+    )
 
 
 def rebuild_contest(*, organization_id: UUID, contest_id: UUID) -> int:
@@ -711,3 +805,41 @@ def ensure_rows_for_election(actor: Actor, election: Election) -> None:
     authorize(actor, Perm.DASHBOARD_VIEW)
     for contest in elections.contests_for(actor, election):
         ensure_contest_rows(contest)
+
+
+def self_heal_live_contests(limit: int = 50) -> dict[str, int]:
+    """Beat task: for contests of LIVE elections, compare the stored rollups with a fresh
+    calculation and rebuild any that drifted (a lost message after a broker failure is the usual
+    cause). Cheap enough to run every few minutes; every repair is audited and logged."""
+    with transaction.atomic(), system_context():
+        contests = list(
+            Contest.objects.filter(election__status="LIVE")
+            .values_list("organization_id", "id")
+            .order_by("id")[:limit]
+        )
+    checked = repaired = 0
+    for organization_id, contest_id in contests:
+        with transaction.atomic():
+            rls.set_tenant(organization_id)
+            contest = Contest.objects.select_related("election").filter(id=contest_id).first()
+            if contest is None or RollupDirty.objects.filter(contest=contest).exists():
+                continue  # marks pending: a refresh is already on its way
+            checked += 1
+            differences = verify_contest(contest)
+        if differences:
+            logger.warning(
+                "rollup_drift_repaired",
+                extra={"contest_id": str(contest_id), "differences": len(differences)},
+            )
+            rebuild_contest(organization_id=organization_id, contest_id=contest_id)
+            with transaction.atomic():
+                rls.set_tenant(organization_id)
+                audit.record(
+                    action="rollup.self_healed",
+                    object_type="contest",
+                    object_id=contest_id,
+                    organization_id=organization_id,
+                    diff={"differences": len(differences), "sample": differences[:3]},
+                )
+            repaired += 1
+    return {"checked": checked, "repaired": repaired}
