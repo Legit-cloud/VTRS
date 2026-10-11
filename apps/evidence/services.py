@@ -261,6 +261,10 @@ def verify(evidence_id: UUID) -> EvidenceFile | None:
                 update_fields=["status", "quarantine_reason", "metadata", "sha256_server"]
             )
             append_custody(evidence, "quarantined", details={"problems": problems})
+            core.emit(
+                "evidence.quarantined",
+                {"organization_id": evidence.organization_id, "evidence_id": evidence.id},
+            )
             return evidence
         thumb_key = f"derived/{evidence.object_key}.thumb.jpg"
         preview_key = f"derived/{evidence.object_key}.preview.jpg"
@@ -278,7 +282,10 @@ def verify(evidence_id: UUID) -> EvidenceFile | None:
         }
         evidence.save(update_fields=["status", "verified_at", "metadata", "sha256_server"])
         append_custody(evidence, "verified", details={"sha256_server": digest})
-        core.emit("evidence.verified", {"evidence_id": evidence.id})
+        core.emit(
+            "evidence.verified",
+            {"organization_id": evidence.organization_id, "evidence_id": evidence.id},
+        )
     return evidence
 
 

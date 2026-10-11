@@ -36,8 +36,22 @@ from apps.evidence import services as evidence
 from apps.evidence.errors import EvidenceConflict
 from apps.geography import selectors as geography
 
-from .domain.versions import VersionState, select_head, submission_hash
-from .models import PuResult, PuResultStatus, ResultVersion, VoteLine
+from .domain.versions import (
+    ReviewDecision,
+    VersionState,
+    decided_state,
+    is_fork,
+    select_head,
+    submission_hash,
+)
+from .errors import (
+    AlreadyDecided,
+    FlagsUnacknowledged,
+    NotHeadVersion,
+    ResultsFrozen,
+    ReviewNotEnabled,
+)
+from .models import PuResult, PuResultStatus, ResultReview, ResultVersion, VoteLine
 
 CAPTURE_STATES = {ElectionStatus.LIVE, ElectionStatus.CLOSED}
 
@@ -280,16 +294,13 @@ def _persist(
             findings.append(
                 Finding(RuleCode.DUPLICATE_SOURCE, {"other_submitters": sorted(other_sources)})
             )
-        if parent != pu_result.head_version_id:
-            findings.append(
-                Finding(
-                    RuleCode.VERSION_FORK,
-                    {"parent_version_id": parent, "head_version_id": pu_result.head_version_id},
-                )
-            )
-    elif parent is not None:
+    latest = max(previous, key=lambda p: p["version_no"])["id"] if previous else None
+    if is_fork(parent, head_id=pu_result.head_version_id, latest_id=latest):
         findings.append(
-            Finding(RuleCode.VERSION_FORK, {"parent_version_id": parent, "head_version_id": None})
+            Finding(
+                RuleCode.VERSION_FORK,
+                {"parent_version_id": parent, "head_version_id": pu_result.head_version_id},
+            )
         )
     findings = merge(findings)
 
@@ -371,6 +382,8 @@ def _persist(
         {
             "version_id": version.id,
             "pu_result_id": pu_result.id,
+            "organization_id": actor.organization_id,
+            "election_id": election.id,
             "contest_id": contest.id,
             "ward_id": pu.ward_id,
             "lga_id": pu.lga_id,
@@ -383,3 +396,110 @@ def _persist(
 
 def _state_of(previous: Sequence[Mapping[str, Any]], version_id: Any) -> str | None:
     return next((p["state"] for p in previous if p["id"] == version_id), None)
+
+
+# --- Review (FR-6.7.4, FR-6.7.5) --------------------------------------------------------------
+
+REVIEWABLE_ELECTION_STATES = {ElectionStatus.LIVE, ElectionStatus.CLOSED}
+
+
+def review(
+    actor: Actor,
+    version_id: UUID,
+    *,
+    decision: str,
+    reason: str = "",
+    acknowledge_flags: bool = False,
+) -> dict[str, Any]:
+    """Approve or reject the head version of a polling unit's result.
+
+    Rejection keeps the original record; the agent resubmits as a new version, and the head
+    falls back to the latest version that has not been rejected. The decision, its reason and
+    the reviewer are recorded in an append-only ledger and the audit log.
+    """
+    authorize(actor, Perm.RESULTS_REVIEW)
+    wanted = ReviewDecision(decision)
+    if wanted is ReviewDecision.REJECTED and len(reason.strip()) < 3:
+        raise ValidationError({"reason": ["A reason is required when rejecting a result."]})
+    visible = ResultVersion.objects.for_actor(actor).filter(id=version_id).first()
+    if visible is None:
+        raise NotFound()
+
+    with transaction.atomic():
+        pu_result = PuResult.objects.select_for_update().get(id=visible.pu_result_id)
+        version = ResultVersion.objects.get(id=version_id)
+        election = elections.election_for(actor, pu_result.election_id)
+        if not election.review_enabled:
+            raise ReviewNotEnabled()
+        if ElectionStatus(election.status) not in REVIEWABLE_ELECTION_STATES:
+            raise ResultsFrozen()
+        if pu_result.head_version_id != version.id:
+            raise NotHeadVersion()
+        new_state = decided_state(version.state, wanted)
+        if new_state is None:
+            raise AlreadyDecided()
+        open_flags = sorted(
+            version.flags.filter(status="OPEN").values_list("rule_code", flat=True).distinct()
+        )
+        if wanted is ReviewDecision.APPROVED and open_flags and not acknowledge_flags:
+            raise FlagsUnacknowledged({"flags": open_flags})
+
+        previous_state = version.state
+        ResultVersion.objects.filter(id=version.id).update(state=new_state)
+        siblings = list(pu_result.versions.values_list("version_no", "state", "id"))
+        head_id = select_head(siblings)
+        head_state = next((s for _, s, i in siblings if i == head_id), None)
+        pu_result.head_version_id = head_id
+        pu_result.status = head_state or PuResultStatus.NO_RESULT
+        pu_result.save(update_fields=["head_version", "status", "updated_at"])
+
+        record = ResultReview.objects.create(
+            organization_id=actor.organization_id,
+            result_version=version,
+            pu_result=pu_result,
+            contest_id=version.contest_id,
+            polling_unit_id=version.polling_unit_id,
+            ward_id=version.ward_id,
+            lga_id=version.lga_id,
+            decision=wanted,
+            from_state=previous_state,
+            reason=reason.strip(),
+            acknowledged_flags=open_flags if wanted is ReviewDecision.APPROVED else [],
+            decided_by_id=actor.user_id,
+            decided_at=timezone.now(),
+        )
+        audit.record(
+            action="result.review_decided",
+            object_type="result_version",
+            object_id=version.id,
+            actor=actor,
+            diff={
+                "decision": wanted,
+                "from": previous_state,
+                "to": new_state,
+                "reason": record.reason,
+                "acknowledged_flags": record.acknowledged_flags,
+                "new_head_version_id": head_id,
+            },
+        )
+        core.emit(
+            "result.review_decided",
+            {
+                "version_id": version.id,
+                "pu_result_id": pu_result.id,
+                "organization_id": actor.organization_id,
+                "election_id": pu_result.election_id,
+                "contest_id": version.contest_id,
+                "ward_id": version.ward_id,
+                "lga_id": version.lga_id,
+                "decision": wanted,
+            },
+        )
+    return {
+        "version_id": str(version.id),
+        "decision": wanted.value,
+        "state": new_state.value,
+        "head_version_id": str(head_id) if head_id else None,
+        "pu_status": pu_result.status,
+        "decided_at": record.decided_at,
+    }

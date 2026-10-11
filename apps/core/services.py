@@ -39,18 +39,28 @@ def emit(topic: str, payload: dict[str, Any]) -> OutboxEvent:
     return event
 
 
-def _dispatch(event: OutboxEvent) -> None:
-    route = settings.VTRS_OUTBOX_ROUTES.get(event.topic)
+def _routes_for(topic: str) -> list[tuple[str, str]]:
+    """A topic maps to one (task, queue) or to a list of them (several independent consumers)."""
+    route = settings.VTRS_OUTBOX_ROUTES.get(topic)
     if route is None:
+        return []
+    if isinstance(route, tuple) and len(route) == 2 and isinstance(route[0], str):
+        return [route]
+    return [tuple(r) for r in route]  # type: ignore[misc]
+
+
+def _dispatch(event: OutboxEvent) -> None:
+    routes = _routes_for(event.topic)
+    if not routes:
         logger.info("outbox_no_route", extra={"topic": event.topic})
         return
-    task_name, queue = route
     args = [str(event.id), event.topic, event.payload]
-    if current_app.conf.task_always_eager and _load_task(task_name):
-        # Tests and local scripts: run in-process (send_task would only queue a message).
-        current_app.tasks[task_name].apply(args=args, throw=True)
-        return
-    current_app.send_task(task_name, args=args, queue=queue)
+    for task_name, queue in routes:
+        if current_app.conf.task_always_eager and _load_task(task_name):
+            # Tests and local scripts: run in-process (send_task would only queue a message).
+            current_app.tasks[task_name].apply(args=args, throw=True)
+        else:
+            current_app.send_task(task_name, args=args, queue=queue)
 
 
 def _load_task(task_name: str) -> bool:

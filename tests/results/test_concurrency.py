@@ -101,6 +101,8 @@ def _agent(org, election, pu, n):
 
 
 def _item(contest, candidates, pu, device, **extra):
+    from django.utils import timezone
+
     from apps.core.ids import uuid7
 
     item = {
@@ -114,7 +116,12 @@ def _item(contest, candidates, pu, device, **extra):
             {"candidate_id": str(c.id), "votes": v}
             for c, v in zip(candidates, (120, 80), strict=True)
         ],
-        "device_captured_at": "2027-03-11T15:42:10+01:00",
+        "device_captured_at": timezone.now().isoformat(),
+        "gps": {
+            "lat": float(pu.latitude or 7.39),
+            "lng": float(pu.longitude or 3.91),
+            "accuracy_m": 10,
+        },
         "device_id": str(device.id),
         "app_version": "1.0.0",
         "evidence": [],

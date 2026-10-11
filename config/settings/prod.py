@@ -10,6 +10,12 @@ if VTRS_SMS_PROVIDER.endswith("FakeSmsProvider"):
     raise ImproperlyConfigured("Production cannot use the fake SMS provider")
 if VTRS_MALWARE_SCANNER.endswith("EicarOnlyScanner"):
     raise ImproperlyConfigured("Production needs a real malware scanner for evidence")
+if not REDIS_CHANNELS_URL:
+    raise ImproperlyConfigured("Production needs REDIS_CHANNELS_URL for live dashboards")
+if VTRS_PUSH_PROVIDER.endswith("FakePushProvider"):
+    raise ImproperlyConfigured("Production cannot use the fake push provider")
+if VTRS_FEATURE_WHATSAPP_ALERTS and VTRS_WHATSAPP_PROVIDER.endswith("FakeWhatsAppProvider"):
+    raise ImproperlyConfigured("WhatsApp alerts are on but the provider is the fake")
 if VTRS_EVIDENCE_STORAGE != "s3":
     raise ImproperlyConfigured("Production evidence must live in private object storage")
 

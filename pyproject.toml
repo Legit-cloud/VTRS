@@ -53,6 +53,7 @@ containers = [
     "apps.results",
     "apps.evidence",
     "apps.anomalies",
+    "apps.aggregation",
 ]
 
 [[tool.importlinter.contracts]]
@@ -67,5 +68,6 @@ source_modules = [
     "apps.results.domain",
     "apps.evidence.domain",
     "apps.anomalies.domain",
+    "apps.aggregation.domain",
 ]
 forbidden_modules = ["django", "rest_framework", "celery", "psycopg"]

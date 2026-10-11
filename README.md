@@ -111,6 +111,95 @@ provider or with the bot challenge disabled.
   ballot (only the contests that cover it, candidates in ballot order). It also says whether
   capture is open.
 
+## Results, review and dashboards
+
+- **Counting rule:** a polling unit's result is its *head version*: the highest version that
+  has not been rejected. Corrections are new versions; nothing is edited or deleted.
+- **Two measures, always kept:** *Reported* counts every counting head (submitted, flagged or
+  approved). *Verified* counts only heads a reviewer has approved. The election's
+  `count_policy` picks the default, and every dashboard call accepts `?measure=reported|verified`.
+- **Review** (off unless the election sets `review_enabled`): `POST /api/v1/results/{id}/review`
+  approves or rejects the version that currently counts. A rejection needs a reason, keeps the
+  original record, and the head falls back to the previous version; the agent sees the reason
+  in `GET /sync/status` and resubmits as a new version. Approving a flagged result needs
+  `acknowledge_flags`. Decisions live in an append-only ledger and the audit log.
+  `GET /elections/{id}/review-queue` lists what is waiting inside the caller's scope.
+- **Rollups:** Ward, LGA and State figures are stored (`rollup`, `rollup_vote`) and recomputed
+  by a worker after every accepted version or review decision. Recomputing is idempotent, so a
+  repeated or delayed event cannot leave a wrong figure behind. Polling-unit figures are read
+  straight from the head version. Operators can repair or check them:
+
+  ```sh
+  python manage.py rebuild_rollups [--election ID] [--contest ID]
+  python manage.py verify_rollups  [--election ID]     # non-zero exit on any difference
+  ```
+- **Reads** (`dashboard.view`, narrowed to the caller's geography): `GET
+  /elections/{id}/dashboard` (War Room), `GET /contests/{id}/results?level=lga|ward|pu&parent_id=`
+  (drill-down and LGA scorecards), `GET /contests/{id}/coverage-timeline`, and `GET
+  /contests/{id}/polling-units/{id}/history` (every version with reviews, flags and evidence).
+  A scoped officer's top level is their own area; they never see the state total.
+  Every figure is provisional, and responses say so.
+- **Live updates:** connect a WebSocket to `/ws/v1/dashboard`, send
+  `{"type": "auth", "token": "<access token>", "election_id": "<uuid>"}` as the first message,
+  and receive `rollup.updated` notices (ids and a revision, never figures) for the areas in
+  scope. Refetch over REST. Run the ASGI app with `daphne config.asgi:application`; production
+  needs `REDIS_CHANNELS_URL` so workers and sockets share a channel layer.
+- **Reconciliation:** `GET /elections/{id}/reconciliation` shows what is outstanding, and
+  `POST /elections/{id}/reconcile` (fresh second factor) rebuilds the rollups from head
+  versions, proves them against a second pass, stores an immutable snapshot with its SHA-256,
+  and moves the election to `RECONCILED`. With review on, every counting result must have been
+  decided first. After that, results cannot change.
+
+## Anomalies, alerts and notifications
+
+A finding never removes a result from the count. It raises a **flag**, sends the result to
+review, and tells the right people. Cheap arithmetic rules run inside the submit; the rest run
+on a worker (`anomaly` queue) as soon as the result or its photo is stored.
+
+| Rule | Severity | Meaning |
+| --- | --- | --- |
+| `ARITHMETIC_VARIANCE`, `OVER_VOTING` | HIGH, CRITICAL | Totals do not add up; more votes than accredited or registered |
+| `DUPLICATE_SOURCE`, `VERSION_FORK`, `UNASSIGNED_PU_ATTEMPT` | HIGH, HIGH, CRITICAL | Two sources, a correction that skips a version, an unassigned agent |
+| `GPS_OUT_OF_GEOFENCE` | MEDIUM, HIGH beyond 2 km | Fix is more than 300 m (plus its own accuracy) from the unit |
+| `GPS_MISSING`, `GPS_LOW_ACCURACY` | MEDIUM, INFO | No fix, or one worse than 100 m |
+| `CAPTURED_BEFORE_POLLS_OPEN`, `CAPTURED_BEFORE_POLLS_CLOSE` | HIGH | A result sheet cannot exist before voting ends |
+| `DEVICE_CLOCK_AHEAD` | MEDIUM | Device time is more than 5 minutes ahead of the server |
+| `TURNOUT_OUTLIER`, `VOTE_SHARE_OUTLIER` | MEDIUM, HIGH at 90% turnout | Modified z-score above 3.5 against the ward (or LGA) |
+| `HIGH_REJECTED_RATE`, `UNANIMOUS_RESULT` | MEDIUM | More than 10% rejected; every valid vote to one candidate |
+| `DUPLICATE_EVIDENCE` | HIGH | Photo matches another unit's (identical hash, or 64-bit dHash within 4 bits) |
+| `EXIF_TIME_MISMATCH`, `EXIF_GPS_MISMATCH` | MEDIUM | Photo metadata disagrees with the declared time or place |
+| `MISSING_EVIDENCE`, `EVIDENCE_QUARANTINED` | MEDIUM, HIGH | No photo after 30 minutes; photo failed verification |
+
+Thresholds are the fields of `Thresholds` in `apps/anomalies/domain/contextual.py`; override
+any of them with `VTRS_ANOMALY_THRESHOLDS = {"geofence_m": 500.0}`.
+
+**Routing and escalation** follow an incident-severity matrix
+(`apps/anomalies/domain/escalation.py`, overridable with `VTRS_ESCALATION_MATRIX`):
+
+| Severity | Told at once | Channels | Acknowledge within | Then |
+| --- | --- | --- | --- | --- |
+| CRITICAL | ward, LGA, admin | in-app, SMS, email | 15 min | repeat on WhatsApp |
+| HIGH | ward, LGA | in-app, email | 30 min | admin, plus SMS |
+| MEDIUM | ward | in-app | 2 h | LGA, then admin, plus email |
+| INFO | nobody | | | listed only |
+
+Acknowledging stops the clock. Flags are worked through `/api/v1/elections/{id}/flags`
+(list, summary), and `/api/v1/flags/{id}` with `acknowledge`, `comments`, `assign`, `resolve`
+(RESOLVED or FALSE_POSITIVE, with a note) and `reopen`. Resolving the last active flag returns
+a result from REQUIRES_REVIEW to SUBMITTED. Every step is an append-only `FlagEvent` and an
+audit entry, and visibility follows the caller's geography.
+
+**Notifications** (`/api/v1/me/notifications`): each message is an in-app record with one
+delivery row per channel (PENDING, SENT, DELIVERED, FAILED, SKIPPED), retried up to three
+times. Agents get a push (and an inbox entry) when a result is rejected, with the reviewer's
+reason; they register a token with `PUT /api/v1/me/push-token`. Providers are adapters
+(`VTRS_SMS_PROVIDER`, `VTRS_PUSH_PROVIDER`, `VTRS_WHATSAPP_PROVIDER`); production refuses the
+fakes, and WhatsApp stays off until `VTRS_FEATURE_WHATSAPP_ALERTS` is enabled.
+
+Beat schedules the escalation sweep (every minute), the missing-photo sweep (every five
+minutes) and delivery retries (every minute). Run workers on the `anomaly` and
+`notifications` queues as well.
+
 ## API contract
 
 `docs/openapi.yaml` is the contract web and mobile build against, and a test keeps it in

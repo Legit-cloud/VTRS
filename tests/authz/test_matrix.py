@@ -17,6 +17,7 @@ from django.urls import URLPattern, URLResolver, get_resolver, reverse
 from django.utils import timezone
 
 from apps.accounts.models import Device, Invitation
+from apps.anomalies.models import AnomalyFlag
 from apps.assignments.models import AgentAssignment
 from apps.core.api.permissions import required_permission_for
 from apps.core.authz import AUTHENTICATED
@@ -29,6 +30,7 @@ from apps.evidence.models import EvidenceFile
 from apps.geography.domain.synthetic import synthetic_master_data
 from apps.geography.models import Lga, PollingUnit, State, Ward
 from apps.geography.services import import_master_data
+from apps.notifications.models import Notification
 from apps.results.models import PuResult, ResultVersion
 
 pytestmark = pytest.mark.django_db
@@ -240,12 +242,113 @@ def _evidence(w: World, relation: str) -> EvidenceFile:
         )
 
 
+def _closed_election(w: World, relation: str) -> Election:
+    return _election(w, relation, status="CLOSED")
+
+
+def _result_version(w: World, relation: str) -> ResultVersion:
+    """The counting version of a polling unit in the relation, in an election with review on."""
+    pu = w.pu(relation)
+    org = w.org_for(relation)
+    submitter = w.make_member(Role.PU_AGENT, scope_ids=[pu.id], organization=org)
+    election = _election(w, relation, status="LIVE")
+    with system_context():
+        Election.objects.filter(id=election.id).update(review_enabled=True)
+        contest = election.contests.get()
+        pu_result = PuResult.objects.create(
+            organization=org,
+            election=election,
+            contest=contest,
+            polling_unit=pu,
+            ward=pu.ward,
+            lga=pu.lga,
+            state=w.state,
+            status="SUBMITTED",
+            version_count=1,
+        )
+        version = ResultVersion.objects.create(
+            id=uuid7(),
+            organization=org,
+            pu_result=pu_result,
+            contest=contest,
+            polling_unit=pu,
+            ward=pu.ward,
+            lga=pu.lga,
+            version_no=1,
+            valid=10,
+            device_captured_at=timezone.now(),
+            server_received_at=timezone.now(),
+            submitted_by=submitter.user,
+            app_version="1.0.0",
+            config_version=1,
+            payload_hash="0" * 64,
+            state="SUBMITTED",
+        )
+        PuResult.objects.filter(id=pu_result.id).update(head_version=version)
+        return version
+
+
+def _flag(w: World, relation: str, status: str = "OPEN") -> AnomalyFlag:
+    pu = w.pu(relation)
+    org = w.org_for(relation)
+    election = _election(w, relation, status="LIVE")
+    with system_context():
+        return AnomalyFlag.objects.create(
+            organization=org,
+            election=election,
+            contest=election.contests.get(),
+            polling_unit=pu,
+            ward=pu.ward,
+            lga=pu.lga,
+            rule_code="GPS_OUT_OF_GEOFENCE",
+            severity="HIGH",
+            status=status,
+        )
+
+
+def _closed_flag(w: World, relation: str) -> AnomalyFlag:
+    return _flag(w, relation, status="RESOLVED")
+
+
+def _notification(w: World, relation: str) -> Notification:
+    """Somebody else's notification: nobody may read it through their own inbox."""
+    owner = w.make_member(
+        Role.WARD_OFFICER, scope_ids=[w.wards[relation].id], organization=w.org_for(relation)
+    )
+    with system_context():
+        return Notification.objects.create(
+            organization=w.org_for(relation),
+            user=owner.user,
+            kind="SYSTEM",
+            title="Private",
+            body="Private",
+        )
+
+
 def _admin_in_org(role: Role, relation: str) -> bool:
     return role is Role.PARTY_ADMIN and relation != "other_org"
 
 
 def _never(role: Role, relation: str) -> bool:
     return False
+
+
+def _review_visible(role: Role, relation: str) -> bool:
+    """Admins review anywhere in the organization; ward officers only in their own ward."""
+    if role is Role.PARTY_ADMIN:
+        return relation != "other_org"
+    return role is Role.WARD_OFFICER and relation == "in_scope"
+
+
+def _oversight_visible(role: Role, relation: str) -> bool:
+    """Dashboard reads narrow to the actor's geography (LGA A, ward A1)."""
+    if relation == "other_org":
+        return False
+    if role is Role.PARTY_ADMIN:
+        return True
+    if role is Role.LGA_OFFICER:
+        return relation in {"in_scope", "sibling_ward"}
+    return relation == "in_scope"
 
 
 @dataclass(frozen=True)
@@ -268,6 +371,7 @@ _user = {"kwargs": lambda t: {"user_id": t.user.id}}
 _election_kw = {"kwargs": lambda t: {"election_id": t.id}}
 _contest_kw = {"kwargs": lambda t: {"contest_id": t.id}}
 _candidate_kw = {"kwargs": lambda t: {"candidate_id": t.id}}
+_flag_kw = {"kwargs": lambda t: {"flag_id": t.id}}
 
 ENDPOINTS = [
     # accounts
@@ -449,6 +553,93 @@ ENDPOINTS = [
         kwargs=lambda t: {"evidence_id": t.id},
         visible=_admin_in_org,  # agents hold evidence.view only for their own uploads
     ),
+    # aggregation, review and history
+    Endpoint(
+        "result-review",
+        "post",
+        Perm.RESULTS_REVIEW,
+        _result_version,
+        body=lambda t, w: {"decision": "APPROVED"},
+        kwargs=lambda t: {"version_id": t.id},
+        visible=_review_visible,
+    ),
+    Endpoint("review-queue", "get", Perm.RESULTS_REVIEW, _election, **_election_kw),
+    Endpoint(
+        "pu-history",
+        "get",
+        Perm.DASHBOARD_VIEW,
+        _result_version,
+        kwargs=lambda t: {"contest_id": t.contest_id, "polling_unit_id": t.polling_unit_id},
+        visible=_oversight_visible,
+    ),
+    Endpoint("election-dashboard", "get", Perm.DASHBOARD_VIEW, _election, **_election_kw),
+    Endpoint("contest-results", "get", Perm.DASHBOARD_VIEW, _contest, **_contest_kw),
+    Endpoint("contest-coverage-timeline", "get", Perm.DASHBOARD_VIEW, _contest, **_contest_kw),
+    Endpoint("election-reconciliation", "get", Perm.ELECTIONS_CONFIGURE, _election, **_election_kw),
+    Endpoint(
+        "election-reconcile", "post", Perm.ELECTIONS_CONFIGURE, _closed_election, **_election_kw
+    ),
+    # anomalies: triage and notifications
+    Endpoint("election-flags", "get", Perm.ANOMALIES_VIEW, _election, **_election_kw),
+    Endpoint("election-flags-summary", "get", Perm.ANOMALIES_VIEW, _election, **_election_kw),
+    Endpoint(
+        "flag-detail", "get", Perm.ANOMALIES_VIEW, _flag, visible=_oversight_visible, **_flag_kw
+    ),
+    Endpoint(
+        "flag-acknowledge",
+        "post",
+        Perm.ANOMALIES_VIEW,
+        _flag,
+        visible=_oversight_visible,
+        **_flag_kw,
+    ),
+    Endpoint(
+        "flag-comment",
+        "post",
+        Perm.ANOMALIES_VIEW,
+        _flag,
+        body=lambda t, w: {"note": "Looking into it"},
+        visible=_oversight_visible,
+        **_flag_kw,
+    ),
+    Endpoint(
+        "flag-assign",
+        "post",
+        Perm.ANOMALIES_RESOLVE,
+        _flag,
+        body=lambda t, w: {"assignee_id": None},
+        visible=_oversight_visible,
+        **_flag_kw,
+    ),
+    Endpoint(
+        "flag-resolve",
+        "post",
+        Perm.ANOMALIES_RESOLVE,
+        _flag,
+        body=lambda t, w: {"outcome": "RESOLVED", "note": "Checked on site"},
+        visible=_oversight_visible,
+        **_flag_kw,
+    ),
+    Endpoint(
+        "flag-reopen",
+        "post",
+        Perm.ANOMALIES_RESOLVE,
+        _closed_flag,
+        body=lambda t, w: {"note": "New information"},
+        visible=_oversight_visible,
+        **_flag_kw,
+    ),
+    Endpoint("my-notifications", "get", AUTHENTICATED),
+    Endpoint("my-notifications-unread", "get", AUTHENTICATED),
+    Endpoint("my-notifications-read-all", "post", AUTHENTICATED),
+    Endpoint(
+        "my-notification-read",
+        "post",
+        AUTHENTICATED,
+        _notification,
+        kwargs=lambda t: {"notification_id": t.id},
+        visible=_never,  # one's own inbox only
+    ),
 ]
 
 # Self-service routes that act only on the caller's own session; covered by their own tests.
@@ -457,6 +648,8 @@ SELF_SERVICE = {
     ("auth-totp-setup", "POST"),
     ("auth-totp-confirm", "POST"),
     ("auth-step-up", "POST"),
+    # Needs a session opened on a registered device; covered in tests/anomalies.
+    ("my-push-token", "PUT"),
 }
 
 
@@ -554,6 +747,10 @@ def _dummy_kwargs(endpoint: Endpoint) -> dict:
         "candidate_id",
         "assignment_id",
         "evidence_id",
+        "version_id",
+        "polling_unit_id",
+        "flag_id",
+        "notification_id",
     }
     route = next(
         p for p in _flatten(get_resolver().url_patterns) if p.name == endpoint.route

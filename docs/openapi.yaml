@@ -515,6 +515,114 @@ paths:
               schema:
                 $ref: '#/components/schemas/Candidate'
           description: ''
+  /api/v1/contests/{contest_id}/coverage-timeline:
+    get:
+      operationId: contests_coverage_timeline_retrieve
+      parameters:
+      - in: path
+        name: contest_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: interval
+        schema:
+          type: string
+          enum:
+          - hour
+          - minute
+      - in: query
+        name: parent_id
+        schema:
+          type: string
+      tags:
+      - contests
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoverageTimeline'
+          description: ''
+  /api/v1/contests/{contest_id}/polling-units/{polling_unit_id}/history:
+    get:
+      operationId: contests_polling_units_history_retrieve
+      description: Every version a polling unit's result has had for one contest,
+        oldest first.
+      parameters:
+      - in: path
+        name: contest_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: polling_unit_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - contests
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PuHistory'
+          description: ''
+  /api/v1/contests/{contest_id}/results:
+    get:
+      operationId: contests_results_retrieve
+      description: |-
+        Drill-down: LGA scorecards, ward lists and polling-unit lists for one contest. Omit
+        `level` to start at the top of the caller's own scope.
+      parameters:
+      - in: path
+        name: contest_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: level
+        schema:
+          type: string
+          enum:
+          - lga
+          - pu
+          - state
+          - ward
+      - in: query
+        name: measure
+        schema:
+          type: string
+          enum:
+          - reported
+          - verified
+        description: reported (every counting result) or verified (approved results
+          only). Defaults to the election's count policy.
+      - in: query
+        name: parent_id
+        schema:
+          type: string
+        description: The area one level up
+      tags:
+      - contests
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestResults'
+          description: ''
   /api/v1/elections:
     get:
       operationId: elections_list
@@ -673,6 +781,94 @@ paths:
               schema:
                 $ref: '#/components/schemas/Contest'
           description: ''
+  /api/v1/elections/{election_id}/dashboard:
+    get:
+      operationId: elections_dashboard_retrieve
+      description: |-
+        War Room: headline figures per contest over everything the caller may see. Figures are
+        provisional and based on party-captured data; they are not an official declaration.
+      parameters:
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: measure
+        schema:
+          type: string
+          enum:
+          - reported
+          - verified
+        description: reported (every counting result) or verified (approved results
+          only). Defaults to the election's count policy.
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dashboard'
+          description: ''
+  /api/v1/elections/{election_id}/flags:
+    get:
+      operationId: elections_flags_list
+      description: Flags for an election inside the caller's scope, newest first.
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFlagList'
+          description: ''
+  /api/v1/elections/{election_id}/flags/summary:
+    get:
+      operationId: elections_flags_summary_retrieve
+      parameters:
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagSummary'
+          description: ''
   /api/v1/elections/{election_id}/lock:
     post:
       operationId: elections_lock_create
@@ -695,6 +891,85 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Election'
+          description: ''
+  /api/v1/elections/{election_id}/reconcile:
+    post:
+      operationId: elections_reconcile_create
+      description: |-
+        Freeze the rollups of a closed election and mark it RECONCILED. Needs a fresh second
+        factor. Results can no longer change afterwards.
+      parameters:
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconcileOutcome'
+          description: ''
+  /api/v1/elections/{election_id}/reconciliation:
+    get:
+      operationId: elections_reconciliation_retrieve
+      description: What stands between a closed election and RECONCILED.
+      parameters:
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+          description: ''
+  /api/v1/elections/{election_id}/review-queue:
+    get:
+      operationId: elections_review_queue_list
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - in: path
+        name: election_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - elections
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedReviewQueueItemList'
           description: ''
   /api/v1/elections/{election_id}/transition:
     post:
@@ -788,6 +1063,196 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EvidenceUploadEntry'
+          description: ''
+  /api/v1/flags/{flag_id}:
+    get:
+      operationId: flags_retrieve
+      parameters:
+      - in: path
+        name: flag_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flags
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagDetail'
+          description: ''
+  /api/v1/flags/{flag_id}/acknowledge:
+    post:
+      operationId: flags_acknowledge_create
+      description: |-
+        Base for the POST actions: load the flag in scope, run the action once per key, return
+        the flag with its history.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: flag_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flags
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagDetail'
+          description: ''
+  /api/v1/flags/{flag_id}/assign:
+    post:
+      operationId: flags_assign_create
+      description: |-
+        Base for the POST actions: load the flag in scope, run the action once per key, return
+        the flag with its history.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: flag_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flags
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagDetail'
+          description: ''
+  /api/v1/flags/{flag_id}/comments:
+    post:
+      operationId: flags_comments_create
+      description: |-
+        Base for the POST actions: load the flag in scope, run the action once per key, return
+        the flag with its history.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: flag_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flags
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagDetail'
+          description: ''
+  /api/v1/flags/{flag_id}/reopen:
+    post:
+      operationId: flags_reopen_create
+      description: |-
+        Base for the POST actions: load the flag in scope, run the action once per key, return
+        the flag with its history.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: flag_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flags
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagDetail'
+          description: ''
+  /api/v1/flags/{flag_id}/resolve:
+    post:
+      operationId: flags_resolve_create
+      description: |-
+        Base for the POST actions: load the flag in scope, run the action once per key, return
+        the flag with its history.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: flag_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - flags
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagDetail'
           description: ''
   /api/v1/geography/lgas:
     get:
@@ -992,6 +1457,141 @@ paths:
                 items:
                   $ref: '#/components/schemas/MyAssignment'
           description: ''
+  /api/v1/me/notifications:
+    get:
+      operationId: me_notifications_list
+      description: The caller's own notifications, newest first, with where each one
+        was delivered.
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: unread
+        schema:
+          type: boolean
+      tags:
+      - me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedNotificationList'
+          description: ''
+  /api/v1/me/notifications/{notification_id}/read:
+    post:
+      operationId: me_notifications_read_create
+      parameters:
+      - in: path
+        name: notification_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+          description: ''
+  /api/v1/me/notifications/read-all:
+    post:
+      operationId: me_notifications_read_all_create
+      tags:
+      - me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Marked'
+          description: ''
+  /api/v1/me/notifications/unread-count:
+    get:
+      operationId: me_notifications_unread_count_retrieve
+      tags:
+      - me
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnreadCount'
+          description: ''
+  /api/v1/me/push-token:
+    put:
+      operationId: me_push_token_update
+      description: The mobile app registers its push token for the device the session
+        was opened on.
+      tags:
+      - me
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushTokenRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/results/{version_id}/review:
+    post:
+      operationId: results_review_create
+      description: |-
+        Approve or reject the version that currently counts for a polling unit. A rejection
+        needs a reason; the agent then resubmits a corrected version.
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        schema:
+          type: string
+        required: true
+      - in: path
+        name: version_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - results
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewRequestRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewOutcome'
+          description: ''
   /api/v1/sync/status:
     get:
       operationId: sync_status_list
@@ -1195,6 +1795,99 @@ components:
       description: |-
         * `ACTIVE` - Active
         * `REVOKED` - Revoked
+    AreaResult:
+      type: object
+      description: |-
+        One area's figures. `votes` and `totals` follow `measure`; the polling-unit counts
+        for both measures are always present.
+      properties:
+        level:
+          type: string
+        area_id:
+          type: string
+          format: uuid
+        area_name:
+          type: string
+        area_code:
+          type: string
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        expected_pus:
+          type: integer
+        reported_pus:
+          type: integer
+        verified_pus:
+          type: integer
+        review_pus:
+          type: integer
+        reported_pct:
+          type: number
+          format: double
+        verified_pct:
+          type: number
+          format: double
+        counted_pus:
+          type: integer
+        open_flags:
+          type: integer
+        registered_voters:
+          type: integer
+        totals:
+          $ref: '#/components/schemas/Totals'
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vote'
+        position:
+          $ref: '#/components/schemas/Position'
+        measure:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        revision:
+          type: integer
+          nullable: true
+        status:
+          type: string
+        head_version_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - area_code
+      - area_id
+      - area_name
+      - counted_pus
+      - expected_pus
+      - level
+      - measure
+      - open_flags
+      - parent_id
+      - position
+      - registered_voters
+      - reported_pct
+      - reported_pus
+      - review_pus
+      - revision
+      - totals
+      - updated_at
+      - verified_pct
+      - verified_pus
+      - votes
+    AssignRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        assignee_id:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - assignee_id
     AssignedElection:
       type: object
       properties:
@@ -1545,6 +2238,132 @@ components:
       - jurisdiction_level
       - office
       - title
+    ContestResults:
+      type: object
+      properties:
+        contest_id:
+          type: string
+          format: uuid
+        level:
+          type: string
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        measure:
+          type: string
+        provisional:
+          type: boolean
+        notice:
+          type: string
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/AreaResult'
+      required:
+      - contest_id
+      - level
+      - measure
+      - notice
+      - parent_id
+      - provisional
+      - rows
+    ContestSummary:
+      type: object
+      description: |-
+        One area's figures. `votes` and `totals` follow `measure`; the polling-unit counts
+        for both measures are always present.
+      properties:
+        level:
+          type: string
+        area_id:
+          type: string
+          format: uuid
+        area_name:
+          type: string
+        area_code:
+          type: string
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        expected_pus:
+          type: integer
+        reported_pus:
+          type: integer
+        verified_pus:
+          type: integer
+        review_pus:
+          type: integer
+        reported_pct:
+          type: number
+          format: double
+        verified_pct:
+          type: number
+          format: double
+        counted_pus:
+          type: integer
+        open_flags:
+          type: integer
+        registered_voters:
+          type: integer
+        totals:
+          $ref: '#/components/schemas/Totals'
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vote'
+        position:
+          $ref: '#/components/schemas/Position'
+        measure:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        revision:
+          type: integer
+          nullable: true
+        status:
+          type: string
+        head_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        contest_id:
+          type: string
+          format: uuid
+        office:
+          type: string
+        title:
+          type: string
+        areas_in_scope:
+          type: integer
+      required:
+      - area_code
+      - area_id
+      - area_name
+      - areas_in_scope
+      - contest_id
+      - counted_pus
+      - expected_pus
+      - level
+      - measure
+      - office
+      - open_flags
+      - parent_id
+      - position
+      - registered_voters
+      - reported_pct
+      - reported_pus
+      - review_pus
+      - revision
+      - title
+      - totals
+      - updated_at
+      - verified_pct
+      - verified_pus
+      - votes
     CountPolicyEnum:
       enum:
       - REPORTED
@@ -1553,6 +2372,87 @@ components:
       description: |-
         * `REPORTED` - Reported
         * `VERIFIED` - Verified
+    CoverageTimeline:
+      type: object
+      properties:
+        contest_id:
+          type: string
+          format: uuid
+        interval:
+          type: string
+        expected_pus:
+          type: integer
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelinePoint'
+      required:
+      - contest_id
+      - expected_pus
+      - interval
+      - points
+    Dashboard:
+      type: object
+      properties:
+        election_id:
+          type: string
+          format: uuid
+        election_name:
+          type: string
+        status:
+          type: string
+        measure:
+          type: string
+        review_enabled:
+          type: boolean
+        provisional:
+          type: boolean
+        notice:
+          type: string
+        contests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContestSummary'
+      required:
+      - contests
+      - election_id
+      - election_name
+      - measure
+      - notice
+      - provisional
+      - review_enabled
+      - status
+    DecisionEnum:
+      enum:
+      - APPROVED
+      - REJECTED
+      type: string
+      description: |-
+        * `APPROVED` - APPROVED
+        * `REJECTED` - REJECTED
+    Delivery:
+      type: object
+      properties:
+        channel:
+          type: string
+        status:
+          type: string
+        detail:
+          type: string
+        sent_at:
+          type: string
+          format: date-time
+          nullable: true
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - channel
+      - delivered_at
+      - detail
+      - sent_at
+      - status
     Device:
       type: object
       properties:
@@ -1776,6 +2676,315 @@ components:
       - headers
       - method
       - url
+    EvidenceView:
+      type: object
+      properties:
+        evidence_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+        status:
+          type: string
+        sha256:
+          type: string
+      required:
+      - evidence_id
+      - kind
+      - sha256
+      - status
+    Flag:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        election_id:
+          type: string
+          format: uuid
+        contest_id:
+          type: string
+          format: uuid
+          nullable: true
+        polling_unit_id:
+          type: string
+          format: uuid
+        polling_unit_code:
+          type: string
+        polling_unit_name:
+          type: string
+        ward_id:
+          type: string
+          format: uuid
+        ward_name:
+          type: string
+        lga_id:
+          type: string
+          format: uuid
+        lga_name:
+          type: string
+        result_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        rule_code:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+        details:
+          type: object
+          additionalProperties: {}
+        escalation_level:
+          type: integer
+        sla_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        assigned_to_id:
+          type: string
+          format: uuid
+          nullable: true
+        acknowledged_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolution_note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required:
+      - acknowledged_at
+      - assigned_to_id
+      - contest_id
+      - created_at
+      - details
+      - election_id
+      - escalation_level
+      - id
+      - lga_id
+      - lga_name
+      - polling_unit_code
+      - polling_unit_id
+      - polling_unit_name
+      - resolution_note
+      - resolved_at
+      - result_version_id
+      - rule_code
+      - severity
+      - sla_due_at
+      - status
+      - title
+      - ward_id
+      - ward_name
+    FlagDetail:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        election_id:
+          type: string
+          format: uuid
+        contest_id:
+          type: string
+          format: uuid
+          nullable: true
+        polling_unit_id:
+          type: string
+          format: uuid
+        polling_unit_code:
+          type: string
+        polling_unit_name:
+          type: string
+        ward_id:
+          type: string
+          format: uuid
+        ward_name:
+          type: string
+        lga_id:
+          type: string
+          format: uuid
+        lga_name:
+          type: string
+        result_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        rule_code:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+        details:
+          type: object
+          additionalProperties: {}
+        escalation_level:
+          type: integer
+        sla_due_at:
+          type: string
+          format: date-time
+          nullable: true
+        assigned_to_id:
+          type: string
+          format: uuid
+          nullable: true
+        acknowledged_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        resolution_note:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlagEvent'
+      required:
+      - acknowledged_at
+      - assigned_to_id
+      - contest_id
+      - created_at
+      - details
+      - election_id
+      - escalation_level
+      - events
+      - id
+      - lga_id
+      - lga_name
+      - polling_unit_code
+      - polling_unit_id
+      - polling_unit_name
+      - resolution_note
+      - resolved_at
+      - result_version_id
+      - rule_code
+      - severity
+      - sla_due_at
+      - status
+      - title
+      - ward_id
+      - ward_name
+    FlagEvent:
+      type: object
+      properties:
+        action:
+          type: string
+        from_status:
+          type: string
+        to_status:
+          type: string
+        actor_id:
+          type: string
+          format: uuid
+          nullable: true
+        note:
+          type: string
+        details:
+          type: object
+          additionalProperties: {}
+        at:
+          type: string
+          format: date-time
+      required:
+      - action
+      - actor_id
+      - at
+      - details
+      - from_status
+      - note
+      - to_status
+    FlagSummary:
+      type: object
+      properties:
+        election_id:
+          type: string
+          format: uuid
+        by_status:
+          type: object
+          additionalProperties:
+            type: integer
+        active_by_severity:
+          type: object
+          additionalProperties:
+            type: integer
+        active_by_rule:
+          type: object
+          additionalProperties:
+            type: integer
+        escalated_open:
+          type: integer
+        unacknowledged_critical:
+          type: integer
+        closed:
+          type: integer
+        average_minutes_to_resolve:
+          type: number
+          format: double
+          nullable: true
+      required:
+      - active_by_rule
+      - active_by_severity
+      - average_minutes_to_resolve
+      - by_status
+      - closed
+      - election_id
+      - escalated_open
+      - unacknowledged_critical
+    FlagView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rule_code:
+          type: string
+        severity:
+          type: string
+        status:
+          type: string
+      required:
+      - id
+      - rule_code
+      - severity
+      - status
+    GpsView:
+      type: object
+      properties:
+        lat:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+        lng:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,6})?$
+        accuracy_m:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,6}(?:\.\d{0,2})?$
+          nullable: true
+      required:
+      - accuracy_m
+      - lat
+      - lng
     GrantedPermissionsEnum:
       enum:
       - elections.configure
@@ -1810,6 +3019,72 @@ components:
         * `audit.view` - audit.view
         * `dashboard.view` - dashboard.view
         * `geography.view` - geography.view
+    HistoryVersion:
+      type: object
+      properties:
+        version_id:
+          type: string
+          format: uuid
+        version_no:
+          type: integer
+        state:
+          type: string
+        is_head:
+          type: boolean
+        parent_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        totals:
+          $ref: '#/components/schemas/TotalsView'
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoteView'
+        flags:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlagView'
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewEntryView'
+        evidence_count:
+          type: integer
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceView'
+        submitted_by:
+          $ref: '#/components/schemas/PersonView'
+        device_captured_at:
+          type: string
+          format: date-time
+        server_received_at:
+          type: string
+          format: date-time
+        gps:
+          allOf:
+          - $ref: '#/components/schemas/GpsView'
+          nullable: true
+        payload_hash:
+          type: string
+      required:
+      - device_captured_at
+      - evidence_count
+      - flags
+      - gps
+      - is_head
+      - parent_version_id
+      - payload_hash
+      - reviews
+      - server_received_at
+      - state
+      - submitted_by
+      - totals
+      - version_id
+      - version_no
+      - votes
     Invitation:
       type: object
       properties:
@@ -2025,6 +3300,13 @@ components:
           format: uuid
       required:
       - mfa_required
+    Marked:
+      type: object
+      properties:
+        marked:
+          type: integer
+      required:
+      - marked
     Me:
       type: object
       properties:
@@ -2180,6 +3462,54 @@ components:
       - contests
       - election
       - polling_unit
+    NoteRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        note:
+          type: string
+          minLength: 3
+          maxLength: 1000
+      required:
+      - note
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+        severity:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        link:
+          type: object
+          additionalProperties: {}
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        deliveries:
+          type: array
+          items:
+            $ref: '#/components/schemas/Delivery'
+      required:
+      - body
+      - created_at
+      - deliveries
+      - id
+      - kind
+      - link
+      - read_at
+      - severity
+      - title
     OfficeEnum:
       enum:
       - PRESIDENTIAL
@@ -2245,6 +3575,14 @@ components:
           type: string
       required:
       - purpose
+    OutcomeEnum:
+      enum:
+      - RESOLVED
+      - FALSE_POSITIVE
+      type: string
+      description: |-
+        * `RESOLVED` - RESOLVED
+        * `FALSE_POSITIVE` - FALSE_POSITIVE
     PaginatedAssignmentList:
       type: object
       required:
@@ -2283,6 +3621,25 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Election'
+    PaginatedFlagList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Flag'
     PaginatedInvitationList:
       type: object
       required:
@@ -2340,6 +3697,25 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Member'
+    PaginatedNotificationList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
     PaginatedPollingUnitList:
       type: object
       required:
@@ -2359,6 +3735,25 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PollingUnit'
+    PaginatedReviewQueueItemList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewQueueItem'
     PaginatedWardList:
       type: object
       required:
@@ -2474,6 +3869,17 @@ components:
           type: string
           format: date-time
           nullable: true
+    PersonView:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - id
+      - name
     PlatformEnum:
       enum:
       - ANDROID
@@ -2524,6 +3930,131 @@ components:
       - lga_id
       - name
       - ward_id
+    Position:
+      type: object
+      properties:
+        leader_id:
+          type: string
+          format: uuid
+          nullable: true
+        leader_party:
+          type: string
+          nullable: true
+        runner_up_id:
+          type: string
+          format: uuid
+          nullable: true
+        leading_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        margin:
+          type: integer
+        margin_pct:
+          type: number
+          format: double
+          nullable: true
+        total_votes:
+          type: integer
+        is_tie:
+          type: boolean
+        own_margin:
+          type: integer
+          nullable: true
+      required:
+      - is_tie
+      - leader_id
+      - leader_party
+      - leading_ids
+      - margin
+      - margin_pct
+      - own_margin
+      - runner_up_id
+      - total_votes
+    PuHistory:
+      type: object
+      properties:
+        contest_id:
+          type: string
+          format: uuid
+        polling_unit_id:
+          type: string
+          format: uuid
+        polling_unit_code:
+          type: string
+        polling_unit_name:
+          type: string
+        ward_id:
+          type: string
+          format: uuid
+        lga_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        head_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistoryVersion'
+      required:
+      - contest_id
+      - head_version_id
+      - lga_id
+      - polling_unit_code
+      - polling_unit_id
+      - polling_unit_name
+      - status
+      - versions
+      - ward_id
+    PushTokenRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        token:
+          type: string
+          minLength: 8
+          maxLength: 4096
+      required:
+      - token
+    Readiness:
+      type: object
+      properties:
+        election_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        review_enabled:
+          type: boolean
+        undecided_results:
+          type: integer
+        rollup_differences:
+          type: array
+          items:
+            type: string
+        can_reconcile:
+          type: boolean
+        reconciled_at:
+          type: string
+          format: date-time
+          nullable: true
+        snapshot_sha256:
+          type: string
+          nullable: true
+      required:
+      - can_reconcile
+      - election_id
+      - reconciled_at
+      - review_enabled
+      - rollup_differences
+      - snapshot_sha256
+      - status
+      - undecided_results
     Ready:
       type: object
       properties:
@@ -2531,6 +4062,34 @@ components:
           type: string
       required:
       - status
+    ReconcileOutcome:
+      type: object
+      properties:
+        election_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        snapshot_id:
+          type: string
+          format: uuid
+        snapshot_sha256:
+          type: string
+        reported_pus:
+          type: integer
+        verified_pus:
+          type: integer
+        reconciled_at:
+          type: string
+          format: date-time
+      required:
+      - election_id
+      - reconciled_at
+      - reported_pus
+      - snapshot_id
+      - snapshot_sha256
+      - status
+      - verified_pus
     RefreshRequest:
       type: object
       description: Rejects fields the serializer does not declare (spec section 9).
@@ -2598,6 +4157,150 @@ components:
       required:
       - challenge_id
       - organization_id
+    ResolveRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        outcome:
+          $ref: '#/components/schemas/OutcomeEnum'
+        note:
+          type: string
+          minLength: 3
+          maxLength: 1000
+      required:
+      - note
+      - outcome
+    ReviewEntryView:
+      type: object
+      properties:
+        decision:
+          type: string
+        from_state:
+          type: string
+        reason:
+          type: string
+        acknowledged_flags:
+          type: array
+          items:
+            type: string
+        decided_by:
+          $ref: '#/components/schemas/PersonView'
+        decided_at:
+          type: string
+          format: date-time
+      required:
+      - acknowledged_flags
+      - decided_at
+      - decided_by
+      - decision
+      - from_state
+      - reason
+    ReviewOutcome:
+      type: object
+      properties:
+        version_id:
+          type: string
+          format: uuid
+        decision:
+          type: string
+        state:
+          type: string
+        head_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        pu_status:
+          type: string
+        decided_at:
+          type: string
+          format: date-time
+      required:
+      - decided_at
+      - decision
+      - head_version_id
+      - pu_status
+      - state
+      - version_id
+    ReviewQueueItem:
+      type: object
+      properties:
+        version_id:
+          type: string
+          format: uuid
+        contest_id:
+          type: string
+          format: uuid
+        contest_title:
+          type: string
+        polling_unit_id:
+          type: string
+          format: uuid
+        polling_unit_code:
+          type: string
+        polling_unit_name:
+          type: string
+        ward_id:
+          type: string
+          format: uuid
+        ward_name:
+          type: string
+        lga_id:
+          type: string
+          format: uuid
+        lga_name:
+          type: string
+        version_no:
+          type: integer
+        state:
+          type: string
+        totals:
+          $ref: '#/components/schemas/TotalsView'
+        votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoteView'
+        flags:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlagView'
+        submitted_by:
+          $ref: '#/components/schemas/PersonView'
+        server_received_at:
+          type: string
+          format: date-time
+      required:
+      - contest_id
+      - contest_title
+      - flags
+      - lga_id
+      - lga_name
+      - polling_unit_code
+      - polling_unit_id
+      - polling_unit_name
+      - server_received_at
+      - state
+      - submitted_by
+      - totals
+      - version_id
+      - version_no
+      - votes
+      - ward_id
+      - ward_name
+    ReviewRequestRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        decision:
+          $ref: '#/components/schemas/DecisionEnum'
+        reason:
+          type: string
+          default: ''
+          maxLength: 500
+        acknowledge_flags:
+          type: boolean
+          default: false
+      required:
+      - decision
     RoleEnum:
       enum:
       - PARTY_ADMIN
@@ -2752,6 +4455,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EvidenceStatus'
+        review:
+          nullable: true
       required:
       - status
       - version_id
@@ -2765,6 +4470,20 @@ components:
         * `SYNCED` - SYNCED
         * `REQUIRES_REVIEW` - REQUIRES_REVIEW
         * `UNKNOWN` - UNKNOWN
+    TimelinePoint:
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+        newly_reported:
+          type: integer
+        cumulative:
+          type: integer
+      required:
+      - at
+      - cumulative
+      - newly_reported
     ToEnum:
       enum:
       - DRAFT
@@ -2802,6 +4521,45 @@ components:
       - refresh_token
       - session_id
       - token_type
+    Totals:
+      type: object
+      properties:
+        accredited:
+          type: integer
+          nullable: true
+        valid:
+          type: integer
+          nullable: true
+        rejected:
+          type: integer
+          nullable: true
+        total_cast:
+          type: integer
+          nullable: true
+      required:
+      - accredited
+      - rejected
+      - total_cast
+      - valid
+    TotalsView:
+      type: object
+      properties:
+        accredited:
+          type: integer
+          nullable: true
+        valid:
+          type: integer
+        rejected:
+          type: integer
+          nullable: true
+        total_cast:
+          type: integer
+          nullable: true
+      required:
+      - accredited
+      - rejected
+      - total_cast
+      - valid
     TotpConfirm:
       type: object
       properties:
@@ -2836,6 +4594,13 @@ components:
           $ref: '#/components/schemas/ToEnum'
       required:
       - to
+    UnreadCount:
+      type: object
+      properties:
+        unread:
+          type: integer
+      required:
+      - unread
     UploadRequestRequest:
       type: object
       description: Rejects fields the serializer does not declare (spec section 9).
@@ -2865,6 +4630,40 @@ components:
       - sha256
       - size
       - version_id
+    Vote:
+      type: object
+      properties:
+        candidate_id:
+          type: string
+          format: uuid
+        party_acronym:
+          type: string
+        name:
+          type: string
+        votes:
+          type: integer
+      required:
+      - candidate_id
+      - name
+      - party_acronym
+      - votes
+    VoteView:
+      type: object
+      properties:
+        candidate_id:
+          type: string
+          format: uuid
+        party_acronym:
+          type: string
+        name:
+          type: string
+        votes:
+          type: integer
+      required:
+      - candidate_id
+      - name
+      - party_acronym
+      - votes
     Ward:
       type: object
       properties:

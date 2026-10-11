@@ -54,6 +54,7 @@ DEBUG = False
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.postgres",
@@ -71,7 +72,10 @@ INSTALLED_APPS = [
     "apps.results",
     "apps.evidence",
     "apps.anomalies",
+    "apps.aggregation",
+    "apps.notifications",
 ]
+
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -141,6 +145,21 @@ CACHES = {
 
 # Celery (spec section 15). Redis is the broker only; PostgreSQL holds the truth via the outbox.
 CELERY_BROKER_URL = env("CELERY_BROKER_URL")
+
+# Live dashboard fan-out (FR-6.8.5). Empty means in-process, which only works when the
+# publisher and the sockets share a process (tests, a single dev server); production
+# settings require Redis.
+REDIS_CHANNELS_URL = env("REDIS_CHANNELS_URL", "")
+CHANNEL_LAYERS = {
+    "default": (
+        {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [REDIS_CHANNELS_URL], "capacity": 1000, "expiry": 10},
+        }
+        if REDIS_CHANNELS_URL
+        else {"BACKEND": "channels.layers.InMemoryChannelLayer"}
+    )
+}
 CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 3600}
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_REJECT_ON_WORKER_LOST = True
@@ -162,9 +181,29 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.evidence.tasks.ensure_custody_partitions",
         "schedule": 86400.0,
     },
+    "anomalies.escalate": {
+        "task": "apps.anomalies.tasks.escalate_overdue",
+        "schedule": 60.0,
+    },
+    "anomalies.missing_evidence": {
+        "task": "apps.anomalies.tasks.check_missing_evidence",
+        "schedule": 300.0,
+    },
+    "notifications.retry": {
+        "task": "apps.notifications.tasks.retry_failed_deliveries",
+        "schedule": 60.0,
+    },
 }
 CELERY_TASK_ROUTES = {
     "apps.evidence.tasks.verify_evidence": {"queue": "evidence"},
+    "apps.anomalies.tasks.analyze_version": {"queue": "anomaly"},
+    "apps.anomalies.tasks.analyze_evidence": {"queue": "anomaly"},
+    "apps.anomalies.tasks.flag_quarantined": {"queue": "anomaly"},
+    "apps.anomalies.tasks.route_flags": {"queue": "anomaly"},
+    "apps.notifications.tasks.deliver_notifications": {"queue": "notifications"},
+    "apps.results.tasks.notify_review_decision": {"queue": "notifications"},
+    "apps.aggregation.tasks.update_rollups": {"queue": "aggregation"},
+    "apps.aggregation.tasks.build_election_rollups": {"queue": "aggregation"},
 }
 VTRS_CELERY_QUEUES = (
     "ingest",
@@ -285,10 +324,46 @@ VTRS_THROTTLE_RATES = {
 VTRS_FEATURE_FACE_VERIFICATION = False  # FR-6.1.3, PB-08, SEC-09
 VTRS_FEATURE_WHATSAPP_ALERTS = False  # FR-6.12.3
 
+VTRS_PUSH_PROVIDER = env("VTRS_PUSH_PROVIDER", "apps.notifications.providers.FakePushProvider")
+VTRS_WHATSAPP_PROVIDER = env(
+    "VTRS_WHATSAPP_PROVIDER", "apps.notifications.providers.FakeWhatsAppProvider"
+)
+
+# Anomaly rule thresholds (spec section 13, PB-10). Defaults follow common election-
+# monitoring practice and are documented in apps/anomalies/domain/contextual.py.
+# Override any field of `Thresholds` here, e.g. {"geofence_m": 500.0}.
+VTRS_ANOMALY_THRESHOLDS: dict[str, float | int] = {}
+
+# Alert routing and escalation. Empty keeps the built-in matrix (domain/escalation.py).
+# Per severity: notify (WARD/LGA/ADMIN), channels, ack_minutes, escalation_channels.
+VTRS_ESCALATION_MATRIX: dict[str, dict[str, object]] = {}
+
 # Outbox topic -> (celery task name, queue). Topics without a route are marked published.
-# result.version_accepted gains its consumers (rollups, anomaly rules) in M4/M5.
-VTRS_OUTBOX_ROUTES: dict[str, tuple[str, str]] = {
+# result.version_accepted also gains the anomaly rules in M5.
+# A topic maps to one (task, queue) or to a list of them: independent consumers.
+_UPDATE_ROLLUPS = ("apps.aggregation.tasks.update_rollups", "aggregation")
+VTRS_OUTBOX_ROUTES: dict[str, tuple[str, str] | list[tuple[str, str]]] = {
     "evidence.uploaded": ("apps.evidence.tasks.verify_evidence", "evidence"),
+    "evidence.verified": ("apps.anomalies.tasks.analyze_evidence", "anomaly"),
+    "evidence.quarantined": ("apps.anomalies.tasks.flag_quarantined", "anomaly"),
+    "result.version_accepted": [
+        _UPDATE_ROLLUPS,
+        ("apps.anomalies.tasks.analyze_version", "anomaly"),
+    ],
+    "result.review_decided": [
+        _UPDATE_ROLLUPS,
+        ("apps.results.tasks.notify_review_decision", "notifications"),
+    ],
+    "anomaly.flags_raised": [
+        _UPDATE_ROLLUPS,
+        ("apps.anomalies.tasks.route_flags", "anomaly"),
+    ],
+    "anomaly.flag_changed": _UPDATE_ROLLUPS,
+    "notification.created": (
+        "apps.notifications.tasks.deliver_notifications",
+        "notifications",
+    ),
+    "election.opened": ("apps.aggregation.tasks.build_election_rollups", "aggregation"),
 }
 VTRS_OUTBOX_RELAY_MIN_AGE_SECONDS = 5
 VTRS_OUTBOX_RETENTION_DAYS = 7
