@@ -74,6 +74,8 @@ INSTALLED_APPS = [
     "apps.anomalies",
     "apps.aggregation",
     "apps.notifications",
+    "apps.reports",
+    "apps.operations",
 ]
 
 
@@ -189,6 +191,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.anomalies.tasks.check_missing_evidence",
         "schedule": 300.0,
     },
+    "reports.purge": {
+        "task": "apps.reports.tasks.purge_expired_exports",
+        "schedule": 3600.0,
+    },
     "notifications.retry": {
         "task": "apps.notifications.tasks.retry_failed_deliveries",
         "schedule": 60.0,
@@ -201,6 +207,7 @@ CELERY_TASK_ROUTES = {
     "apps.anomalies.tasks.flag_quarantined": {"queue": "anomaly"},
     "apps.anomalies.tasks.route_flags": {"queue": "anomaly"},
     "apps.notifications.tasks.deliver_notifications": {"queue": "notifications"},
+    "apps.reports.tasks.build_export": {"queue": "reports"},
     "apps.results.tasks.notify_review_decision": {"queue": "notifications"},
     "apps.aggregation.tasks.update_rollups": {"queue": "aggregation"},
     "apps.aggregation.tasks.build_election_rollups": {"queue": "aggregation"},
@@ -305,6 +312,19 @@ VTRS_S3_ACCESS_KEY = env("VTRS_S3_ACCESS_KEY", "")
 VTRS_S3_SECRET_KEY = env("VTRS_S3_SECRET_KEY", "")
 VTRS_EVIDENCE_UPLOAD_URL_SECONDS = 900
 VTRS_EVIDENCE_DOWNLOAD_URL_SECONDS = 60
+
+# Exports and evidence packs (FR-6.10.5, PB-09). Conservative defaults pending the
+# approved policy: files live 72 hours, three jobs per person at a time, and a pack
+# must be narrowed past 2,000 photos or 1 GiB.
+VTRS_EXPORT_RETENTION_HOURS = 72
+VTRS_EXPORT_MAX_ACTIVE = 3
+VTRS_EVIDENCE_PACK_MAX_FILES = 2000
+VTRS_EVIDENCE_PACK_MAX_BYTES = 1024**3
+
+# Retention of election records, in years after RECONCILED (PB-09, DG-04). Nothing is
+# deleted automatically: `retention_report` lists what has passed its period so a
+# person with legal sign-off can act on it.
+VTRS_RETENTION_YEARS = {"evidence": 7, "results": 10, "audit": 10, "notifications": 1}
 VTRS_EVIDENCE_MAX_PIXELS = 40_000_000
 # Open decision: production malware scanner (ClamAV or managed). Prod refuses this stand-in.
 VTRS_MALWARE_SCANNER = env("VTRS_MALWARE_SCANNER", "apps.evidence.scanning.EicarOnlyScanner")
@@ -364,6 +384,7 @@ VTRS_OUTBOX_ROUTES: dict[str, tuple[str, str] | list[tuple[str, str]]] = {
         "notifications",
     ),
     "election.opened": ("apps.aggregation.tasks.build_election_rollups", "aggregation"),
+    "export.requested": ("apps.reports.tasks.build_export", "reports"),
 }
 VTRS_OUTBOX_RELAY_MIN_AGE_SECONDS = 5
 VTRS_OUTBOX_RETENTION_DAYS = 7

@@ -32,7 +32,7 @@ from .domain.escalation import (
     top_level,
 )
 from .domain.inline import Severity
-from .models import AnomalyFlag, FlagAction, FlagEvent, FlagStatus
+from .models import AlertPolicy, AnomalyFlag, FlagAction, FlagEvent, FlagStatus
 
 logger = logging.getLogger("vtrs.anomalies")
 
@@ -62,8 +62,18 @@ RULE_TITLES = {
 }
 
 
-def matrix() -> Mapping[Severity, Policy]:
-    return matrix_from_settings(getattr(settings, "VTRS_ESCALATION_MATRIX", None))
+def matrix(organization_id: UUID | None = None) -> Mapping[Severity, Policy]:
+    """Platform defaults, then settings, then the organization's own override."""
+    base = dict(getattr(settings, "VTRS_ESCALATION_MATRIX", None) or {})
+    if organization_id is not None:
+        override = (
+            AlertPolicy.objects.filter(organization_id=organization_id)
+            .values_list("matrix", flat=True)
+            .first()
+        )
+        for severity, cfg in (override or {}).items():
+            base[severity] = {**base.get(severity, {}), **cfg}
+    return matrix_from_settings(base)
 
 
 def recipients(flag: AnomalyFlag, level: Level) -> list[UUID]:
@@ -128,10 +138,10 @@ def _tell(
 
 def route_flags(organization_id: UUID, flag_ids: Iterable[UUID]) -> int:
     """Tell the right people about newly raised flags and start the acknowledgement clock."""
-    policies = matrix()
     told = 0
     with transaction.atomic():
         rls.set_tenant(organization_id)
+        policies = matrix(organization_id)
         flags = (
             AnomalyFlag.objects.select_for_update(of=("self",))
             .select_related("polling_unit")
@@ -170,7 +180,7 @@ def escalate_overdue(limit: int = 200) -> int:
             )
             if flag is None:
                 continue  # acknowledged or already escalated by another worker
-            policy = matrix()[Severity(flag.severity)]
+            policy = matrix(organization_id)[Severity(flag.severity)]
             target = next_level(Level(flag.escalation_level))
             if target is None:
                 # Already at the top rung: nobody further to tell, so repeat the page

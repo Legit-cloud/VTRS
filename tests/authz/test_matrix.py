@@ -31,6 +31,7 @@ from apps.geography.domain.synthetic import synthetic_master_data
 from apps.geography.models import Lga, PollingUnit, State, Ward
 from apps.geography.services import import_master_data
 from apps.notifications.models import Notification
+from apps.reports.models import ExportJob
 from apps.results.models import PuResult, ResultVersion
 
 pytestmark = pytest.mark.django_db
@@ -322,6 +323,24 @@ def _notification(w: World, relation: str) -> Notification:
             kind="SYSTEM",
             title="Private",
             body="Private",
+        )
+
+
+def _export_job(w: World, relation: str) -> ExportJob:
+    """An export somebody else in the relation's organization asked for."""
+    owner = w.make_member(
+        Role.WARD_OFFICER, scope_ids=[w.wards[relation].id], organization=w.org_for(relation)
+    )
+    with system_context():
+        return ExportJob.objects.create(
+            organization=w.org_for(relation),
+            requested_by=owner.user,
+            kind="RESULTS",
+            format="CSV",
+            actor_role="WARD_OFFICER",
+            scope_kind="WARD",
+            scope_ids=[w.wards[relation].id],
+            status="READY",
         )
 
 
@@ -629,6 +648,28 @@ ENDPOINTS = [
         visible=_oversight_visible,
         **_flag_kw,
     ),
+    # reports, audit, operations
+    Endpoint("exports", "get", AUTHENTICATED),
+    Endpoint(
+        "export-detail",
+        "get",
+        AUTHENTICATED,
+        _export_job,
+        kwargs=lambda t: {"job_id": t.id},
+        visible=_admin_in_org,  # your own jobs, or everyone's if you are the admin
+    ),
+    Endpoint("audit-events", "get", Perm.AUDIT_VIEW),
+    Endpoint("admin-health", "get", Perm.SYSTEM_VIEW),
+    Endpoint("admin-data-quality", "get", Perm.SYSTEM_VIEW),
+    Endpoint("election-analytics", "get", Perm.DASHBOARD_VIEW, _election, **_election_kw),
+    Endpoint("alert-policy", "get", Perm.ALERTS_CONFIGURE),
+    Endpoint(
+        "alert-policy",
+        "put",
+        Perm.ALERTS_CONFIGURE,
+        body=lambda t, w: {"matrix": {"HIGH": {"ack_minutes": 25}}},
+    ),
+    Endpoint("alert-policy", "delete", Perm.ALERTS_CONFIGURE),
     Endpoint("my-notifications", "get", AUTHENTICATED),
     Endpoint("my-notifications-unread", "get", AUTHENTICATED),
     Endpoint("my-notifications-read-all", "post", AUTHENTICATED),
@@ -650,6 +691,10 @@ SELF_SERVICE = {
     ("auth-step-up", "POST"),
     # Needs a session opened on a registered device; covered in tests/anomalies.
     ("my-push-token", "PUT"),
+    # Each kind of export has its own permissions, checked in the service; covered in
+    # tests/reports.
+    ("exports", "POST"),
+    ("export-download-url", "POST"),
 }
 
 
@@ -751,6 +796,7 @@ def _dummy_kwargs(endpoint: Endpoint) -> dict:
         "polling_unit_id",
         "flag_id",
         "notification_id",
+        "job_id",
     }
     route = next(
         p for p in _flatten(get_resolver().url_patterns) if p.name == endpoint.route

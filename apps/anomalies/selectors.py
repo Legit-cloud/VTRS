@@ -11,7 +11,7 @@ from apps.core.authz import authorize
 from apps.core.domain.actor import Actor
 from apps.core.domain.permissions import Perm
 
-from .models import AnomalyFlag, FlagStatus
+from .models import AlertPolicy, AnomalyFlag, FlagStatus
 
 
 def flags_for(actor: Actor) -> QuerySet[AnomalyFlag]:
@@ -53,3 +53,8 @@ def summary(actor: Actor, election_id: UUID) -> dict[str, Any]:
             round(average.total_seconds() / 60, 1) if average is not None else None
         ),
     }
+
+
+def alert_policy(actor: Actor) -> AlertPolicy | None:
+    authorize(actor, Perm.ALERTS_CONFIGURE)
+    return AlertPolicy.objects.filter(organization_id=actor.organization_id).first()

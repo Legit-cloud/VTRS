@@ -197,8 +197,57 @@ reason; they register a token with `PUT /api/v1/me/push-token`. Providers are ad
 fakes, and WhatsApp stays off until `VTRS_FEATURE_WHATSAPP_ALERTS` is enabled.
 
 Beat schedules the escalation sweep (every minute), the missing-photo sweep (every five
-minutes) and delivery retries (every minute). Run workers on the `anomaly` and
-`notifications` queues as well.
+minutes) and delivery retries (every minute). Run workers on the `anomaly`,
+`notifications` and `reports` queues as well.
+
+## Exports, evidence packs and administration
+
+**Exports** are background jobs, never response bodies: `POST /api/v1/exports` returns a job,
+a worker (`reports` queue) builds the file as the requester, and `POST
+/api/v1/exports/{id}/download-url` issues a 60-second link to private storage.
+
+| Kind | Formats | Needs |
+| --- | --- | --- |
+| `RESULTS` (per contest; level `pu`, `ward` or `lga`; measure `reported` or `verified`) | CSV, XLSX | `reports.export` |
+| `FLAGS` (the anomaly register) | CSV, XLSX | `reports.export`, `anomalies.view` |
+| `AUDIT` (a window of at most 31 days) | CSV | `reports.export`, `audit.view` |
+| `EVIDENCE_PACK` (photos, manifest, custody, verifier) | ZIP | `evidence.export` |
+
+Every export needs a fresh second factor, to request and again to download, and is limited
+to three running jobs per person. The file is built with the requester's own role, scope and
+grants, so it can only hold what they could see on screen. Text a spreadsheet would read as a
+formula is neutralized. Results files are tagged `PROVISIONAL` and say so inside. Files are
+purged after 72 hours; the job record and its audit entries stay.
+
+An **evidence pack** holds the original photos, `manifest.json` (SHA-256 and the hash-chained
+custody events for each file), `results.csv`, and `verify.py`, a standard-library script that
+recomputes every hash and chain offline and prints the manifest's digest (also recorded on the
+job as `manifest_sha256`). Only VERIFIED photos go in; one whose stored bytes no longer match
+its hash is left out and listed. Exporting is itself a custody event on each photo. A pack
+proves integrity and custody; it does not claim legal admissibility. Selections beyond 2,000
+photos or 1 GiB must be narrowed (by contest, LGA, ward or polling unit).
+
+**Administration** (admin by default):
+
+- `GET /api/v1/audit/events`: the organization's audit trail, filtered, in windows of at most
+  31 days.
+- `GET /api/v1/admin/health`: database, cache, broker and storage checks, outbox and audit
+  sealing backlog, and the organization's stuck uploads, failed deliveries and exports, and
+  unacknowledged critical flags.
+- `GET /api/v1/elections/{id}/analytics`: onboarding and activation, assignment completion,
+  submission completion, offline share and sync delay, evidence success, and anomaly rates,
+  inside the caller's scope.
+- `GET /api/v1/admin/data-quality`: gaps in the polling-unit directory.
+- `GET|PUT|DELETE /api/v1/admin/alert-policy`: the organization's override of the escalation
+  matrix (who is told, on which channels, and the acknowledgement window). Changes need a fresh
+  second factor and are audited with before and after.
+
+**Retention (PB-09, DG-04)** defaults, pending the approved policy: exports 72 hours;
+evidence 7 years, results and audit 10 years, notifications 1 year, counted from
+reconciliation (`VTRS_RETENTION_YEARS`). Nothing is deleted automatically.
+`python manage.py retention_report [--json]` lists what has passed its period so a person
+with legal sign-off can act on it. Evidence is never purged while an election is not
+RECONCILED.
 
 ## API contract
 

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID
 
 from django.db.models import QuerySet
@@ -9,7 +9,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.anomalies import selectors, services
+from apps.anomalies import routing, selectors, services
 from apps.anomalies.domain.inline import Severity
 from apps.anomalies.models import AnomalyFlag, FlagStatus
 from apps.anomalies.routing import RULE_TITLES
@@ -237,3 +237,52 @@ class FlagReopenView(_FlagAction):
 
     def run(self, actor: Any, flag: AnomalyFlag, data: dict[str, Any]) -> AnomalyFlag:
         return services.reopen(actor, flag, data["note"])
+
+
+class AlertPolicyView(APIView):
+    """Who is told about flags, how, and how long they have before it escalates. GET shows
+    the matrix in force; PUT overrides severities (fresh second factor); DELETE restores the
+    platform defaults."""
+
+    required_permissions: ClassVar[dict[str, str]] = {
+        "GET": Perm.ALERTS_CONFIGURE,
+        "PUT": Perm.ALERTS_CONFIGURE,
+        "DELETE": Perm.ALERTS_CONFIGURE,
+    }
+
+    @staticmethod
+    def _body(actor: Any) -> dict[str, Any]:
+        policy = selectors.alert_policy(actor)
+        effective = {
+            severity.value: {
+                "notify": [level.name for level in cfg.notify],
+                "channels": [c.value for c in cfg.channels],
+                "ack_minutes": cfg.ack_minutes,
+                "escalation_channels": [c.value for c in cfg.escalation_channels],
+            }
+            for severity, cfg in routing.matrix(actor.organization_id).items()
+        }
+        return {
+            "overridden": policy is not None,
+            "override": policy.matrix if policy else {},
+            "effective": effective,
+            "updated_at": policy.updated_at if policy else None,
+        }
+
+    @extend_schema(responses={200: s.AlertPolicySerializer})
+    def get(self, request: Request) -> Response:
+        return Response(s.AlertPolicySerializer(self._body(request.actor)).data)  # type: ignore[attr-defined]
+
+    @extend_schema(request=s.AlertPolicyUpdateSerializer, responses={200: s.AlertPolicySerializer})
+    def put(self, request: Request) -> Response:
+        actor = request.actor  # type: ignore[attr-defined]
+        data = s.AlertPolicyUpdateSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        services.set_alert_policy(actor, dict(data.validated_data["matrix"]))
+        return Response(s.AlertPolicySerializer(self._body(actor)).data)
+
+    @extend_schema(request=None, responses={200: s.AlertPolicySerializer})
+    def delete(self, request: Request) -> Response:
+        actor = request.actor  # type: ignore[attr-defined]
+        services.clear_alert_policy(actor)
+        return Response(s.AlertPolicySerializer(self._body(actor)).data)

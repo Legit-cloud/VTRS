@@ -9,6 +9,7 @@ urlpatterns = [
         views.FlagSummaryView.as_view(),
         name="election-flags-summary",
     ),
+    path("admin/alert-policy", views.AlertPolicyView.as_view(), name="alert-policy"),
     path("flags/<uuid:flag_id>", views.FlagDetailView.as_view(), name="flag-detail"),
     path(
         "flags/<uuid:flag_id>/acknowledge",

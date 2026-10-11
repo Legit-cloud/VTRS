@@ -15,16 +15,17 @@ from rest_framework.exceptions import ValidationError
 from apps.accounts.models import Membership, MembershipStatus
 from apps.audit import services as audit
 from apps.core import services as core
-from apps.core.authz import authorize
+from apps.core.authz import authorize, require_recent_mfa
 from apps.core.domain.actor import Actor
 from apps.core.domain.canonical import to_json_compatible
 from apps.core.domain.permissions import Perm, Role, effective_permissions
 from apps.results.domain.versions import VersionState
 from apps.results.models import PuResult, PuResultStatus, ResultVersion
 
+from .domain.escalation import config_problems
 from .domain.inline import Finding, Severity
 from .errors import FlagAlreadyClosed, FlagNotClosed, InvalidAssignee
-from .models import AnomalyFlag, FlagAction, FlagEvent, FlagStatus
+from .models import AlertPolicy, AnomalyFlag, FlagAction, FlagEvent, FlagStatus
 
 ACTIVE = (FlagStatus.OPEN, FlagStatus.ACKNOWLEDGED)
 # Findings at or above this severity send a result to review; INFO is for the record.
@@ -376,3 +377,61 @@ def _covers(member: Membership, flag: AnomalyFlag) -> bool:
 def _may_view(member: Membership) -> bool:
     granted = {Perm(p) for p in member.granted_permissions if p in Perm._value2member_map_}
     return Perm.ANOMALIES_VIEW in effective_permissions(Role(member.role), granted)
+
+
+# --- Alert policy (spec section 13: configuration of communication channels) ----------------
+
+
+def set_alert_policy(actor: Actor, matrix: dict[str, Any]) -> AlertPolicy:
+    """Replace the organization's override of the escalation matrix.
+
+    Admins only, with a fresh second factor: this decides who is woken up, and a quiet matrix
+    is as dangerous as a noisy one. Only the severities named here change."""
+    authorize(actor, Perm.ALERTS_CONFIGURE)
+    require_recent_mfa(actor)
+    problems = config_problems(matrix)
+    if problems:
+        raise ValidationError({"matrix": problems})
+    with transaction.atomic():
+        existing = (
+            AlertPolicy.objects.select_for_update()
+            .filter(organization_id=actor.organization_id)
+            .first()
+        )
+        before = existing.matrix if existing else {}
+        policy = existing or AlertPolicy(organization_id=actor.organization_id)
+        policy.matrix = to_json_compatible(matrix)
+        policy.updated_by_id = actor.user_id
+        policy.updated_at = timezone.now()
+        policy.save()
+        audit.record(
+            action="alert_policy.updated",
+            object_type="alert_policy",
+            object_id=policy.id,
+            actor=actor,
+            diff={"before": before, "after": policy.matrix},
+        )
+    return policy
+
+
+def clear_alert_policy(actor: Actor) -> bool:
+    """Go back to the platform defaults."""
+    authorize(actor, Perm.ALERTS_CONFIGURE)
+    require_recent_mfa(actor)
+    with transaction.atomic():
+        existing = (
+            AlertPolicy.objects.select_for_update()
+            .filter(organization_id=actor.organization_id)
+            .first()
+        )
+        if existing is None:
+            return False
+        audit.record(
+            action="alert_policy.cleared",
+            object_type="alert_policy",
+            object_id=existing.id,
+            actor=actor,
+            diff={"before": existing.matrix},
+        )
+        existing.delete()
+    return True

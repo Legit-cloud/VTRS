@@ -116,3 +116,45 @@ def levels_to_notify(policy: Policy) -> Sequence[Level]:
 
 def is_overdue(due_at: datetime | None, now: datetime) -> bool:
     return due_at is not None and due_at <= now
+
+
+MAX_ACK_MINUTES = 24 * 60
+_POLICY_KEYS = {"notify", "channels", "ack_minutes", "escalation_channels"}
+
+
+def config_problems(raw: Mapping[str, Mapping[str, Any]]) -> list[str]:
+    """Everything wrong with an organization's matrix override, in plain words."""
+    problems: list[str] = []
+    for name, cfg in raw.items():
+        try:
+            Severity(name)
+        except ValueError:
+            problems.append(f"{name!r} is not a severity")
+            continue
+        if not isinstance(cfg, Mapping):
+            problems.append(f"{name}: expected an object")
+            continue
+        for unknown in sorted(set(cfg) - _POLICY_KEYS):
+            problems.append(f"{name}: unknown setting {unknown!r}")
+        for key in ("notify", "channels", "escalation_channels"):
+            if key not in cfg:
+                continue
+            values = cfg[key]
+            if not isinstance(values, list):
+                problems.append(f"{name}.{key}: expected a list")
+                continue
+            allowed = [lv.name for lv in Level] if key == "notify" else [c.value for c in Channel]
+            problems += [
+                f"{name}.{key}: {v!r} is not one of {allowed}" for v in values if v not in allowed
+            ]
+        if "ack_minutes" in cfg:
+            minutes = cfg["ack_minutes"]
+            if minutes is not None and (
+                not isinstance(minutes, int)
+                or isinstance(minutes, bool)
+                or not 1 <= minutes <= MAX_ACK_MINUTES
+            ):
+                problems.append(f"{name}.ack_minutes: use 1 to {MAX_ACK_MINUTES} minutes, or null")
+        if name == Severity.CRITICAL.value and cfg.get("notify") == []:
+            problems.append("CRITICAL flags must notify at least one level")
+    return problems

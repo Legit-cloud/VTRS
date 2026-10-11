@@ -64,5 +64,16 @@ class NoteSerializer(StrictSerializer):
     note = serializers.CharField(min_length=3, max_length=1000)
 
 
+class AlertPolicyUpdateSerializer(StrictSerializer):
+    matrix = serializers.DictField(child=serializers.DictField())
+
+
+class AlertPolicySerializer(serializers.Serializer):
+    overridden = serializers.BooleanField()
+    override = serializers.DictField()
+    effective = serializers.DictField()
+    updated_at = serializers.DateTimeField(allow_null=True)
+
+
 class AssignSerializer(StrictSerializer):
     assignee_id = serializers.UUIDField(allow_null=True)

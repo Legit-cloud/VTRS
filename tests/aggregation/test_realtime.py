@@ -26,6 +26,13 @@ def _fresh_channel_layer():
     channel_layers.backends.clear()
 
 
+@pytest.fixture(autouse=True)
+def _keep_the_test_connection(monkeypatch):
+    """`database_sync_to_async` closes "old" connections around each call, which is right in
+    production (connections last one request) but would close the test transaction's own."""
+    monkeypatch.setattr("channels.db.close_old_connections", lambda: None)
+
+
 async def _open(token: str | None, election_id, *, raw=None):
     comm = WebsocketCommunicator(APP, "/ws/v1/dashboard")
     connected, _ = await comm.connect()

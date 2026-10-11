@@ -110,6 +110,22 @@ class AnomalyFlag(UUIDv7Model):
         ]
 
 
+class AlertPolicy(models.Model):
+    """An organization's override of the escalation matrix (spec section 13). Only the
+    severities it names change; the rest keep the platform defaults."""
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    organization = models.OneToOneField(
+        "organizations.Organization", on_delete=models.PROTECT, related_name="alert_policy"
+    )
+    matrix = models.JSONField(default=dict)
+    updated_by_id = models.UUIDField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "alert_policy"
+
+
 class FlagEvent(models.Model):
     """Append-only history of a flag: who raised, escalated, acknowledged, resolved or
     commented, when, and why. The flag row is the current state; this is the record."""
