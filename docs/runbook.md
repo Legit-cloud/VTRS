@@ -59,6 +59,28 @@ configuration, so a bad deployment fails at start, not at 6 pm.
 | T-1 day | Move the election to LIVE (a worker builds every rollup row; confirm `reported/expected` shows the full unit count); verify `verify_rollups` and `verify_audit_chain` are clean |
 | T-0 | Staff the command centre; watch health and the review queue |
 
+### Loading the polling-unit directory
+
+INEC export (columns `state_code, state_name, lga_code, lga_name, ward_code, ward_name, pu_code,
+pu_name` plus optional `latitude, longitude, registered_voters`):
+
+```sh
+python manage.py import_master_data inec.csv --dry-run --report report.json
+python manage.py import_master_data inec.csv
+```
+
+Names-only Markdown directory (the interim Oyo file in `data/master/`): convert first, then
+import without the expected counts, because the directory is incomplete by design:
+
+```sh
+python manage.py convert_directory data/master/oyo-directory.md --out oyo.csv
+python manage.py import_master_data oyo.csv --no-expectations
+```
+
+Its codes (`DIR-OY-…`) are positional placeholders and its units have no coordinates, so the
+GPS rules are informational for them. Importing the INEC export later adds the real units under
+their INEC codes; retire the interim rows by reassigning agents, not by editing codes.
+
 ## 5. During the election
 
 Watch, in this order:

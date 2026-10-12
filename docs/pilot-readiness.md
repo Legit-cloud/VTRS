@@ -49,7 +49,7 @@ have).
 | --- | --- | --- | --- |
 | PB-01 | Scope and role matrix | Met | Sign-off |
 | PB-02 | Organization identity and ownership | Open | Business |
-| PB-03 | Approved master dataset | Open | Import the approved INEC directory with `import_master_data` (synthetic data is in place) |
+| PB-03 | Approved master dataset | Interim directory loaded; INEC export still needed | The supplied community directory (`data/master/oyo-directory.md`: 33 LGAs, 351 wards, 4,731 of about 6,390 units) imports through `convert_directory` then `import_master_data --no-expectations`. It has names only: no INEC codes (provisional `DIR-OY-…` codes are positional), no coordinates, no voter counts, and it omits units added in 2022. GPS and expected-versus-reported figures are therefore partial until the INEC export replaces it |
 | PB-04 | Candidate and election configuration rules | Met (rules enforced; lock fingerprints the configuration) | Confirmation |
 | PB-05 | Result-sheet fields and validation | Met as configurable per contest | Confirm the final field set |
 | PB-06 | Agent deployment model | Decided: up to three agents per polling unit | None |
@@ -126,7 +126,7 @@ those on the production stack (runbook section 7).
 ## Before go-live, in order
 
 1. Decide hosting and region (PB-12); stand up staging and production.
-2. Provide the approved master data (PB-03) and import it.
+2. Provide the INEC master data (PB-03) and import it in place of the interim directory.
 3. Choose the SMS, push, WhatsApp, challenge and scanner vendors (PB-07); run each adapter once
    against the real service.
 4. Repeat the load simulation on staging hardware with prefork workers; record the numbers here.
