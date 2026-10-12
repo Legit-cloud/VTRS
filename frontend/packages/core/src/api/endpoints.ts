@@ -156,6 +156,7 @@ export function createEndpoints(api: ApiClient) {
       create: (body: ElectionCreateRequest) => post<Election>("/elections", body),
       update: (id: string, body: Partial<ElectionCreateRequest>, etag: string) =>
         api.patch<Election>(`${V1}/elections/${id}`, body, { ifMatch: etag }),
+      remove: (id: string) => api.delete<void>(`${V1}/elections/${id}`),
       transition: (id: string, to: "DRAFT" | "CONFIGURED" | "LIVE" | "CLOSED") =>
         post<Election>(`/elections/${id}/transition`, { to }),
       lock: (id: string) => post<Election>(`/elections/${id}/lock`),
@@ -276,7 +277,8 @@ export function createEndpoints(api: ApiClient) {
     geography: {
       lgas: (query: { state?: string } & Paging = {}) => get<Page<Lga>>("/geography/lgas", query),
       wards: (query: { lga?: string } & Paging = {}) => get<Page<Ward>>("/geography/wards", query),
-      pollingUnits: (query: { ward?: string; lga?: string } & Paging = {}) =>
+      /** `ids` is a comma-separated list of polling unit ids (up to 100). */
+      pollingUnits: (query: { ward?: string; lga?: string; ids?: string } & Paging = {}) =>
         get<Page<PollingUnit>>("/geography/polling-units", query),
     },
 

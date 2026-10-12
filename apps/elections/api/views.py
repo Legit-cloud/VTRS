@@ -70,6 +70,7 @@ class ElectionDetailView(APIView):
     required_permissions: ClassVar[dict[str, str]] = {
         "GET": AUTHENTICATED,
         "PATCH": Perm.ELECTIONS_CONFIGURE,
+        "DELETE": Perm.ELECTIONS_CONFIGURE,
     }
 
     @extend_schema(responses={200: s.ElectionSerializer})
@@ -90,6 +91,12 @@ class ElectionDetailView(APIView):
             actor, election, expected_version=if_match_version(request), changes=changes
         )
         return with_etag(Response(s.ElectionSerializer(updated).data), updated.row_version)
+
+    @extend_schema(responses={204: None})
+    def delete(self, request: Request, election_id: UUID) -> Response:
+        actor = request.actor  # type: ignore[attr-defined]
+        services.delete_election(actor, selectors.election_for(actor, election_id))
+        return Response(status=204)
 
 
 class ElectionLockView(APIView):

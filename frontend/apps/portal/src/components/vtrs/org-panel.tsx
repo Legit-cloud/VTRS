@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, electionStatus, formatDate, formatDateTime, formatNumber } from "@vtrs/core";
+import { electionStatus, formatDate, formatDateTime, formatNumber } from "@vtrs/core";
 import { Ban, Check, RotateCcw, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/card";
 import { SidePanel } from "@/components/ui/dialog";
 import { InlineAlert, QueryError } from "@/components/ui/feedback";
 import { useToast } from "@/components/ui/toast";
+import { describeError } from "@/lib/errors";
 import { ep } from "@/lib/api";
 import { orgStatus } from "@/lib/platform";
 import { useStepUp } from "@/lib/step-up";
@@ -99,7 +100,7 @@ export function OrgPanel({
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ["platform"] });
     },
-    onError: (e) => setError(e instanceof ApiError ? e.detail : "That did not go through."),
+    onError: (e) => setError(describeError(e)),
   });
 
   const status = org?.status;

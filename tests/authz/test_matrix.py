@@ -478,6 +478,9 @@ ENDPOINTS = [
         **_election_kw,
     ),
     Endpoint(
+        "election-detail", "delete", Perm.ELECTIONS_CONFIGURE, _election, ok=204, **_election_kw
+    ),
+    Endpoint(
         "election-transition",
         "post",
         Perm.ELECTIONS_CONFIGURE,

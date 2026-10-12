@@ -472,7 +472,7 @@ export interface paths {
         get: operations["elections_retrieve"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["elections_destroy"];
         options?: never;
         head?: never;
         patch: operations["elections_partial_update"];
@@ -2792,6 +2792,8 @@ export interface components {
             readonly ward_id: string;
             /** Format: uuid */
             readonly lga_id: string;
+            /** Format: uuid */
+            readonly state_id: string;
             /** Format: decimal */
             latitude?: string | null;
             /** Format: decimal */
@@ -3979,6 +3981,26 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Election"];
                 };
+            };
+        };
+    };
+    elections_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                election_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

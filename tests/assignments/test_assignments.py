@@ -257,3 +257,41 @@ def test_active_assignment_check_for_submission(admin, client, make_member, geo)
     set_tenant(admin.organization.id)
     assert active_assignment(actor, election_id=election.id, polling_unit_id=geo["pu_a"].id)
     assert not active_assignment(actor, election_id=election.id, polling_unit_id=geo["pu_b"].id)
+
+
+def test_deactivating_an_agent_frees_their_polling_unit(
+    admin, client, client_as, make_member, geo, settings
+):
+    """A deactivated agent cannot report, so they must stop occupying the unit's capacity."""
+    settings.VTRS_MAX_AGENTS_PER_POLLING_UNIT = 1
+    election = _election(admin.organization, geo, status="LIVE")
+    org = admin.organization
+    leaving = make_member(Role.PU_AGENT, scope_ids=[geo["pu_a"].id], organization=org)
+    arriving = make_member(Role.PU_AGENT, scope_ids=[geo["pu_a"].id], organization=org)
+    assert _assign(client, election, leaving, geo["pu_a"]).status_code == 201
+    # The unit is full: the replacement cannot be placed yet.
+    assert _assign(client, election, arriving, geo["pu_a"]).status_code == 409
+
+    done = client.post(
+        f"/api/v1/users/{leaving.user.id}/deactivate", {}, format="json", HTTP_IDEMPOTENCY_KEY="d-1"
+    )
+    assert done.status_code == 200
+    active = client.get("/api/v1/assignments", {"status": "ACTIVE"}).json()["results"]
+    assert active == []
+    ended = AuditEvent.objects.get(action="assignment.revoked")
+    assert ended.diff["reason"] == "agent_deactivated"
+    assert AuditEvent.objects.get(action="user.deactivated").diff["assignments_ended"] == 1
+
+    # Now the replacement fits, and the deactivated agent can do nothing.
+    assert _assign(client, election, arriving, geo["pu_a"]).status_code == 201
+    assert client_as(leaving).get("/api/v1/me/assignments").status_code == 401
+
+
+def test_polling_units_can_be_looked_up_by_id_and_carry_their_state(admin, client, geo):
+    rows = client.get(
+        "/api/v1/geography/polling-units", {"ids": f"{geo['pu_a'].id},{geo['pu_b'].id}"}
+    ).json()["results"]
+    assert {r["id"] for r in rows} == {str(geo["pu_a"].id), str(geo["pu_b"].id)}
+    assert {r["state_id"] for r in rows} == {str(geo["state"].id)}
+    bad = client.get("/api/v1/geography/polling-units", {"ids": "not-a-uuid"})
+    assert bad.status_code == 400

@@ -28,6 +28,7 @@ class PollingUnitSerializer(serializers.ModelSerializer):
             "name",
             "ward_id",
             "lga_id",
+            "state_id",
             "latitude",
             "longitude",
             "registered_voters",
