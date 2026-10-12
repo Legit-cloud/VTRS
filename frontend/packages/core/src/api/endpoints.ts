@@ -156,6 +156,7 @@ export function createEndpoints(api: ApiClient) {
       create: (body: ElectionCreateRequest) => post<Election>("/elections", body),
       update: (id: string, body: Partial<ElectionCreateRequest>, etag: string) =>
         api.patch<Election>(`${V1}/elections/${id}`, body, { ifMatch: etag }),
+      remove: (id: string) => api.delete<void>(`${V1}/elections/${id}`),
       transition: (id: string, to: "DRAFT" | "CONFIGURED" | "LIVE" | "CLOSED") =>
         post<Election>(`/elections/${id}/transition`, { to }),
       lock: (id: string) => post<Election>(`/elections/${id}/lock`),

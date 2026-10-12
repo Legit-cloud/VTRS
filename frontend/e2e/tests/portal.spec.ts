@@ -207,7 +207,11 @@ test.describe("party admin", () => {
     await page.goto("/agents");
     await expect(page.getByText(/Assigning for E2E election/)).toBeVisible();
 
-    const row = page.getByRole("row").filter({ hasText: "Not assigned" }).last();
+    const row = page
+      .getByRole("row")
+      .filter({ hasText: "Not assigned" })
+      .filter({ has: page.getByRole("button", { name: "Assign", exact: true }) })
+      .last();
     const agent = (await row.getByRole("cell").first().innerText()).trim();
     await row.getByRole("button", { name: "Assign" }).click();
     await page.getByRole("radio", { name: /SYN-/ }).check();
@@ -250,6 +254,32 @@ test.describe("party admin", () => {
     await expect(
       page.getByRole("row").filter({ hasText: agent }).getByText("Not assigned"),
     ).toBeVisible();
+    await page.close();
+  });
+
+  test("deletes an election that is still being set up", async () => {
+    const page = await context.newPage();
+    await page.goto("/elections");
+    const picker = page.getByLabel("Election", { exact: true });
+    const name = (await picker.locator("option:checked").innerText()).replace(/ \(.*\)$/, "");
+    expect(name).toMatch(/^E2E election/);
+
+    await page.getByRole("button", { name: "Delete election" }).click();
+    await expect(page.getByText(/This cannot be undone/)).toBeVisible();
+    await page.getByRole("dialog").getByRole("button", { name: "Delete election" }).click();
+    const prompt = page.getByLabel("Authenticator code");
+    if (
+      await prompt.waitFor({ state: "visible", timeout: 2_000 }).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      await nextTotpWindow();
+      await prompt.fill(totp(secret));
+      await page.getByRole("button", { name: "Confirm" }).click();
+    }
+    await expect(page.getByText(`${name} was deleted`)).toBeVisible();
+    await expect(picker.locator("option", { hasText: name })).toHaveCount(0);
     await page.close();
   });
 

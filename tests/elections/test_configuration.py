@@ -279,3 +279,53 @@ def test_creates_are_idempotent(client, state):
         "/api/v1/elections", body, format="json", HTTP_IDEMPOTENCY_KEY="different"
     )
     assert duplicate.json()["errors"]["name"]
+
+
+def test_a_draft_election_can_be_deleted_with_what_was_set_up_under_it(client, state):
+    election, _ = _ready(client, state)
+    url = f"/api/v1/elections/{election['id']}"
+    response = client.delete(url)
+    assert response.status_code == 204
+    assert client.get(url).status_code == 404
+    event = AuditEvent.objects.filter(action="election.deleted").get()
+    assert event.diff["contests_removed"] == 1
+    # The name is free again.
+    assert (
+        _post(
+            client,
+            "/api/v1/elections",
+            {
+                "name": election["name"],
+                "state_id": str(state.id),
+                "election_date": "2027-03-11",
+            },
+        ).status_code
+        == 201
+    )
+
+
+def test_a_locked_election_cannot_be_deleted(client, state):
+    election, _ = _ready(client, state)
+    _post(client, f"/api/v1/elections/{election['id']}/transition", {"to": "CONFIGURED"})
+    assert _post(client, f"/api/v1/elections/{election['id']}/lock").status_code == 200
+    response = client.delete(f"/api/v1/elections/{election['id']}")
+    assert response.status_code == 409
+    assert response.json()["code"] == "election_not_deletable"
+    assert client.get(f"/api/v1/elections/{election['id']}").status_code == 200
+
+
+def test_deleting_an_election_needs_a_fresh_second_factor(admin, client_as, state, client):
+    election = _election(client, state)
+    stale = start_session(
+        user=admin.user,
+        membership=admin.membership,
+        client="WEB",
+        device=None,
+        mfa_at=timezone.now() - timedelta(hours=1),
+        ip=None,
+    )
+    stale_client = client_as(admin)
+    stale_client.credentials(HTTP_AUTHORIZATION=f"Bearer {stale.access_token}")
+    response = stale_client.delete(f"/api/v1/elections/{election['id']}")
+    assert response.json()["code"] == "mfa_step_up_required"
+    assert client.get(f"/api/v1/elections/{election['id']}").status_code == 200

@@ -29,7 +29,12 @@ from .domain.rules import (
     fingerprint,
     sheet_field_problems,
 )
-from .errors import ConfigurationIncomplete, ElectionNotEditable, InvalidTransition
+from .errors import (
+    ConfigurationIncomplete,
+    ElectionNotDeletable,
+    ElectionNotEditable,
+    InvalidTransition,
+)
 from .models import Candidate, Contest, Election
 
 ELECTION_FIELDS = (
@@ -58,6 +63,11 @@ def _locked_election(election_id: Any) -> Election:
 def _require_editable(election: Election) -> None:
     if election.status not in EDITABLE:
         raise ElectionNotEditable()
+
+
+def _require_deletable(election: Election) -> None:
+    if election.status not in EDITABLE:
+        raise ElectionNotDeletable()
 
 
 def _bump_config(election: Election) -> None:
@@ -201,6 +211,38 @@ def transition(
                 {"organization_id": election.organization_id, "election_id": election.id},
             )
     return election
+
+
+def delete_election(actor: Actor, election: Election) -> None:
+    """Remove an election that is still being set up (DRAFT or CONFIGURED).
+
+    Once an election is locked, agents have synced its configuration and it is part of the
+    record, so it can no longer be deleted. A fresh second factor is required. Assignments
+    made while setting up go with it; each removal is audited.
+    """
+    authorize(actor, Perm.ELECTIONS_CONFIGURE)
+    require_recent_mfa(actor)
+    with transaction.atomic():
+        election = _locked_election(election.id)
+        _require_deletable(election)
+        contests = list(Contest.objects.filter(election=election).values_list("id", flat=True))
+        assignments = list(election.assignments.values_list("id", flat=True))
+        election.assignments.all().delete()
+        Candidate.objects.filter(contest_id__in=contests).delete()
+        Contest.objects.filter(election=election).delete()
+        election.delete()
+        audit.record(
+            action="election.deleted",
+            object_type="election",
+            object_id=election.id,
+            actor=actor,
+            diff={
+                "name": election.name,
+                "status": election.status,
+                "contests_removed": len(contests),
+                "assignments_removed": len(assignments),
+            },
+        )
 
 
 # --- Contests -------------------------------------------------------------------------------

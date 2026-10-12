@@ -326,6 +326,15 @@ function Workspace({
         )}
       </section>
 
+      {editable ? (
+        <DeleteElection
+          election={election}
+          contests={config.contests.length}
+          candidates={config.candidateCount}
+          onDeleted={refresh}
+        />
+      ) : null}
+
       <AddContestPanel
         open={addContest}
         electionId={electionId}
@@ -1443,5 +1452,69 @@ function AddCandidatePanel({
         </label>
       </div>
     </SidePanel>
+  );
+}
+
+function DeleteElection({
+  election,
+  contests,
+  candidates,
+  onDeleted,
+}: {
+  election: Election;
+  contests: number;
+  candidates: number;
+  onDeleted: () => void;
+}) {
+  const toast = useToast();
+  const stepUp = useStepUp();
+  const [open, setOpen] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => stepUp(() => ep.elections.remove(election.id)),
+    onSuccess: () => {
+      setOpen(false);
+      toast(`${election.name} was deleted`);
+      onDeleted();
+    },
+    onError: (e) => {
+      setOpen(false);
+      toast(errorLines(e, "Could not delete the election.").join(" "));
+    },
+  });
+
+  return (
+    <section aria-label="Delete this election">
+      <Card className="flex flex-wrap items-center justify-between gap-4 border-danger/40 p-5">
+        <div className="max-w-xl">
+          <h2 className="text-h3">Delete this election</h2>
+          <p className="text-body-sm text-subtle-foreground">
+            Only possible while it is being set up. Once it is locked it becomes part of the record
+            and can no longer be deleted.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          className="text-danger"
+          leading={<Trash2 className="h-4 w-4" aria-hidden />}
+          onClick={() => setOpen(true)}
+        >
+          Delete election
+        </Button>
+      </Card>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Delete ${election.name}?`}
+        description={`This removes the election, its ${formatNumber(contests)} ${
+          contests === 1 ? "contest" : "contests"
+        } and ${formatNumber(candidates)} ${
+          candidates === 1 ? "candidate" : "candidates"
+        }, and any agent placements made for it. Agents and polling units are not affected. This cannot be undone. You will be asked for your authenticator code.`}
+        confirmLabel="Delete election"
+        danger
+        loading={remove.isPending}
+        onConfirm={() => remove.mutate()}
+      />
+    </section>
   );
 }
