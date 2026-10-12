@@ -1,0 +1,50 @@
+{
+  "name": "@vtrs/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "VTRS agent app: offline result capture and sync",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "lint": "expo lint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@expo-google-fonts/onest": "^0.4.2",
+    "@vtrs/core": "*",
+    "@vtrs/design-system": "*",
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~57.0.2",
+    "expo": "~57.0.27",
+    "expo-camera": "~57.0.6",
+    "expo-constants": "~57.0.21",
+    "expo-crypto": "~57.0.3",
+    "expo-file-system": "~57.0.7",
+    "expo-font": "~57.0.4",
+    "expo-image-manipulator": "~57.0.21",
+    "expo-linking": "~57.0.12",
+    "expo-location": "~57.0.20",
+    "expo-network": "~57.0.2",
+    "expo-router": "~57.0.25",
+    "expo-secure-store": "~57.0.4",
+    "expo-splash-screen": "~57.0.9",
+    "expo-sqlite": "~57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "lucide-react-native": "^1.55.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
+    "react-native-web": "^0.21.2"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "vitest": "^5.0.3"
+  }
+}

@@ -2064,6 +2064,8 @@ export interface components {
             refresh_expires_at?: string;
             /** Format: uuid */
             session_id?: string;
+            /** Format: uuid */
+            device_id?: string | null;
         };
         Marked: {
             marked: number;
