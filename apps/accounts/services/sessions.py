@@ -48,8 +48,11 @@ class TokenPair:
     refresh_token: str
     refresh_expires_at: datetime
     session_id: UUID
+    # The device the session is bound to. A mobile client needs it to sign in again and to
+    # sign every submission, and the server creates it, so the client cannot invent it.
+    device_id: UUID | None = None
 
-    def as_dict(self) -> dict[str, str]:
+    def as_dict(self) -> dict[str, str | None]:
         return {
             "token_type": "Bearer",
             "access_token": self.access_token,
@@ -57,6 +60,7 @@ class TokenPair:
             "refresh_token": self.refresh_token,
             "refresh_expires_at": self.refresh_expires_at.isoformat(),
             "session_id": str(self.session_id),
+            "device_id": str(self.device_id) if self.device_id else None,
         }
 
 
@@ -110,7 +114,9 @@ def start_session(
         organization_id=membership.organization_id,
         diff={"user_id": user.id, "client": client, "mfa": mfa_at is not None},
     )
-    return TokenPair(access, access_expires, refresh, session.expires_at, session.id)
+    return TokenPair(
+        access, access_expires, refresh, session.expires_at, session.id, session.device_id
+    )
 
 
 def _deny(session_id: UUID) -> None:
@@ -185,7 +191,12 @@ def refresh(refresh_token: str, *, device_id: UUID | None) -> TokenPair:
                 new_refresh = _new_refresh_token(session)
                 access, access_expires = access_token_for(session, membership)
                 pair = TokenPair(
-                    access, access_expires, new_refresh, session.expires_at, session.id
+                    access,
+                    access_expires,
+                    new_refresh,
+                    session.expires_at,
+                    session.id,
+                    session.device_id,
                 )
     if pair is None:
         raise InvalidRefreshToken()

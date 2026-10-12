@@ -3823,11 +3823,16 @@ components:
         state_code:
           type: string
           readOnly: true
+        state_id:
+          type: string
+          format: uuid
+          readOnly: true
       required:
       - id
       - inec_code
       - name
       - state_code
+      - state_id
     Live:
       type: object
       properties:
@@ -3918,7 +3923,12 @@ components:
           type: boolean
         mfa_required:
           type: boolean
+        device_id:
+          type: string
+          format: uuid
+          nullable: true
       required:
+      - device_id
       - email
       - full_name
       - mfa_enabled
@@ -5144,9 +5154,14 @@ components:
         session_id:
           type: string
           format: uuid
+        device_id:
+          type: string
+          format: uuid
+          nullable: true
       required:
       - access_expires_at
       - access_token
+      - device_id
       - refresh_expires_at
       - refresh_token
       - session_id

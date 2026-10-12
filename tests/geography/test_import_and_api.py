@@ -119,6 +119,15 @@ def test_every_role_can_read_master_data(small_geography, client_as, make_member
     assert [r["inec_code"] for r in response.json()["results"]] == ["SYN-01", "SYN-02", "SYN-03"]
 
 
+def test_lgas_carry_the_state_id_clients_need_to_create_an_election(
+    small_geography, client_as, make_member
+):
+    rows = client_as(make_member()).get("/api/v1/geography/lgas").json()["results"]
+    expected = {str(state_id) for state_id in Lga.objects.values_list("state_id", flat=True)}
+    assert {r["state_id"] for r in rows} == expected
+    assert all(r["state_code"] for r in rows)
+
+
 def test_filters_and_keyset_pagination(small_geography, client_as, make_member):
     client = client_as(make_member())
     lga = Lga.objects.get(inec_code="SYN-01")

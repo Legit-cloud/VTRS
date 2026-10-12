@@ -77,6 +77,7 @@ class Command(BaseCommand):
         parser.add_argument("--replay-rate", type=float, default=0.05)
         parser.add_argument("--anomaly-rate", type=float, default=0.03)
         parser.add_argument("--seed", type=int, default=None)
+        parser.add_argument("--state", default=None, help="State code to simulate in")
         parser.add_argument("--json", action="store_true")
 
     # --- Setup ---------------------------------------------------------------------------------
@@ -90,7 +91,7 @@ class Command(BaseCommand):
         self.rng = random.Random(options["seed"])  # noqa: S311 - simulation data
         total = options["agents"]
         report: dict[str, Any] = {"agents": total, "workers": options["workers"]}
-        world = self._setup(total)
+        world = self._setup(total, options["state"])
         report["setup_seconds"] = world["setup_seconds"]
         self.stderr.write(f"Setup done in {world['setup_seconds']}s; submitting...")
 
@@ -179,18 +180,30 @@ class Command(BaseCommand):
         if failed:
             raise CommandError("The simulation found problems; see the report above.")
 
-    def _setup(self, total: int) -> dict[str, Any]:
+    def _setup(self, total: int, state_code: str | None = None) -> dict[str, Any]:
         started = time.perf_counter()
-        state = State.objects.order_by("inec_code").first()
-        if state is None:
+        # Name-only directories have no coordinates, so take the first state that can seat every
+        # simulated agent at a located polling unit (or the one asked for).
+        states = State.objects.order_by("inec_code")
+        if state_code:
+            states = states.filter(inec_code=state_code)
+        if not states.exists():
             raise CommandError("Import master data first (import_master_data).")
-        units = list(
-            PollingUnit.objects.filter(state=state, latitude__isnull=False).order_by("inec_code")[
-                :total
-            ]
-        )
-        if len(units) < total:
-            raise CommandError(f"Only {len(units)} polling units with coordinates; need {total}.")
+        state, units = None, []
+        for candidate in states:
+            units = list(
+                PollingUnit.objects.filter(state=candidate, latitude__isnull=False).order_by(
+                    "inec_code"
+                )[:total]
+            )
+            if len(units) >= total:
+                state = candidate
+                break
+        if state is None:
+            raise CommandError(
+                f"No state has {total} polling units with coordinates "
+                f"(the best has {len(units)}). Import a located directory or lower --agents."
+            )
         run = secrets.token_hex(3)
         now = timezone.now()
         with transaction.atomic(), system_context():

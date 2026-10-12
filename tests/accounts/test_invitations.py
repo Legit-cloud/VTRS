@@ -87,6 +87,10 @@ def test_agent_onboarding_end_to_end(geography, admin, admin_client, api_client,
     device = Device.objects.get(user_id=me["user_id"])
     assert (device.platform, device.app_version, device.status) == ("ANDROID", "1.2.0", "ACTIVE")
 
+    # The app has no other way to learn its device id, and every login and submission needs it.
+    assert tokens["device_id"] == str(device.id)
+    assert me["device_id"] == str(device.id)
+
     # The agent can sign in again only from that device.
     login = api_client.post(
         "/api/v1/auth/login",
@@ -99,6 +103,7 @@ def test_agent_onboarding_end_to_end(geography, admin, admin_client, api_client,
         format="json",
     )
     assert login.status_code == 200
+    assert login.json()["device_id"] == str(device.id)
 
     # Agents cannot manage the team.
     assert api_client.get("/api/v1/users").json()["code"] == "forbidden"
