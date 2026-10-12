@@ -86,6 +86,8 @@ def test_ward_outside_an_lga_is_rejected():
         ("oyo", "OY", "Oyo", 33, 351, 4731),
         ("ogun", "OG", "Ogun", 20, 236, 3184),
         ("ekiti", "EK", "Ekiti", 16, 177, 2191),
+        ("lagos", "LA", "Lagos", 20, 245, 8322),
+        ("osun", "OS", "Osun", 30, 332, 2984),
     ],
 )
 def test_bundled_directories_have_their_published_totals(slug, code, name, lgas, wards, units):
@@ -104,6 +106,8 @@ def test_state_codes_do_not_collide_across_states():
         ("oyo", "OY", "Oyo"),
         ("ogun", "OG", "Ogun"),
         ("ekiti", "EK", "Ekiti"),
+        ("lagos", "LA", "Lagos"),
+        ("osun", "OS", "Osun"),
     ):
         with (root / f"{slug}-directory.md").open(encoding="utf-8") as handle:
             codes = {

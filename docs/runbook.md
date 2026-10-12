@@ -69,7 +69,7 @@ python manage.py import_master_data inec.csv --dry-run --report report.json
 python manage.py import_master_data inec.csv
 ```
 
-Names-only Markdown directories (the interim Oyo, Ogun and Ekiti files in `data/master/`): convert
+Names-only Markdown directories (the interim Oyo, Ogun, Ekiti, Lagos and Osun files in `data/master/`): convert
 first, then import without the expected counts, because the directories are incomplete by design:
 
 ```sh
@@ -79,6 +79,8 @@ python manage.py import_master_data oyo.csv --no-expectations
 # other states: pass their code and name so codes never collide
 python manage.py convert_directory data/master/ogun-directory.md --out ogun.csv --state-code OG --state-name Ogun
 python manage.py convert_directory data/master/ekiti-directory.md --out ekiti.csv --state-code EK --state-name Ekiti
+python manage.py convert_directory data/master/lagos-directory.md --out lagos.csv --state-code LA --state-name Lagos
+python manage.py convert_directory data/master/osun-directory.md --out osun.csv --state-code OS --state-name Osun
 ```
 
 Its codes (`DIR-OY-…`) are positional placeholders and its units have no coordinates, so the

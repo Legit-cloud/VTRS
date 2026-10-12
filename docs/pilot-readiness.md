@@ -49,7 +49,7 @@ have).
 | --- | --- | --- | --- |
 | PB-01 | Scope and role matrix | Met | Sign-off |
 | PB-02 | Organization identity and ownership | Open | Business |
-| PB-03 | Approved master dataset | Interim directories loaded; INEC export still needed | Supplied community directories are bundled in `data/master/` and import through `convert_directory` then `import_master_data --no-expectations`: Oyo (33 LGAs, 351 wards, 4,731 of about 6,390 units), Ogun (20 / 236 / 3,184) and Ekiti (16 / 177 / 2,191). They are names only: no INEC codes (provisional `DIR-<state>-…` codes are positional), no coordinates, no voter counts, and they omit units added in 2022. GPS and expected-versus-reported figures are therefore partial until the INEC export replaces them |
+| PB-03 | Approved master dataset | Interim directories loaded; INEC export still needed | Supplied community directories are bundled in `data/master/` and import through `convert_directory` then `import_master_data --no-expectations`: Oyo (33 LGAs, 351 wards, 4,731 of about 6,390 units), Ogun (20 / 236 / 3,184) Ekiti (16 / 177 / 2,191), Lagos (20 / 245 / 8,322) and Osun (30 / 332 / 2,984). They are names only: no INEC codes (provisional `DIR-<state>-…` codes are positional), no coordinates, no voter counts, and they omit units added in 2022. GPS and expected-versus-reported figures are therefore partial until the INEC export replaces them |
 | PB-04 | Candidate and election configuration rules | Met (rules enforced; lock fingerprints the configuration) | Confirmation |
 | PB-05 | Result-sheet fields and validation | Met as configurable per contest | Confirm the final field set |
 | PB-06 | Agent deployment model | Decided: up to three agents per polling unit | None |
