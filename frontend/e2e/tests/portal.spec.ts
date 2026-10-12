@@ -161,6 +161,98 @@ test.describe("party admin", () => {
     await page.close();
   });
 
+  test("sets up an election step by step, with the next step always stated", async () => {
+    const page = await context.newPage();
+    const name = `E2E election ${Date.now()}`;
+    await page.goto("/elections");
+    await page.getByRole("button", { name: "New election" }).first().click();
+
+    // The state is chosen explicitly, never guessed.
+    await page.getByLabel("Election name").fill(name);
+    const option = page.getByLabel("State").locator("option", { hasText: "Test state" });
+    await page.getByLabel("State").selectOption(await option.getAttribute("value"));
+    await page.getByLabel("Election day").fill("2027-02-20");
+    await page.getByRole("button", { name: "Create and continue" }).click();
+
+    // Straight into the first contest.
+    await expect(page.getByRole("heading", { name: "Add a contest" })).toBeVisible();
+    await page.getByRole("button", { name: "Add contest" }).click();
+
+    // Then its candidates; one is not enough and the page says so.
+    await expect(page.getByRole("heading", { name: "Add a candidate" })).toBeVisible();
+    await page.getByLabel("Candidate's name").fill("Ada Obi");
+    await page.getByLabel("Party", { exact: true }).fill("Alpha Party");
+    await page.getByLabel("Party acronym").fill("ALP");
+    await page.getByRole("button", { name: "Add candidate" }).last().click();
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(page.getByText("Needs 2 candidates")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mark as ready" })).toBeDisabled();
+
+    await page.getByRole("button", { name: "Add candidate" }).first().click();
+    await page.getByLabel("Candidate's name").fill("Bola Eze");
+    await page.getByLabel("Party", { exact: true }).fill("Beta Party");
+    await page.getByLabel("Party acronym").fill("BET");
+    await page.getByRole("button", { name: "Add candidate" }).last().click();
+    await page.getByRole("button", { name: "Done" }).click();
+
+    await expect(page.getByRole("button", { name: "Mark as ready" })).toBeEnabled();
+    await accessible(page, "election workflow");
+    await page.getByRole("button", { name: "Mark as ready" }).click();
+    await expect(page.getByRole("heading", { name: "Ready to lock" })).toBeVisible();
+    await page.close();
+  });
+
+  test("assigns an agent from their authorised units, then deactivation frees the unit", async () => {
+    const page = await context.newPage();
+    await page.goto("/agents");
+    await expect(page.getByText(/Assigning for E2E election/)).toBeVisible();
+
+    const row = page.getByRole("row").filter({ hasText: "Not assigned" }).last();
+    const agent = (await row.getByRole("cell").first().innerText()).trim();
+    await row.getByRole("button", { name: "Assign" }).click();
+    await page.getByRole("radio", { name: /SYN-/ }).check();
+    await page.getByRole("button", { name: "Assign agent" }).click();
+
+    // A recent sign-in is fresh enough; otherwise a code is asked for.
+    const prompt = page.getByLabel("Authenticator code");
+    if (
+      await prompt.waitFor({ state: "visible", timeout: 2_000 }).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      await nextTotpWindow();
+      await prompt.fill(totp(secret));
+      await page.getByRole("button", { name: "Confirm" }).click();
+    }
+    await expect(page.getByText("Agent assigned")).toBeVisible();
+    const assigned = page.getByRole("row").filter({ hasText: agent });
+    await expect(assigned.locator(".mono")).toBeVisible();
+
+    // Deactivating says what will happen, and the unit is released.
+    await assigned.getByRole("button", { name: "Deactivate" }).click();
+    await expect(page.getByText(/removed from 1 polling unit/)).toBeVisible();
+    await page.getByRole("button", { name: "Deactivate agent" }).click();
+    const again = page.getByLabel("Authenticator code");
+    if (
+      await again.waitFor({ state: "visible", timeout: 2_000 }).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      await nextTotpWindow();
+      await again.fill(totp(secret));
+      await page.getByRole("button", { name: "Confirm" }).click();
+    }
+    await expect(
+      page.getByRole("row").filter({ hasText: agent }).getByText("Deactivated"),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("row").filter({ hasText: agent }).getByText("Not assigned"),
+    ).toBeVisible();
+    await page.close();
+  });
+
   test("war room is accessible", async () => {
     const page = await context.newPage();
     await page.goto("/war-room");

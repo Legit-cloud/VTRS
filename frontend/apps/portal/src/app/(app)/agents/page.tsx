@@ -26,11 +26,16 @@ import { PageHeader } from "@/components/vtrs/page-header";
 import { PollingUnitPicker, type PickedUnit } from "@/components/vtrs/pu-picker";
 import { ep } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { describeError, errorLines } from "@/lib/errors";
+import { useStates } from "@/lib/geo-names";
 import { readInviteCsv, type InviteRow } from "@/lib/csv";
 import { useElection } from "@/lib/election";
 import { useStepUp } from "@/lib/step-up";
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/** Statuses in which the server accepts new assignments. */
+const ASSIGNABLE = ["DRAFT", "CONFIGURED", "LOCKED", "LIVE"];
 
 export default function AgentsPage() {
   const { election } = useElection();
@@ -76,7 +81,7 @@ export default function AgentsPage() {
       toast("Assignment removed");
       void queryClient.invalidateQueries({ queryKey: ["assignments"] });
     },
-    onError: (e) => toast(e instanceof ApiError ? e.detail : "Could not remove the assignment."),
+    onError: (e) => toast(describeError(e, "Could not remove the assignment.")),
   });
   const revokeInvite = useMutation({
     mutationFn: (id: string) => stepUp(() => ep.team.revokeInvitation(id)),
@@ -84,7 +89,7 @@ export default function AgentsPage() {
       toast(toastVerb.revoke);
       void queryClient.invalidateQueries({ queryKey: ["team"] });
     },
-    onError: (e) => toast(e instanceof ApiError ? e.detail : "Could not revoke the invitation."),
+    onError: (e) => toast(describeError(e, "Could not revoke the invitation.")),
   });
   const deactivateMutation = useMutation({
     mutationFn: (id: string) => stepUp(() => ep.team.deactivate(id)),
@@ -94,7 +99,7 @@ export default function AgentsPage() {
       void queryClient.invalidateQueries({ queryKey: ["team"] });
       void queryClient.invalidateQueries({ queryKey: ["assignments"] });
     },
-    onError: (e) => toast(e instanceof ApiError ? e.detail : "Could not deactivate this agent."),
+    onError: (e) => toast(describeError(e, "Could not deactivate this agent.")),
   });
 
   const pendingInvites = (invitations.data ?? []).filter((i) => i.role === "PU_AGENT");
@@ -127,8 +132,16 @@ export default function AgentsPage() {
 
       {!election ? (
         <InlineAlert tone="info" title="No election selected" className="mb-4">
-          Assignments are per election. Set one up under Elections and candidates first.
+          Assignments are per election. Set one up under Elections first.
         </InlineAlert>
+      ) : null}
+
+      {election ? (
+        <ElectionContext
+          name={election.name}
+          stateId={election.state_id}
+          status={election.status ?? "DRAFT"}
+        />
       ) : null}
 
       {agents.isLoading || assignments.isLoading ? (
@@ -189,7 +202,7 @@ export default function AgentsPage() {
                       size="sm"
                       variant="ghost"
                       onClick={() => setAssignTo(m)}
-                      disabled={!election}
+                      disabled={!election || !ASSIGNABLE.includes(election.status ?? "DRAFT")}
                     >
                       Assign
                     </Button>
@@ -275,14 +288,20 @@ export default function AgentsPage() {
       <BulkInvitePanel open={bulk} onClose={() => setBulk(false)} />
       <AssignPanel
         agent={assignTo}
-        electionId={election?.id ?? null}
+        election={election ?? null}
+        assigned={
+          new Set((byAgent.get(assignTo?.user_id ?? "") ?? []).map((a) => a.polling_unit_id))
+        }
         onClose={() => setAssignTo(null)}
       />
       <ConfirmDialog
         open={!!deactivate}
         onOpenChange={(next) => !next && setDeactivate(null)}
         title={`Deactivate ${deactivate?.full_name ?? "this agent"}?`}
-        description="They will lose access to the app and to their polling unit. Results they already sent stay on record."
+        description={`${deactivate?.full_name ?? "This agent"} is signed out everywhere and their phone is cut off. They are removed from ${pluralize(
+          (byAgent.get(deactivate?.user_id ?? "") ?? []).length,
+          "polling unit",
+        )} in this election, so someone else can be placed there. Results they already sent stay on record.`}
         confirmLabel="Deactivate agent"
         danger
         loading={deactivateMutation.isPending}
@@ -328,7 +347,7 @@ function InviteAgentPanel({ open, onClose }: { open: boolean; onClose: () => voi
       onClose();
     },
     onError: (e) => {
-      if (e instanceof ApiError) setErrors({ ...e.fieldErrors(), _: e.detail });
+      if (e instanceof ApiError) setErrors({ ...e.fieldErrors(), _: describeError(e) });
     },
   });
 
@@ -448,7 +467,7 @@ function BulkInvitePanel({ open, onClose }: { open: boolean; onClose: () => void
         }),
       );
     } catch (e) {
-      setFileProblem(e instanceof ApiError ? e.detail : "Could not check the polling unit codes.");
+      setFileProblem(describeError(e, "Could not check the polling unit codes."));
     } finally {
       setChecking(false);
     }
@@ -472,7 +491,7 @@ function BulkInvitePanel({ open, onClose }: { open: boolean; onClose: () => void
             }),
           );
         } catch (e) {
-          failed.push(`Line ${row.line}: ${e instanceof ApiError ? e.detail : "not sent"}`);
+          failed.push(`Line ${row.line}: ${describeError(e, "not sent")}`);
         }
         done += 1;
         setProgress({ done, failed: [...failed] });
@@ -582,68 +601,183 @@ function BulkInvitePanel({ open, onClose }: { open: boolean; onClose: () => void
   );
 }
 
+function ElectionContext({
+  name,
+  stateId,
+  status,
+}: {
+  name: string;
+  stateId: string;
+  status: string;
+}) {
+  const { states } = useStates();
+  const where = states.find((x) => x.id === stateId)?.name;
+  const closed = !ASSIGNABLE.includes(status);
+  return (
+    <InlineAlert
+      tone={closed ? "warning" : "info"}
+      title={`Assigning for ${name}${where ? ` (${where})` : ""}`}
+      className="mb-4"
+    >
+      {closed
+        ? "This election is closed, so agents can no longer be placed. Pick another election from the selector at the top."
+        : "Agents can only be placed at polling units inside this election's state. To work on another election, switch it from the selector at the top."}
+    </InlineAlert>
+  );
+}
+
 function AssignPanel({
   agent,
-  electionId,
+  election,
+  assigned,
   onClose,
 }: {
   agent: Member | null;
-  electionId: string | null;
+  election: { id: string; name: string; state_id: string } | null;
+  assigned: Set<string>;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const stepUp = useStepUp();
-  const [unit, setUnit] = useState<PickedUnit[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [choice, setChoice] = useState<string>("");
+  const [other, setOther] = useState<PickedUnit[]>([]);
+  const [error, setError] = useState<string[]>([]);
+
+  const authorised = (agent?.scope.type === "PU" ? agent.scope.ids : []).slice(0, 100);
+  const units = useQuery({
+    queryKey: ["geo", "units-by-id", authorised.join(",")],
+    enabled: !!agent && authorised.length > 0,
+    queryFn: async () =>
+      (await ep.geography.pollingUnits({ ids: authorised.join(","), limit: 100 })).results,
+  });
+
+  const inState = (units.data ?? []).filter((u) => u.state_id === election?.state_id);
+  const elsewhere = (units.data ?? []).length - inState.length;
+  const free = inState.filter((u) => !assigned.has(u.id));
+  const target = choice === "__other" ? other[0]?.id : choice;
+
+  const reset = () => {
+    setChoice("");
+    setOther([]);
+    setError([]);
+  };
 
   const assign = useMutation({
     mutationFn: () =>
-      stepUp(() =>
-        ep.assignments.create({
-          election_id: electionId!,
+      stepUp(async () => {
+        // A unit outside the agent's authorised list: widen their authorisation first.
+        if (!authorised.includes(target!)) {
+          await ep.team.updateMembership(agent!.user_id, {
+            role: "PU_AGENT",
+            scope_ids: [...authorised, target!],
+          });
+        }
+        return ep.assignments.create({
+          election_id: election!.id,
           agent_id: agent!.user_id,
-          polling_unit_id: unit[0]!.id,
-        }),
-      ),
+          polling_unit_id: target!,
+        });
+      }),
     onSuccess: () => {
       toast("Agent assigned");
       void queryClient.invalidateQueries({ queryKey: ["assignments"] });
-      setUnit([]);
-      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["team"] });
+      reset();
       onClose();
     },
-    onError: (e) => setError(e instanceof ApiError ? e.detail : "Could not assign this agent."),
+    onError: (e) => setError(errorLines(e, "Could not assign this agent.")),
   });
 
   return (
     <SidePanel
       open={!!agent}
-      onOpenChange={(next) => !next && onClose()}
+      onOpenChange={(next) => {
+        if (!next) {
+          reset();
+          onClose();
+        }
+      }}
       title={agent ? `Assign ${agent.full_name}` : "Assign agent"}
-      description="Choose the polling unit this agent will report from. They can only be placed at units they were authorised for."
+      description={
+        election ? `Choose the polling unit they will report from for ${election.name}.` : undefined
+      }
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            disabled={unit.length === 0}
-            loading={assign.isPending}
-            onClick={() => assign.mutate()}
-          >
+          <Button disabled={!target} loading={assign.isPending} onClick={() => assign.mutate()}>
             Assign agent
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
-        {error ? (
+        {error.length > 0 ? (
           <InlineAlert tone="danger" title="Could not assign">
-            {error}
+            <ul className="list-disc pl-5">
+              {error.map((m) => (
+                <li key={m}>{m}</li>
+              ))}
+            </ul>
           </InlineAlert>
         ) : null}
-        <PollingUnitPicker value={unit} onChange={(next) => setUnit(next.slice(-1))} max={1} />
+        {units.isLoading ? <Skeleton className="h-24" /> : null}
+        {!units.isLoading && free.length > 0 ? (
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-1 text-label text-strong-foreground">
+              Polling units this agent is authorised for
+            </legend>
+            {free.map((u) => (
+              <label
+                key={u.id}
+                className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 hover:bg-muted"
+              >
+                <input
+                  type="radio"
+                  name="unit"
+                  className="mt-1 h-4 w-4 accent-[rgb(var(--primary))]"
+                  checked={choice === u.id}
+                  onChange={() => setChoice(u.id)}
+                />
+                <span>
+                  <span className="block text-body-sm font-semibold">{u.name}</span>
+                  <span className="mono block text-caption text-subtle-foreground">
+                    {u.inec_code}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        ) : null}
+        {!units.isLoading && free.length === 0 ? (
+          <InlineAlert tone="info" title="No unit left to choose from">
+            {inState.length > 0
+              ? "This agent is already assigned to every unit they were authorised for in this state. Pick another unit below."
+              : elsewhere > 0
+                ? "The units this agent was authorised for are in a different state from this election. Pick a unit in this election's state below."
+                : "This agent has no authorised units yet. Pick one below."}
+          </InlineAlert>
+        ) : null}
+        <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 hover:bg-muted">
+          <input
+            type="radio"
+            name="unit"
+            className="mt-1 h-4 w-4 accent-[rgb(var(--primary))]"
+            checked={choice === "__other"}
+            onChange={() => setChoice("__other")}
+          />
+          <span>
+            <span className="block text-body-sm font-semibold">A different polling unit</span>
+            <span className="block text-caption text-subtle-foreground">
+              Their authorisation is extended to include it.
+            </span>
+          </span>
+        </label>
+        {choice === "__other" ? (
+          <PollingUnitPicker value={other} onChange={(next) => setOther(next.slice(-1))} max={1} />
+        ) : null}
       </div>
     </SidePanel>
   );

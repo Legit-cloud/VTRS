@@ -5,6 +5,7 @@ import { cursorFrom, type Lga, type Ward } from "@vtrs/core";
 import { useMemo } from "react";
 import { ep } from "./api";
 import { useElection } from "./election";
+import { stateName } from "./states";
 
 export interface GeoNames {
   lgas: Map<string, Lga>;
@@ -81,4 +82,34 @@ export function useElectionLgas(): {
       stateCode: mine[0]?.state_code,
     };
   }, [names.data, names.isLoading, election]);
+}
+
+export interface StateOption {
+  id: string;
+  code: string;
+  name: string;
+  lgas: number;
+}
+
+/** The states that have master data loaded: the only ones an election can be held in. */
+export function useStates(): { states: StateOption[]; loading: boolean } {
+  const names = useGeoNames();
+  return useMemo(() => {
+    const byId = new Map<string, StateOption>();
+    for (const lga of names.data?.lgas.values() ?? []) {
+      const existing = byId.get(lga.state_id);
+      if (existing) existing.lgas += 1;
+      else
+        byId.set(lga.state_id, {
+          id: lga.state_id,
+          code: lga.state_code,
+          name: stateName(lga.state_code),
+          lgas: 1,
+        });
+    }
+    return {
+      states: [...byId.values()].sort((a, b) => a.name.localeCompare(b.name)),
+      loading: names.isLoading,
+    };
+  }, [names.data, names.isLoading]);
 }

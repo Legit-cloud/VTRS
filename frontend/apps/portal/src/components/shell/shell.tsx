@@ -17,6 +17,7 @@ import { ep } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 import { useElection } from "@/lib/election";
+import { useStates } from "@/lib/geo-names";
 import { NAV } from "./nav";
 
 const COLLAPSE_KEY = "vtrs.sidebar.collapsed";
@@ -286,6 +287,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function ElectionPicker() {
   const { elections, election, select, loading } = useElection();
+  const { states } = useStates();
+  const stateOf = (id: string) => states.find((s) => s.id === id)?.name;
   if (loading) return <Skeleton className="h-control-dense w-48" />;
   if (!election)
     return <span className="text-body-sm text-subtle-foreground">No election yet</span>;
@@ -302,7 +305,7 @@ function ElectionPicker() {
       >
         {elections.map((e) => (
           <option key={e.id} value={e.id}>
-            {e.name}
+            {stateOf(e.state_id) ? `${e.name} (${stateOf(e.state_id)})` : e.name}
           </option>
         ))}
       </Select>

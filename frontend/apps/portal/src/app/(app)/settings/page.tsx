@@ -2,7 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ApiError,
   ROLE_LABEL,
   SEVERITY_ORDER,
   formatDateTime,
@@ -24,11 +23,12 @@ import { Field, Input } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/vtrs/page-header";
 import { ep } from "@/lib/api";
+import { describeError } from "@/lib/errors";
 import { useAuth } from "@/lib/auth";
 import { useGeoNames } from "@/lib/geo-names";
 import { useStepUp } from "@/lib/step-up";
 
-const fail = (e: unknown, fallback: string) => (e instanceof ApiError ? e.detail : fallback);
+const fail = (e: unknown, fallback: string) => describeError(e, fallback);
 
 function SettingsInner() {
   const { me, can } = useAuth();

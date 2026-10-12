@@ -2,7 +2,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ApiError,
   formatBytes,
   formatDateTime,
   formatNumber,
@@ -20,6 +19,7 @@ import { useToast } from "@/components/ui/toast";
 import { DataTable } from "@/components/vtrs/data-table";
 import { PageHeader } from "@/components/vtrs/page-header";
 import { ep } from "@/lib/api";
+import { describeError } from "@/lib/errors";
 import { useContests, useElection } from "@/lib/election";
 import { useStepUp } from "@/lib/step-up";
 
@@ -42,7 +42,7 @@ const JOB_STATUS: Record<string, StatusView> = {
   EXPIRED: { label: "Expired", tone: "ink", icon: "timer-off" },
 };
 
-const fail = (e: unknown, fallback: string) => (e instanceof ApiError ? e.detail : fallback);
+const fail = (e: unknown, fallback: string) => describeError(e, fallback);
 
 export default function ReportsPage() {
   const { election } = useElection();

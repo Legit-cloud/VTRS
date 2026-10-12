@@ -23,13 +23,14 @@ import { useToast } from "@/components/ui/toast";
 import { DataTable } from "@/components/vtrs/data-table";
 import { PageHeader } from "@/components/vtrs/page-header";
 import { ep } from "@/lib/api";
+import { describeError } from "@/lib/errors";
 import { useAuth } from "@/lib/auth";
 import { useElectionLgas, useGeoNames } from "@/lib/geo-names";
 import { useStepUp } from "@/lib/step-up";
 
 const OFFICER_ROLES: RoleCode[] = ["WARD_OFFICER", "LGA_OFFICER", "PARTY_ADMIN"];
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const fail = (e: unknown, fallback: string) => (e instanceof ApiError ? e.detail : fallback);
+const fail = (e: unknown, fallback: string) => describeError(e, fallback);
 
 export default function TeamPage() {
   const { me } = useAuth();
@@ -361,7 +362,7 @@ function InvitePanel({ open, onClose }: { open: boolean; onClose: () => void }) 
       onClose();
     },
     onError: (e) => {
-      if (e instanceof ApiError) setErrors({ ...e.fieldErrors(), _: e.detail });
+      if (e instanceof ApiError) setErrors({ ...e.fieldErrors(), _: describeError(e) });
     },
   });
 

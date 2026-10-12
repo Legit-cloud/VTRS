@@ -276,7 +276,8 @@ export function createEndpoints(api: ApiClient) {
     geography: {
       lgas: (query: { state?: string } & Paging = {}) => get<Page<Lga>>("/geography/lgas", query),
       wards: (query: { lga?: string } & Paging = {}) => get<Page<Ward>>("/geography/wards", query),
-      pollingUnits: (query: { ward?: string; lga?: string } & Paging = {}) =>
+      /** `ids` is a comma-separated list of polling unit ids (up to 100). */
+      pollingUnits: (query: { ward?: string; lga?: string; ids?: string } & Paging = {}) =>
         get<Page<PollingUnit>>("/geography/polling-units", query),
     },
 

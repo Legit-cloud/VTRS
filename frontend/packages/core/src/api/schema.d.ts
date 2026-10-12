@@ -2792,6 +2792,8 @@ export interface components {
             readonly ward_id: string;
             /** Format: uuid */
             readonly lga_id: string;
+            /** Format: uuid */
+            readonly state_id: string;
             /** Format: decimal */
             latitude?: string | null;
             /** Format: decimal */
