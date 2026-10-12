@@ -80,10 +80,34 @@ def test_ward_outside_an_lga_is_rejected():
         _rows("### Awe I Ward (1 PUs)\n\n1. Alagbede\n")
 
 
-def test_bundled_oyo_directory_has_the_published_totals():
-    path = Path(__file__).resolve().parents[2] / "data" / "master" / "oyo-directory.md"
+@pytest.mark.parametrize(
+    ("slug", "code", "name", "lgas", "wards", "units"),
+    [
+        ("oyo", "OY", "Oyo", 33, 351, 4731),
+        ("ogun", "OG", "Ogun", 20, 236, 3184),
+        ("ekiti", "EK", "Ekiti", 16, 177, 2191),
+    ],
+)
+def test_bundled_directories_have_their_published_totals(slug, code, name, lgas, wards, units):
+    path = Path(__file__).resolve().parents[2] / "data" / "master" / f"{slug}-directory.md"
     with path.open(encoding="utf-8") as handle:
-        rows = list(parse_directory(handle, state_code="OY", state_name="Oyo"))
-    report = parse_and_validate(rows, Expectations(lgas=33, wards=351, polling_units=4731))
+        rows = list(parse_directory(handle, state_code=code, state_name=name))
+    report = parse_and_validate(rows, Expectations(lgas=lgas, wards=wards, polling_units=units))
     assert report.ok, report.errors
-    assert report.counts == {"states": 1, "lgas": 33, "wards": 351, "polling_units": 4731}
+    assert report.counts == {"states": 1, "lgas": lgas, "wards": wards, "polling_units": units}
+
+
+def test_state_codes_do_not_collide_across_states():
+    root = Path(__file__).resolve().parents[2] / "data" / "master"
+    seen: set[str] = set()
+    for slug, code, name in (
+        ("oyo", "OY", "Oyo"),
+        ("ogun", "OG", "Ogun"),
+        ("ekiti", "EK", "Ekiti"),
+    ):
+        with (root / f"{slug}-directory.md").open(encoding="utf-8") as handle:
+            codes = {
+                r["pu_code"] for r in parse_directory(handle, state_code=code, state_name=name)
+            }
+        assert not codes & seen
+        seen |= codes
