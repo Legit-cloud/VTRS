@@ -1,6 +1,6 @@
 """Election configuration rules (FR-6.3.1 - FR-6.3.3, spec section 11).
 
-Lifecycle: DRAFT <-> CONFIGURED -> LOCKED -> LIVE -> CLOSED (-> RECONCILED, with M4).
+Lifecycle: DRAFT <-> CONFIGURED -> LOCKED -> LIVE -> CLOSED -> RECONCILED.
 Contests and candidates can change only before LOCKED. Locking records a fingerprint of the
 whole configuration, so any later difference is detectable.
 """
@@ -23,13 +23,13 @@ class ElectionStatus(StrEnum):
     RECONCILED = "RECONCILED"
 
 
-# RECONCILED snapshots the rollups, so it arrives with aggregation (M4).
+# RECONCILED snapshots the rollups and freezes results; it has its own endpoint.
 TRANSITIONS: Mapping[ElectionStatus, frozenset[ElectionStatus]] = {
     ElectionStatus.DRAFT: frozenset({ElectionStatus.CONFIGURED}),
     ElectionStatus.CONFIGURED: frozenset({ElectionStatus.DRAFT, ElectionStatus.LOCKED}),
     ElectionStatus.LOCKED: frozenset({ElectionStatus.LIVE}),
     ElectionStatus.LIVE: frozenset({ElectionStatus.CLOSED}),
-    ElectionStatus.CLOSED: frozenset(),
+    ElectionStatus.CLOSED: frozenset({ElectionStatus.RECONCILED}),
     ElectionStatus.RECONCILED: frozenset(),
 }
 

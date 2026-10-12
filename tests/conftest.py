@@ -42,6 +42,9 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO vtrs_app;
 RESTRICTING_MIGRATIONS = [
     "apps.audit.migrations.0002_audit_storage",
     "apps.results.migrations.0002_integrity",
+    "apps.results.migrations.0003_review",
+    "apps.aggregation.migrations.0002_integrity",
+    "apps.anomalies.migrations.0005_event_integrity",
     "apps.evidence.migrations.0003_custody_and_rls",
 ]
 

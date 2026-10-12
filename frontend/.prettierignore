@@ -1,0 +1,9 @@
+node_modules
+.next
+packages/core/src/api/schema.d.ts
+design-system/tokens/globals.css
+design-system/tokens/tailwind.preset.ts
+design-system/tokens/tailwind-v4.css
+design-system/mobile/theme.ts
+package-lock.json
+test-results

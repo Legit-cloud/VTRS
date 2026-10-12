@@ -75,7 +75,8 @@ def _degrees(dms: Any, ref: str) -> float:
 def dhash(image: Image.Image, size: int = 8) -> str:
     """Difference hash: near-identical photos (re-used sheets) give near-identical hashes."""
     small = image.convert("L").resize((size + 1, size), Image.Resampling.LANCZOS)
-    pixels = list(small.getdata())
+    # Pillow 12.3 renamed getdata (removed in 14); stay compatible with both.
+    pixels = list(getattr(small, "get_flattened_data", small.getdata)())
     bits = 0
     for row in range(size):
         for col in range(size):

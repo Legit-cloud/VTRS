@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.core.exceptions import RequestDataTooBig, SuspiciousOperation
 from django.db import connections
 from django.http import Http404
 from rest_framework import exceptions
@@ -118,6 +119,10 @@ def problem_exception_handler(exc: Exception, context: dict[str, Any]) -> Respon
     # Imported lazily: this module is loaded while DRF's own settings are initialising.
     from rest_framework.views import exception_handler
 
+    if isinstance(exc, RequestDataTooBig):
+        return problem_response(413, "payload_too_large", "The request body is too large.")
+    if isinstance(exc, SuspiciousOperation):
+        return problem_response(400, "bad_request", "The request could not be understood.")
     response = exception_handler(exc, context)
     if getattr(exc, "commits_side_effects", False):
         _keep_request_transaction()

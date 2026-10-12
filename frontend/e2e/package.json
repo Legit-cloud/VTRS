@@ -1,0 +1,16 @@
+{
+  "name": "@vtrs/e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser tests for the party portal against a running API",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^24.0.0",
+    "typescript": "~5.9.3"
+  }
+}

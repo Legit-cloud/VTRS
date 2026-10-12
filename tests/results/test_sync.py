@@ -48,7 +48,7 @@ def test_accepted_submission(scenario):
     )
     assert version.server_received_at is not None
     assert version.device_id == scenario.agent.device.id
-    assert str(version.gps_lat) == "7.391200"
+    assert float(version.gps_lat) == pytest.approx(float(scenario.pu.latitude or 7.39), abs=1e-6)
     with system_context():
         lines = dict(
             VoteLine.objects.filter(result_version=version).values_list(

@@ -4,6 +4,7 @@ Every change is audited, bumps the election's config_version, and is refused onc
 election is LOCKED. Edits carry the row version the admin last read (If-Match).
 """
 
+from collections.abc import Callable
 from datetime import date, datetime
 from typing import Any
 
@@ -12,6 +13,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from apps.audit import services as audit
+from apps.core import services as core
 from apps.core.api.concurrency import check_version
 from apps.core.authz import authorize, require_recent_mfa
 from apps.core.domain.actor import Actor
@@ -138,12 +140,25 @@ def update_election(
     return election
 
 
-def transition(actor: Actor, election: Election, target: str) -> Election:
-    """Move an election through its lifecycle. Locking needs a fresh second factor."""
+def transition(
+    actor: Actor,
+    election: Election,
+    target: str,
+    *,
+    reconcile: Callable[[Actor, Election], Any] | None = None,
+) -> Election:
+    """Move an election through its lifecycle.
+
+    Locking and reconciling need a fresh second factor. Reconciling also needs `reconcile`,
+    the callable that freezes the rollups (it runs in this transaction, before the status
+    changes, so a refusal leaves the election CLOSED).
+    """
     authorize(actor, Perm.ELECTIONS_CONFIGURE)
     target_status = ElectionStatus(target)
-    if target_status is ElectionStatus.LOCKED:
+    if target_status in {ElectionStatus.LOCKED, ElectionStatus.RECONCILED}:
         require_recent_mfa(actor)
+    if (target_status is ElectionStatus.RECONCILED) != (reconcile is not None):
+        raise InvalidTransition("Use the reconcile endpoint to reconcile an election.")
     with transaction.atomic():
         election = _locked_election(election.id)
         current = ElectionStatus(election.status)
@@ -162,6 +177,8 @@ def transition(actor: Actor, election: Election, target: str) -> Election:
             election.opened_at = now
         elif target_status is ElectionStatus.CLOSED:
             election.closed_at = now
+        elif target_status is ElectionStatus.RECONCILED and reconcile is not None:
+            reconcile(actor, election)
         election.status = target_status
         election.row_version += 1
         election.save()
@@ -177,6 +194,12 @@ def transition(actor: Actor, election: Election, target: str) -> Election:
                 "config_hash": election.config_hash,
             },
         )
+        if target_status is ElectionStatus.LIVE:
+            # Rollup rows for every covered ward are built by a worker, not in this request.
+            core.emit(
+                "election.opened",
+                {"organization_id": election.organization_id, "election_id": election.id},
+            )
     return election
 
 

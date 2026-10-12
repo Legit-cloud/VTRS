@@ -12,7 +12,7 @@ from django.db.models import Q
 from apps.core.ids import uuid7
 from apps.core.scope import ScopedQuerySet
 
-from .domain.versions import VersionState
+from .domain.versions import ReviewDecision, VersionState
 
 _GEO_SCOPE = {"org": "organization_id", "lga": "lga_id", "ward": "ward_id", "pu": "polling_unit_id"}
 
@@ -138,3 +138,38 @@ class VoteLine(models.Model):
                 fields=["result_version", "candidate"], name="vote_line_one_per_candidate"
             )
         ]
+
+
+class ResultReview(models.Model):
+    """One review decision on a result version (FR-6.7.4, FR-6.7.5). Append-only: the version's
+    `state` moves, and this row keeps who decided, why, and what the state was before."""
+
+    SCOPE_LOOKUPS = _GEO_SCOPE
+
+    id = models.UUIDField(primary_key=True, default=uuid7, editable=False)
+    organization = models.ForeignKey(
+        "organizations.Organization", on_delete=models.PROTECT, related_name="+"
+    )
+    result_version = models.ForeignKey(
+        ResultVersion, on_delete=models.PROTECT, related_name="reviews"
+    )
+    pu_result = models.ForeignKey(PuResult, on_delete=models.PROTECT, related_name="+")
+    contest = models.ForeignKey("elections.Contest", on_delete=models.PROTECT, related_name="+")
+    polling_unit = models.ForeignKey(
+        "geography.PollingUnit", on_delete=models.PROTECT, related_name="+"
+    )
+    ward = models.ForeignKey("geography.Ward", on_delete=models.PROTECT, related_name="+")
+    lga = models.ForeignKey("geography.Lga", on_delete=models.PROTECT, related_name="+")
+    decision = models.CharField(max_length=10, choices=[(d.value, d.value) for d in ReviewDecision])
+    from_state = models.CharField(max_length=16)
+    reason = models.TextField(blank=True, default="")
+    # Rule codes of the open flags the reviewer saw and accepted when approving.
+    acknowledged_flags = models.JSONField(default=list)
+    decided_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="+")
+    decided_at = models.DateTimeField()
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        db_table = "result_review"
+        indexes = [models.Index(fields=["result_version", "decided_at"], name="review_version_idx")]

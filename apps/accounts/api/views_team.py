@@ -31,6 +31,7 @@ class MeView(APIView):
         actor = request.actor  # type: ignore[attr-defined]
         membership = selectors.own_membership(actor)
         user = membership.user
+        device = selectors.session_device(actor)
         return Response(
             {
                 "user_id": user.id,
@@ -46,6 +47,7 @@ class MeView(APIView):
                 "permissions": sorted(actor.permissions),
                 "mfa_enabled": user.mfa_enabled,
                 "mfa_required": actor.requires_mfa,
+                "device_id": str(device.id) if device else None,
             }
         )
 

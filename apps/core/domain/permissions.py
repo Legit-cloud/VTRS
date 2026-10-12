@@ -27,6 +27,8 @@ class Perm(StrEnum):
     AUDIT_VIEW = "audit.view"
     DASHBOARD_VIEW = "dashboard.view"
     GEOGRAPHY_VIEW = "geography.view"
+    SYSTEM_VIEW = "system.view"
+    ALERTS_CONFIGURE = "alerts.configure"
 
 
 ROLE_PERMISSIONS: Mapping[Role, frozenset[Perm]] = {

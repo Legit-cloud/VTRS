@@ -5,10 +5,12 @@ from apps.geography.models import Lga, PollingUnit, Ward
 
 class LgaSerializer(serializers.ModelSerializer):
     state_code = serializers.CharField(source="state.inec_code", read_only=True)
+    # Clients need the state's id to create an election; there is no states endpoint.
+    state_id = serializers.UUIDField(read_only=True)
 
     class Meta:
         model = Lga
-        fields = ("id", "inec_code", "name", "state_code")
+        fields = ("id", "inec_code", "name", "state_code", "state_id")
 
 
 class WardSerializer(serializers.ModelSerializer):

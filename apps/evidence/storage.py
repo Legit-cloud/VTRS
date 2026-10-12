@@ -5,6 +5,7 @@ SHA-256 checksum, so the store itself rejects corrupted uploads.
 """
 
 import base64
+import shutil
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -38,6 +39,8 @@ class EvidenceStorage(Protocol):
     def read(self, key: str) -> bytes: ...
     def write(self, key: str, data: bytes, *, mime: str) -> None: ...
     def move(self, key: str, new_key: str) -> None: ...
+    def upload_file(self, key: str, path: str, *, mime: str) -> None: ...
+    def delete(self, key: str) -> None: ...
 
 
 def _b64(sha256_hex: str) -> str:
@@ -111,6 +114,13 @@ class S3Storage:
         )
         self.client.delete_object(Bucket=self.bucket, Key=key)
 
+    def upload_file(self, key: str, path: str, *, mime: str) -> None:
+        """Stream a local file to the store (multipart for large files): packs can be big."""
+        self.client.upload_file(path, self.bucket, key, ExtraArgs={"ContentType": mime})
+
+    def delete(self, key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=key)
+
 
 class LocalStorage:
     """Filesystem storage for tests. 'Presigned' URLs are placeholders; tests write directly."""
@@ -151,6 +161,14 @@ class LocalStorage:
         target = self._path(new_key)
         target.parent.mkdir(parents=True, exist_ok=True)
         self._path(key).rename(target)
+
+    def upload_file(self, key: str, path: str, *, mime: str) -> None:
+        target = self._path(key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, target)
+
+    def delete(self, key: str) -> None:
+        self._path(key).unlink(missing_ok=True)
 
 
 @lru_cache(maxsize=4)

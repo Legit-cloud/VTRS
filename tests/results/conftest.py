@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
+from django.utils import timezone
 from PIL import Image
 
 from apps.accounts.models import Device
@@ -83,8 +84,12 @@ class Scenario:
                 {"candidate_id": str(c.id), "votes": v}
                 for c, v in zip(self.candidates, votes, strict=True)
             ],
-            "device_captured_at": "2027-03-11T15:42:10+01:00",
-            "gps": {"lat": 7.3912, "lng": 3.9157, "accuracy_m": 12.5},
+            "device_captured_at": timezone.now().isoformat(),
+            "gps": {
+                "lat": float((pu or self.pu).latitude or 7.39),
+                "lng": float((pu or self.pu).longitude or 3.91),
+                "accuracy_m": 12.5,
+            },
             "device_id": str(agent.device.id),
             "app_version": "1.0.0",
             "evidence": [],

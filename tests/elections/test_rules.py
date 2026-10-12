@@ -30,7 +30,9 @@ S = ElectionStatus
         (S.LOCKED, S.CONFIGURED, False),
         (S.LIVE, S.LOCKED, False),
         (S.CLOSED, S.LIVE, False),  # no reopening
-        (S.CLOSED, S.RECONCILED, False),  # arrives with aggregation (M4)
+        (S.CLOSED, S.RECONCILED, True),
+        (S.RECONCILED, S.CLOSED, False),  # reconciliation is final
+        (S.LIVE, S.RECONCILED, False),  # polls must close first
     ],
 )
 def test_lifecycle(current, target, allowed):

@@ -2,7 +2,7 @@
 transaction. A finding never removes a result from the count; it routes it to review.
 
 Contextual and statistical rules (GPS, timing, evidence, turnout outliers) run asynchronously
-and arrive with M5.
+in `contextual.py`; they share the rule codes and severities declared here.
 """
 
 from collections.abc import Mapping
@@ -26,6 +26,24 @@ class RuleCode(StrEnum):
     UNASSIGNED_PU_ATTEMPT = "UNASSIGNED_PU_ATTEMPT"  # FR-6.9.4
     LATE_SUBMISSION = "LATE_SUBMISSION"  # captured offline, synced after polls closed
     CONFIG_VERSION_MISMATCH = "CONFIG_VERSION_MISMATCH"
+    # Contextual rules (FR-6.9.3 - FR-6.9.5)
+    GPS_MISSING = "GPS_MISSING"
+    GPS_OUT_OF_GEOFENCE = "GPS_OUT_OF_GEOFENCE"
+    GPS_LOW_ACCURACY = "GPS_LOW_ACCURACY"
+    DEVICE_CLOCK_AHEAD = "DEVICE_CLOCK_AHEAD"
+    CAPTURED_BEFORE_POLLS_OPEN = "CAPTURED_BEFORE_POLLS_OPEN"
+    CAPTURED_BEFORE_POLLS_CLOSE = "CAPTURED_BEFORE_POLLS_CLOSE"
+    # Statistical rules (FR-6.9.2)
+    TURNOUT_OUTLIER = "TURNOUT_OUTLIER"
+    VOTE_SHARE_OUTLIER = "VOTE_SHARE_OUTLIER"
+    HIGH_REJECTED_RATE = "HIGH_REJECTED_RATE"
+    UNANIMOUS_RESULT = "UNANIMOUS_RESULT"
+    # Evidence rules (FR-6.9.3)
+    DUPLICATE_EVIDENCE = "DUPLICATE_EVIDENCE"
+    EXIF_TIME_MISMATCH = "EXIF_TIME_MISMATCH"
+    EXIF_GPS_MISMATCH = "EXIF_GPS_MISMATCH"
+    MISSING_EVIDENCE = "MISSING_EVIDENCE"
+    EVIDENCE_QUARANTINED = "EVIDENCE_QUARANTINED"
 
 
 SEVERITY: Mapping[RuleCode, Severity] = {
@@ -36,6 +54,21 @@ SEVERITY: Mapping[RuleCode, Severity] = {
     RuleCode.UNASSIGNED_PU_ATTEMPT: Severity.CRITICAL,
     RuleCode.LATE_SUBMISSION: Severity.MEDIUM,
     RuleCode.CONFIG_VERSION_MISMATCH: Severity.MEDIUM,
+    RuleCode.GPS_MISSING: Severity.MEDIUM,
+    RuleCode.GPS_OUT_OF_GEOFENCE: Severity.MEDIUM,  # HIGH beyond the "far" distance
+    RuleCode.GPS_LOW_ACCURACY: Severity.INFO,
+    RuleCode.DEVICE_CLOCK_AHEAD: Severity.MEDIUM,
+    RuleCode.CAPTURED_BEFORE_POLLS_OPEN: Severity.HIGH,
+    RuleCode.CAPTURED_BEFORE_POLLS_CLOSE: Severity.HIGH,
+    RuleCode.TURNOUT_OUTLIER: Severity.MEDIUM,  # HIGH at implausibly high turnout
+    RuleCode.VOTE_SHARE_OUTLIER: Severity.MEDIUM,
+    RuleCode.HIGH_REJECTED_RATE: Severity.MEDIUM,
+    RuleCode.UNANIMOUS_RESULT: Severity.MEDIUM,
+    RuleCode.DUPLICATE_EVIDENCE: Severity.HIGH,
+    RuleCode.EXIF_TIME_MISMATCH: Severity.MEDIUM,
+    RuleCode.EXIF_GPS_MISMATCH: Severity.MEDIUM,
+    RuleCode.MISSING_EVIDENCE: Severity.MEDIUM,
+    RuleCode.EVIDENCE_QUARANTINED: Severity.HIGH,
 }
 
 
@@ -43,10 +76,12 @@ SEVERITY: Mapping[RuleCode, Severity] = {
 class Finding:
     rule: RuleCode
     details: dict[str, Any] = field(default_factory=dict)
+    # Set when a rule raises its own severity (e.g. a GPS fix kilometres away).
+    severity_override: Severity | None = None
 
     @property
     def severity(self) -> Severity:
-        return SEVERITY[self.rule]
+        return self.severity_override or SEVERITY[self.rule]
 
 
 @dataclass(frozen=True)

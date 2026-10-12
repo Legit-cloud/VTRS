@@ -169,8 +169,9 @@ def test_limits_on_declared_files(scenario):
     item = scenario.item(evidence=[big, gif])
     [outcome] = scenario.submit(item)
     assert outcome["code"] == "malformed"
-    assert set(outcome["errors"]["evidence"][0]) == {"size"}
-    assert set(outcome["errors"]["evidence"][1]) == {"mime"}
+    # Errors for list items are keyed by position (djangorestframework 3.17 and later).
+    assert set(outcome["errors"]["evidence"]["0"]) == {"size"}
+    assert set(outcome["errors"]["evidence"]["1"]) == {"mime"}
 
 
 def test_reconciliation_completes_unconfirmed_uploads(scenario):

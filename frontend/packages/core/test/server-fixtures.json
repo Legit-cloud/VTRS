@@ -1,0 +1,63 @@
+{
+  "nested": {
+    "canonical": "{\"a\":\"x\",\"b\":[1,2,{\"a\":true,\"z\":null}],\"quote\":\"a\\\"b\\\\c\\nline\",\"é\":\"ünïcode ✓\"}",
+    "hash": "ee546e6b5bb152e551bdf7bbd2b76360b789762daa13e41acc374a9a1362d014",
+    "input": {
+      "b": [
+        1,
+        2,
+        {
+          "z": null,
+          "a": true
+        }
+      ],
+      "a": "x",
+      "é": "ünïcode ✓",
+      "quote": "a\"b\\c\nline"
+    }
+  },
+  "submission": {
+    "canonical": "{\"app_version\":\"1.0.0\",\"config_version\":3,\"contest_id\":\"0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c02\",\"device_captured_at\":\"2026-10-12T14:05:09.123Z\",\"device_id\":\"0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c06\",\"evidence\":[{\"evidence_id\":\"0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c07\",\"kind\":\"EC8A\",\"mime\":\"image/jpeg\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":348120}],\"gps\":{\"accuracy_m\":\"12.50\",\"lat\":\"7.377600\",\"lng\":\"3.947000\"},\"parent_version_id\":null,\"polling_unit_id\":\"0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c03\",\"totals\":{\"accredited\":520,\"rejected\":12,\"total_cast\":510,\"valid\":498},\"version_id\":\"0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c01\",\"votes\":[{\"candidate_id\":\"0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c04\",\"votes\":301},{\"candidate_id\":\"0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c05\",\"votes\":197}]}",
+    "hash": "66e4d451b8b819e193da95c8bafada6f2369c8275f44150bd5957446d6489a37",
+    "input": {
+      "version_id": "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c01",
+      "contest_id": "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c02",
+      "polling_unit_id": "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c03",
+      "config_version": 3,
+      "parent_version_id": null,
+      "totals": {
+        "accredited": 520,
+        "valid": 498,
+        "rejected": 12,
+        "total_cast": 510
+      },
+      "votes": [
+        {
+          "candidate_id": "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c04",
+          "votes": 301
+        },
+        {
+          "candidate_id": "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c05",
+          "votes": 197
+        }
+      ],
+      "device_captured_at": "2026-10-12T14:05:09.123Z",
+      "gps": {
+        "lat": "7.377600",
+        "lng": "3.947000",
+        "accuracy_m": "12.50"
+      },
+      "device_id": "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c06",
+      "app_version": "1.0.0",
+      "evidence": [
+        {
+          "evidence_id": "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c07",
+          "kind": "EC8A",
+          "size": 348120,
+          "mime": "image/jpeg",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    }
+  }
+}

@@ -119,6 +119,7 @@ class TokenPairSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
     refresh_expires_at = serializers.DateTimeField()
     session_id = serializers.UUIDField()
+    device_id = serializers.UUIDField(allow_null=True)
 
 
 class LoginResponseSerializer(serializers.Serializer):
@@ -270,3 +271,4 @@ class MeSerializer(serializers.Serializer):
     permissions = serializers.ListField(child=serializers.CharField())
     mfa_enabled = serializers.BooleanField()
     mfa_required = serializers.BooleanField()
+    device_id = serializers.UUIDField(allow_null=True)
