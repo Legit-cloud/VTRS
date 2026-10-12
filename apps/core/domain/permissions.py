@@ -9,6 +9,8 @@ class Role(StrEnum):
     LGA_OFFICER = "LGA_OFFICER"
     WARD_OFFICER = "WARD_OFFICER"
     PU_AGENT = "PU_AGENT"
+    # Runs VTRS itself across all parties. Sits in the platform organization, outside any party.
+    PLATFORM_ADMIN = "PLATFORM_ADMIN"
 
 
 class Perm(StrEnum):
@@ -29,10 +31,11 @@ class Perm(StrEnum):
     GEOGRAPHY_VIEW = "geography.view"
     SYSTEM_VIEW = "system.view"
     ALERTS_CONFIGURE = "alerts.configure"
+    PLATFORM_MANAGE = "platform.manage"
 
 
 ROLE_PERMISSIONS: Mapping[Role, frozenset[Perm]] = {
-    Role.PARTY_ADMIN: frozenset(Perm) - {Perm.RESULTS_SUBMIT},
+    Role.PARTY_ADMIN: frozenset(Perm) - {Perm.RESULTS_SUBMIT, Perm.PLATFORM_MANAGE},
     Role.LGA_OFFICER: frozenset(
         {
             Perm.RESULTS_VIEW,
@@ -60,6 +63,8 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Perm]] = {
             Perm.GEOGRAPHY_VIEW,
         }
     ),
+    # No party data at all: organizations, master data, health and the platform's own audit.
+    Role.PLATFORM_ADMIN: frozenset({Perm.PLATFORM_MANAGE, Perm.GEOGRAPHY_VIEW, Perm.SYSTEM_VIEW}),
 }
 
 # Permissions an admin may grant explicitly on top of a role ("Optional" / "Granted explicitly").
@@ -70,9 +75,12 @@ GRANTABLE_PERMISSIONS: Mapping[Role, frozenset[Perm]] = {
     ),
     Role.WARD_OFFICER: frozenset({Perm.EVIDENCE_VIEW}),
     Role.PU_AGENT: frozenset(),
+    Role.PLATFORM_ADMIN: frozenset(),
 }
 
 ROLE_RANK: Mapping[Role, int] = {
+    # Above every party role, so no party admin can grant it. Operators are created by command.
+    Role.PLATFORM_ADMIN: 5,
     Role.PARTY_ADMIN: 4,
     Role.LGA_OFFICER: 3,
     Role.WARD_OFFICER: 2,
@@ -87,7 +95,7 @@ def effective_permissions(role: Role, granted: Iterable[Perm] = ()) -> frozenset
 
 def requires_mfa(role: Role, permissions: frozenset[Perm]) -> bool:
     """MFA is mandatory for admins and for anyone who can export data or evidence packs."""
-    return role is Role.PARTY_ADMIN or bool(
+    return role in {Role.PARTY_ADMIN, Role.PLATFORM_ADMIN} or bool(
         permissions & {Perm.EVIDENCE_EXPORT, Perm.REPORTS_EXPORT}
     )
 

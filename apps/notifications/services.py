@@ -285,3 +285,37 @@ def register_push_token(actor: Actor, token: str) -> None:
             object_id=device.id,
             actor=actor,
         )
+
+
+def send_test_message(actor: Actor, channel: str) -> dict[str, str]:
+    """Send a short message to the operator's own phone or email through the live provider.
+
+    It goes through the same adapters as real traffic, so a failure here is a real failure.
+    Only platform operators may do this, and only to their own contact details.
+    """
+    authorize(actor, Perm.PLATFORM_MANAGE)
+    user = User.objects.get(id=actor.user_id)
+    body = "VTRS test message. If you can read this, delivery is working."
+    if channel == "SMS":
+        if not user.phone:
+            raise ValidationError({"channel": ["Your account has no phone number."]})
+        destination = user.phone
+        provider_id = send_sms(destination, body)
+        shown = "*" * max(len(destination) - 3, 0) + destination[-3:]
+    else:
+        if not user.email:
+            raise ValidationError({"channel": ["Your account has no email address."]})
+        destination = user.email
+        send_email(destination, "VTRS test message", body)
+        provider_id = ""
+        local, _, domain = destination.partition("@")
+        shown = f"{local[:1]}***@{domain}"
+    with transaction.atomic():
+        audit.record(
+            action="platform.messaging_test",
+            object_type="user",
+            object_id=actor.user_id,
+            actor=actor,
+            diff={"channel": channel, "provider_message_id": provider_id},
+        )
+    return {"sent_to": shown, "channel": channel}

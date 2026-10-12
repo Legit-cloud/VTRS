@@ -11,6 +11,8 @@ class OrganizationStatus(models.TextChoices):
     PENDING_APPROVAL = "PENDING_APPROVAL"
     ACTIVE = "ACTIVE"
     SUSPENDED = "SUSPENDED"
+    # Turned away at the approval step; the reason is kept on the organization.
+    REJECTED = "REJECTED"
 
 
 class Organization(UUIDv7Model):
@@ -25,6 +27,9 @@ class Organization(UUIDv7Model):
         choices=OrganizationStatus.choices,
         default=OrganizationStatus.PENDING_VERIFICATION,
     )
+    # The organization that holds the platform operators. Exactly one, never a party.
+    is_platform = models.BooleanField(default=False)
+    status_reason = models.CharField(max_length=500, blank=True, default="")
     verified_at = models.DateTimeField(null=True, blank=True)
     approved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -33,6 +38,13 @@ class Organization(UUIDv7Model):
 
     class Meta:
         db_table = "organization"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_platform"],
+                condition=models.Q(is_platform=True),
+                name="one_platform_org",
+            )
+        ]
 
     def __str__(self) -> str:
         return self.name

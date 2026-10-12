@@ -1,10 +1,13 @@
 import pytest
-from hypothesis import given
+from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from apps.audit.domain.merkle import GENESIS_ROOT, chain_root, merkle_root
 
 leaves = st.lists(st.binary(max_size=64), min_size=1, max_size=40)
+
+# Input generation speed depends on the machine, not on the code under test.
+settings.register_profile("merkle", suppress_health_check=[HealthCheck.too_slow], deadline=None)
 
 
 def test_empty_batch_has_no_root():
@@ -12,6 +15,7 @@ def test_empty_batch_has_no_root():
         merkle_root([])
 
 
+@settings(settings.get_profile("merkle"))
 @given(leaves)
 def test_root_is_deterministic(data):
     assert merkle_root(data) == merkle_root(list(data))

@@ -56,6 +56,7 @@ containers = [
     "apps.aggregation",
     "apps.reports",
     "apps.operations",
+    "apps.platform_admin",
 ]
 
 [[tool.importlinter.contracts]]

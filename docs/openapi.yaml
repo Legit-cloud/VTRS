@@ -1825,6 +1825,372 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/platform/audit:
+    get:
+      operationId: platform_audit_list
+      description: List views read across tenants, so the whole of the read runs in
+        the system context.
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - platform
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPlatformAuditList'
+          description: ''
+  /api/v1/platform/elections:
+    get:
+      operationId: platform_elections_list
+      description: List views read across tenants, so the whole of the read runs in
+        the system context.
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - platform
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedElectionRowList'
+          description: ''
+  /api/v1/platform/master-data:
+    get:
+      operationId: platform_master_data_retrieve
+      tags:
+      - platform
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/platform/master-data/import:
+    post:
+      operationId: platform_master_data_import_create
+      tags:
+      - platform
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/_FileUploadRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/platform/master-data/preview:
+    post:
+      operationId: platform_master_data_preview_create
+      tags:
+      - platform
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/_FileUploadRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/platform/master-data/search:
+    get:
+      operationId: platform_master_data_search_retrieve
+      tags:
+      - platform
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/platform/messaging:
+    get:
+      operationId: platform_messaging_retrieve
+      tags:
+      - platform
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/platform/messaging/test:
+    post:
+      operationId: platform_messaging_test_create
+      description: Send a test message to the operator's own phone or email, through
+        the live provider.
+      tags:
+      - platform
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MessagingTestRequest'
+        required: true
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagingTestResult'
+          description: ''
+  /api/v1/platform/organizations:
+    get:
+      operationId: platform_organizations_list
+      description: List views read across tenants, so the whole of the read runs in
+        the system context.
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - platform
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOrganizationList'
+          description: ''
+  /api/v1/platform/organizations/{organization_id}:
+    get:
+      operationId: platform_organizations_retrieve
+      parameters:
+      - in: path
+        name: organization_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - platform
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/platform/organizations/{organization_id}/approve:
+    post:
+      operationId: platform_organizations_approve_create
+      parameters:
+      - in: path
+        name: organization_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - platform
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+          description: ''
+  /api/v1/platform/organizations/{organization_id}/reinstate:
+    post:
+      operationId: platform_organizations_reinstate_create
+      parameters:
+      - in: path
+        name: organization_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - platform
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+          description: ''
+  /api/v1/platform/organizations/{organization_id}/reject:
+    post:
+      operationId: platform_organizations_reject_create
+      parameters:
+      - in: path
+        name: organization_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - platform
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+          description: ''
+  /api/v1/platform/organizations/{organization_id}/suspend:
+    post:
+      operationId: platform_organizations_suspend_create
+      parameters:
+      - in: path
+        name: organization_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - platform
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+          description: ''
+  /api/v1/platform/overview:
+    get:
+      operationId: platform_overview_retrieve
+      tags:
+      - platform
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/platform/verification-queue:
+    get:
+      operationId: platform_verification_queue_list
+      description: List views read across tenants, so the whole of the read runs in
+        the system context.
+      parameters:
+      - name: cursor
+        required: false
+        in: query
+        description: The pagination cursor value.
+        schema:
+          type: string
+      - name: limit
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - platform
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedOrganizationList'
+          description: ''
   /api/v1/results/{version_id}/review:
     post:
       operationId: results_review_create
@@ -2515,6 +2881,14 @@ components:
           type: string
       required:
       - challenge_id
+    ChannelEnum:
+      enum:
+      - SMS
+      - EMAIL
+      type: string
+      description: |-
+        * `SMS` - SMS
+        * `EMAIL` - EMAIL
     ClientEnum:
       enum:
       - WEB
@@ -2835,6 +3209,14 @@ components:
       description: |-
         * `APPROVED` - APPROVED
         * `REJECTED` - REJECTED
+    DecisionRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        reason:
+          type: string
+          default: ''
+          maxLength: 500
     Delivery:
       type: object
       properties:
@@ -3029,6 +3411,49 @@ components:
       - election_date
       - name
       - state_id
+    ElectionRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        organization_id:
+          type: string
+          format: uuid
+        organization_name:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        election_date:
+          type: string
+          format: date
+        locked_at:
+          type: string
+          format: date-time
+          nullable: true
+        opened_at:
+          type: string
+          format: date-time
+          nullable: true
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        config_version:
+          type: integer
+      required:
+      - closed_at
+      - config_version
+      - election_date
+      - id
+      - locked_at
+      - name
+      - opened_at
+      - organization_id
+      - organization_name
+      - status
     ElectionStatusEnum:
       enum:
       - DRAFT
@@ -3569,6 +3994,7 @@ components:
       - geography.view
       - system.view
       - alerts.configure
+      - platform.manage
       type: string
       description: |-
         * `elections.configure` - elections.configure
@@ -3588,6 +4014,7 @@ components:
         * `geography.view` - geography.view
         * `system.view` - system.view
         * `alerts.configure` - alerts.configure
+        * `platform.manage` - platform.manage
     Health:
       type: object
       properties:
@@ -4014,6 +4441,21 @@ components:
           maxItems: 20
       required:
       - role
+    MessagingTestRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        channel:
+          $ref: '#/components/schemas/ChannelEnum'
+      required:
+      - channel
+    MessagingTestResult:
+      type: object
+      properties:
+        sent_to:
+          type: string
+      required:
+      - sent_to
     MfaCodeRequest:
       type: object
       description: Rejects fields the serializer does not declare (spec section 9).
@@ -4136,6 +4578,66 @@ components:
         * `LGA_CHAIRMAN` - Lga Chairman
         * `COUNCILLOR` - Councillor
         * `OTHER` - Other
+    Organization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 200
+        legal_name:
+          type: string
+          maxLength: 200
+        status:
+          $ref: '#/components/schemas/OrganizationStatusEnum'
+        status_reason:
+          type: string
+          maxLength: 500
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        people:
+          type: integer
+          readOnly: true
+        agents:
+          type: integer
+          readOnly: true
+        election_count:
+          type: integer
+          readOnly: true
+      required:
+      - agents
+      - created_at
+      - election_count
+      - id
+      - name
+      - people
+    OrganizationStatusEnum:
+      enum:
+      - PENDING_VERIFICATION
+      - PENDING_APPROVAL
+      - ACTIVE
+      - SUSPENDED
+      - REJECTED
+      type: string
+      description: |-
+        * `PENDING_VERIFICATION` - Pending Verification
+        * `PENDING_APPROVAL` - Pending Approval
+        * `ACTIVE` - Active
+        * `SUSPENDED` - Suspended
+        * `REJECTED` - Rejected
     OtpChannelEnum:
       enum:
       - SMS
@@ -4246,6 +4748,25 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Election'
+    PaginatedElectionRowList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ElectionRow'
     PaginatedExportJobList:
       type: object
       required:
@@ -4360,6 +4881,44 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Notification'
+    PaginatedOrganizationList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Organization'
+    PaginatedPlatformAuditList:
+      type: object
+      required:
+      - results
+      properties:
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cD00ODY%3D"
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformAudit'
     PaginatedPollingUnitList:
       type: object
       required:
@@ -4524,6 +5083,44 @@ components:
       required:
       - id
       - name
+    PlatformAudit:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        at:
+          type: string
+          format: date-time
+        organization_id:
+          type: string
+          format: uuid
+          nullable: true
+        action:
+          type: string
+        object_type:
+          type: string
+        object_id:
+          type: string
+        actor_id:
+          type: string
+          format: uuid
+          nullable: true
+        actor_role:
+          type: string
+        diff:
+          type: object
+          additionalProperties: {}
+      required:
+      - action
+      - actor_id
+      - actor_role
+      - at
+      - diff
+      - id
+      - object_id
+      - object_type
+      - organization_id
     PlatformEnum:
       enum:
       - ANDROID
@@ -4951,12 +5548,14 @@ components:
       - LGA_OFFICER
       - WARD_OFFICER
       - PU_AGENT
+      - PLATFORM_ADMIN
       type: string
       description: |-
         * `PARTY_ADMIN` - PARTY_ADMIN
         * `LGA_OFFICER` - LGA_OFFICER
         * `WARD_OFFICER` - WARD_OFFICER
         * `PU_AGENT` - PU_AGENT
+        * `PLATFORM_ADMIN` - PLATFORM_ADMIN
     Scope:
       type: object
       properties:
@@ -5345,6 +5944,15 @@ components:
       - inec_code
       - lga_id
       - name
+    _FileUploadRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        file:
+          type: string
+          format: binary
+      required:
+      - file
   securitySchemes:
     bearerAuth:
       type: http

@@ -21,6 +21,7 @@ ROLE_SCOPE_KIND: Mapping[Role, ScopeKind] = {
     Role.LGA_OFFICER: ScopeKind.LGA,
     Role.WARD_OFFICER: ScopeKind.WARD,
     Role.PU_AGENT: ScopeKind.PU,
+    Role.PLATFORM_ADMIN: ScopeKind.ORG,
 }
 
 

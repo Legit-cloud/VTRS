@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.reports",
     "apps.operations",
+    "apps.platform_admin",
 ]
 
 
