@@ -132,6 +132,7 @@ class LoginResponseSerializer(serializers.Serializer):
     refresh_token = serializers.CharField(required=False)
     refresh_expires_at = serializers.DateTimeField(required=False)
     session_id = serializers.UUIDField(required=False)
+    device_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class RegistrationResponseSerializer(serializers.Serializer):

@@ -58,6 +58,50 @@ Sign-in is throttled per address; run the API with relaxed throttle rates for a 
 throttles themselves are covered by the backend suite). Each run enrols the admin's
 authenticator from scratch, so re-run `prepare_demo_logins` between runs.
 
+## Agent app
+
+```sh
+cd frontend/apps/mobile
+EXPO_PUBLIC_API_URL=http://<host>:8000 npx expo start     # Expo Go or a development build
+```
+
+The Android emulator reaches the host at `10.0.2.2` (the default). A real phone needs the
+machine's address or the staging URL. `EXPO_PUBLIC_SUPPORT_PHONE` sets the Help tab's call and
+WhatsApp buttons.
+
+How it works offline: a finished result and its photo are written to SQLite in one step, hashed
+and signed as they will be sent. A sync engine sends them in batches of ten under a stable
+idempotency key, backs off with jitter on failure, uploads each photo to its presigned URL once
+the server has the result, then confirms it. It runs on start, on return to the foreground, when
+the network comes back, after every save, and every minute while anything waits.
+
+Tests:
+
+```sh
+npm test --workspace @vtrs/mobile           # engine, outbox, capture rules (real SQL via node:sqlite)
+# against a running API, with a real agent on their registered device (see the file header):
+VTRS_LIVE_API=http://127.0.0.1:8000 VTRS_LIVE_AGENT='{...}' npx vitest run test/live.test.ts
+```
+
+The live test signs in on the device, sends a hashed result, uploads its photo to the object
+store, completes it, and replays it. It passed against the dev stack, so the contract holds.
+
+**Not yet exercised on a device or emulator** (none was available here): the camera, GPS and
+secure-store screens run on the native modules, and are covered only by the bundle build, type
+checks, and the layout preview in a browser. Do a pass on a low-end Android phone before pilot.
+
+Deliberately different from the written design:
+
+- **Sign-in is phone number and password**, not a code on every sign-in. That is what the API
+  does: an agent sets a password when accepting the invitation, and signs in from the device the
+  server bound them to. The code step happens once, at invitation.
+- **The device id is kept on sign-out.** The server created it; signing in again needs it.
+- **Photo is required** before a result can be sent. Without GPS a result still sends and is
+  flagged for an officer.
+
+Not built: push notifications (FCM credentials are PB-07), the identity-check screens (PB-08,
+behind a legal decision), Yoruba strings, dark theme switch.
+
 ## Decisions worth knowing
 
 - **Tokens.** Access token in memory, refresh token in an httpOnly, SameSite=Strict cookie
