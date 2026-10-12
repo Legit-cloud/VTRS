@@ -165,9 +165,9 @@ test.describe("party admin", () => {
     const page = await context.newPage();
     await page.goto("/war-room");
     await expect(page.getByText("Leading", { exact: true })).toBeVisible();
-    await accessible(page, "war room (dark)");
-    await page.getByRole("button", { name: "Switch to the light theme" }).click();
     await accessible(page, "war room (light)");
+    await page.getByRole("button", { name: "Switch to the War Room theme" }).click();
+    await accessible(page, "war room (dark)");
     await page.close();
   });
 });

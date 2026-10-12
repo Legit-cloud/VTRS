@@ -5,16 +5,17 @@ import { useEffect, useState } from "react";
 const KEY = "vtrs.warroom.theme";
 
 /**
- * The War Room is dark by default for wall screens and night shifts, light on request. The
- * class goes on <html> so the sidebar and top bar follow, and is removed when leaving.
+ * The War Room looks like every other page by default. The dark theme is there for wall
+ * screens and night shifts, and is remembered once chosen. The class goes on <html> so the
+ * sidebar and top bar follow, and is removed when leaving.
  */
 export function useWarRoomTheme(): { dark: boolean; toggle: () => void } {
   const [dark, setDark] = useState(() => {
-    if (typeof window === "undefined") return true;
+    if (typeof window === "undefined") return false;
     try {
-      return window.localStorage.getItem(KEY) !== "light";
+      return window.localStorage.getItem(KEY) === "dark";
     } catch {
-      return true;
+      return false;
     }
   });
 
