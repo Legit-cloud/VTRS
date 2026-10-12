@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { AppShell } from "@/components/shell/shell";
+import { ShellSwitch } from "@/components/shell/shell-switch";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+  return <ShellSwitch>{children}</ShellSwitch>;
 }

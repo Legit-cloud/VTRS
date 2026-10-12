@@ -31,6 +31,7 @@ from apps.geography.domain.synthetic import synthetic_master_data
 from apps.geography.models import Lga, PollingUnit, State, Ward
 from apps.geography.services import import_master_data
 from apps.notifications.models import Notification
+from apps.organizations.models import Organization
 from apps.reports.models import ExportJob
 from apps.results.models import PuResult, ResultVersion
 
@@ -78,6 +79,7 @@ def _actor(w: World, role: Role):
         Role.LGA_OFFICER: [w.lga_a.id],
         Role.WARD_OFFICER: [w.wards["in_scope"].id],
         Role.PU_AGENT: [w.pu("in_scope").id],
+        Role.PLATFORM_ADMIN: [],
     }[role]
     return w.make_member(role, scope_ids=scope, organization=w.org)
 
@@ -342,6 +344,19 @@ def _export_job(w: World, relation: str) -> ExportJob:
             scope_ids=[w.wards[relation].id],
             status="READY",
         )
+
+
+def _fresh_org(status: str):
+    def make(w: World, relation: str):
+        with system_context():
+            return Organization.objects.create(name=f"Org {uuid7().hex[-8:]}", status=status)
+
+    return make
+
+
+def _every_org(role: Role, relation: str) -> bool:
+    """Platform operators see every party; the permission is the only gate."""
+    return True
 
 
 def _admin_in_org(role: Role, relation: str) -> bool:
@@ -670,6 +685,63 @@ ENDPOINTS = [
         body=lambda t, w: {"matrix": {"HIGH": {"ack_minutes": 25}}},
     ),
     Endpoint("alert-policy", "delete", Perm.ALERTS_CONFIGURE),
+    # platform operators
+    Endpoint("platform-overview", "get", Perm.PLATFORM_MANAGE),
+    Endpoint("platform-orgs", "get", Perm.PLATFORM_MANAGE),
+    Endpoint("platform-verification-queue", "get", Perm.PLATFORM_MANAGE),
+    Endpoint("platform-elections", "get", Perm.PLATFORM_MANAGE),
+    Endpoint("platform-master-data", "get", Perm.PLATFORM_MANAGE),
+    Endpoint("platform-master-data-search", "get", Perm.PLATFORM_MANAGE, query={"q": "ab"}),
+    Endpoint("platform-messaging", "get", Perm.PLATFORM_MANAGE),
+    Endpoint("platform-audit", "get", Perm.PLATFORM_MANAGE),
+    Endpoint(
+        "platform-messaging-test",
+        "post",
+        Perm.PLATFORM_MANAGE,
+        body=lambda t, w: {"channel": "EMAIL"},
+    ),
+    Endpoint(
+        "platform-org-detail",
+        "get",
+        Perm.PLATFORM_MANAGE,
+        lambda w, rel: w.org_for(rel),
+        kwargs=lambda t: {"organization_id": t.id},
+        visible=_every_org,
+    ),
+    Endpoint(
+        "platform-org-approve",
+        "post",
+        Perm.PLATFORM_MANAGE,
+        _fresh_org("PENDING_APPROVAL"),
+        kwargs=lambda t: {"organization_id": t.id},
+        visible=_every_org,
+    ),
+    Endpoint(
+        "platform-org-reject",
+        "post",
+        Perm.PLATFORM_MANAGE,
+        _fresh_org("PENDING_APPROVAL"),
+        body=lambda t, w: {"reason": "Documents do not match"},
+        kwargs=lambda t: {"organization_id": t.id},
+        visible=_every_org,
+    ),
+    Endpoint(
+        "platform-org-suspend",
+        "post",
+        Perm.PLATFORM_MANAGE,
+        _fresh_org("ACTIVE"),
+        body=lambda t, w: {"reason": "Misuse of agent accounts"},
+        kwargs=lambda t: {"organization_id": t.id},
+        visible=_every_org,
+    ),
+    Endpoint(
+        "platform-org-reinstate",
+        "post",
+        Perm.PLATFORM_MANAGE,
+        _fresh_org("SUSPENDED"),
+        kwargs=lambda t: {"organization_id": t.id},
+        visible=_every_org,
+    ),
     Endpoint("my-notifications", "get", AUTHENTICATED),
     Endpoint("my-notifications-unread", "get", AUTHENTICATED),
     Endpoint("my-notifications-read-all", "post", AUTHENTICATED),
@@ -695,6 +767,9 @@ SELF_SERVICE = {
     # tests/reports.
     ("exports", "POST"),
     ("export-download-url", "POST"),
+    # Multipart uploads; covered in tests/platform_admin.
+    ("platform-master-data-preview", "POST"),
+    ("platform-master-data-import", "POST"),
 }
 
 
@@ -797,6 +872,7 @@ def _dummy_kwargs(endpoint: Endpoint) -> dict:
         "flag_id",
         "notification_id",
         "job_id",
+        "organization_id",
     }
     route = next(
         p for p in _flatten(get_resolver().url_patterns) if p.name == endpoint.route

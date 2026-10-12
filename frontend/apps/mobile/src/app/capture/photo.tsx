@@ -1,15 +1,16 @@
+import { formatBytes } from "@vtrs/core";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
 import { Camera } from "lucide-react-native";
 import { useRef, useState } from "react";
 import { Image, Linking, Pressable, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useT } from "../../i18n";
 import { preparePhoto } from "../../platform/files";
 import { useCapture } from "../../state/capture";
-import { Button, IconBadge, TopBar, StepBar } from "../../ui/kit";
+import { useSteps } from "../../ui/capture-frame";
+import { Button, IconBadge, StepBar, TopBar } from "../../ui/kit";
 import { AppText, size, space, useColors } from "../../ui/theme";
-import { STEPS } from "../../ui/capture-frame";
-import { formatBytes } from "@vtrs/core";
 
 const CORNER = 28;
 
@@ -38,6 +39,8 @@ export default function PhotoStep() {
   const { draft, setPhoto } = useCapture();
   const router = useRouter();
   const colors = useColors();
+  const t = useT();
+  const steps = useSteps();
   const [permission, requestPermission] = useCameraPermissions();
   const camera = useRef<CameraView>(null);
   const [busy, setBusy] = useState(false);
@@ -55,7 +58,7 @@ export default function PhotoStep() {
       });
       setPhoto(await preparePhoto(picture.uri));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not take the photo. Try again.");
+      setError(e instanceof Error && e.message ? e.message : t("photo.tooLarge"));
     } finally {
       setBusy(false);
     }
@@ -68,19 +71,18 @@ export default function PhotoStep() {
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
         <View style={{ flex: 1, padding: size.screenPadding, gap: space[16] }}>
           <TopBar />
-          <StepBar steps={STEPS} current={2} />
+          <StepBar steps={steps} current={2} />
           <View style={{ flex: 1, justifyContent: "center", gap: space[16] }}>
             <IconBadge>
               <Camera size={30} color="#FFFFFF" strokeWidth={1.75} />
             </IconBadge>
-            <AppText variant="title">Allow the camera</AppText>
+            <AppText variant="title">{t("photo.allowTitle")}</AppText>
             <AppText variant="bodyLg" tone="subtle">
-              The camera is used only to photograph the result sheet. The photo goes to your party
-              with the numbers, so they can check them.
+              {t("photo.allowBody")}
             </AppText>
           </View>
           <Button
-            title={blocked ? "Open settings" : "Allow camera"}
+            title={blocked ? t("photo.settings") : t("photo.allow")}
             onPress={() => (blocked ? void Linking.openSettings() : void requestPermission())}
           />
         </View>
@@ -94,15 +96,14 @@ export default function PhotoStep() {
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
         <View style={{ flex: 1, padding: size.screenPadding, gap: space[16] }}>
           <TopBar />
-          <StepBar steps={STEPS} current={2} />
-          <AppText variant="title">Is the sheet readable?</AppText>
+          <StepBar steps={steps} current={2} />
+          <AppText variant="title">{t("photo.readableTitle")}</AppText>
           <AppText variant="body" tone="subtle">
-            Check every number can be read, then use the photo. Retake it if there is glare, a
-            shadow, or it is cut off.
+            {t("photo.readableBody")}
           </AppText>
           <Image
             source={{ uri: draft.photo.uri }}
-            accessibilityLabel="Photo of the result sheet"
+            accessibilityLabel={t("review.photo")}
             resizeMode="contain"
             style={{ flex: 1, borderRadius: 16, backgroundColor: colors.muted }}
           />
@@ -111,11 +112,11 @@ export default function PhotoStep() {
           </AppText>
           <View style={{ gap: space[8] }}>
             <Button
-              title="Use photo"
+              title={t("photo.use")}
               forward
               onPress={() => router.push({ pathname: "/capture/review" })}
             />
-            <Button title="Retake" variant="outline" onPress={() => setPhoto(null)} />
+            <Button title={t("photo.retake")} variant="outline" onPress={() => setPhoto(null)} />
           </View>
         </View>
       </SafeAreaView>
@@ -165,7 +166,7 @@ export default function PhotoStep() {
           }}
         >
           <AppText variant="label" style={{ color: "#FFFFFF" }}>
-            Fill the frame · No shadows
+            {t("photo.tips")}
           </AppText>
         </View>
         {error ? (
@@ -175,7 +176,7 @@ export default function PhotoStep() {
         ) : null}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Take photo"
+          accessibilityLabel={t("photo.take")}
           disabled={!ready || busy}
           onPress={shoot}
           style={{

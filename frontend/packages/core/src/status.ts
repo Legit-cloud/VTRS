@@ -108,13 +108,15 @@ export const ELECTION_STATUS: Record<string, StatusView> = {
 export const electionStatus = (value: string): StatusView =>
   ELECTION_STATUS[value] ?? { label: sentence(value), tone: "ink", icon: "circle" };
 
-export type RoleCode = "PARTY_ADMIN" | "LGA_OFFICER" | "WARD_OFFICER" | "PU_AGENT";
+export type RoleCode =
+  "PARTY_ADMIN" | "LGA_OFFICER" | "WARD_OFFICER" | "PU_AGENT" | "PLATFORM_ADMIN";
 
 export const ROLE_LABEL: Record<RoleCode, string> = {
   PARTY_ADMIN: "Party admin",
   LGA_OFFICER: "LGA officer",
   WARD_OFFICER: "Ward officer",
   PU_AGENT: "Polling unit agent",
+  PLATFORM_ADMIN: "Platform admin",
 };
 
 export const OFFICE_LABEL: Record<string, string> = {

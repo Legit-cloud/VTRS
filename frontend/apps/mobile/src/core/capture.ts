@@ -2,10 +2,7 @@ import {
   SHEET_FIELD_ORDER,
   buildSubmissionItem,
   checkTotals,
-  copy,
-  mismatchAccredited,
-  mismatchCandidates,
-  mismatchRejected,
+  formatNumber,
   type Check,
   type EvidenceManifest,
   type Json,
@@ -82,15 +79,41 @@ export function candidateNumbers(contest: Contest, draft: Draft): number[] {
   return contest.candidates.map((c) => parseCount(draft.votes[c.id]) ?? 0);
 }
 
-/** The server's arithmetic, worded for someone holding the result sheet. */
-export function describeChecks(checks: Check[], valid: number | null): string[] {
-  const out: string[] = [];
+export interface CheckProblem {
+  key: "check.candidates" | "check.rejected" | "check.accredited";
+  params: Record<string, string>;
+}
+
+/**
+ * The server's arithmetic as keyed messages: the screen words them in the agent's language,
+ * with numbers formatted the way the rest of the app shows them.
+ */
+export function describeChecks(checks: Check[], valid: number | null): CheckProblem[] {
+  const out: CheckProblem[] = [];
   for (const c of checks) {
     if (c.ok) continue;
-    if (c.id === "candidates_vs_valid") out.push(mismatchCandidates(c.left, c.right));
-    else if (c.id === "valid_plus_rejected_vs_cast")
-      out.push(mismatchRejected(valid ?? 0, c.left - (valid ?? 0), c.right));
-    else if (c.id === "cast_vs_accredited") out.push(mismatchAccredited(c.left, c.right));
+    if (c.id === "candidates_vs_valid") {
+      out.push({
+        key: "check.candidates",
+        params: { sum: formatNumber(c.left), valid: formatNumber(c.right) },
+      });
+    } else if (c.id === "valid_plus_rejected_vs_cast") {
+      const v = valid ?? 0;
+      out.push({
+        key: "check.rejected",
+        params: {
+          valid: formatNumber(v),
+          rejected: formatNumber(c.left - v),
+          sum: formatNumber(c.left),
+          cast: formatNumber(c.right),
+        },
+      });
+    } else if (c.id === "cast_vs_accredited") {
+      out.push({
+        key: "check.accredited",
+        params: { cast: formatNumber(c.left), accredited: formatNumber(c.right) },
+      });
+    }
   }
   return out;
 }
@@ -193,5 +216,3 @@ export function finish(input: FinishInput): Finished {
   );
   return { item, evidence: [{ ...manifest, localUri: draft.photo.uri }] };
 }
-
-export { copy };

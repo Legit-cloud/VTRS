@@ -1,11 +1,13 @@
 import { Tabs } from "expo-router";
 import { CircleHelp, ClipboardList, Inbox } from "lucide-react-native";
+import { useT } from "../../i18n";
 import { useApp } from "../../state/app";
 import { size, typography, useColors } from "../../ui/theme";
 
 /** Three tabs, labels always shown, 64 px high. The Outbox carries a count of what is waiting. */
 export default function TabsLayout() {
   const colors = useColors();
+  const t = useT();
   const { pending } = useApp();
   return (
     <Tabs
@@ -29,14 +31,14 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Today",
+          title: t("tab.today"),
           tabBarIcon: ({ color }) => <ClipboardList size={24} color={color} strokeWidth={1.75} />,
         }}
       />
       <Tabs.Screen
         name="outbox"
         options={{
-          title: "Outbox",
+          title: t("tab.outbox"),
           tabBarBadge: pending > 0 ? pending : undefined,
           tabBarBadgeStyle: { backgroundColor: colors.signalAmberMark, color: "#0B2B27" },
           tabBarIcon: ({ color }) => <Inbox size={24} color={color} strokeWidth={1.75} />,
@@ -45,7 +47,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="help"
         options={{
-          title: "Help",
+          title: t("tab.help"),
           tabBarIcon: ({ color }) => <CircleHelp size={24} color={color} strokeWidth={1.75} />,
         }}
       />

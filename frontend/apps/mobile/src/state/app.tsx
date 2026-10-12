@@ -17,6 +17,7 @@ import { SyncEngine } from "../core/sync";
 import { APP_VERSION } from "../platform/config";
 import { fileUploader } from "../platform/files";
 import { secure } from "../platform/secure";
+import { onNotificationTap, onTokenChange, registerForPush } from "../platform/push";
 import { openDb } from "../platform/sqlite";
 import { anonymous, ep, session } from "./session";
 
@@ -193,6 +194,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clearInterval(timer);
     };
   }, [boot, syncNow]);
+
+  // ---- push ------------------------------------------------------------------------------
+  const registered = useRef<string | null>(null);
+  useEffect(() => {
+    if (boot !== "signed-in" || !online) return;
+    let alive = true;
+    void (async () => {
+      const database = dbRef.current;
+      if (database && registered.current === null) {
+        registered.current = await kvGet(database, "push_token");
+      }
+      const token = await registerForPush(ep, registered.current);
+      if (alive && token && database) {
+        registered.current = token;
+        await kvSet(database, "push_token", token);
+      }
+    })();
+    const stopRefresh = onTokenChange((token) => {
+      void ep.me.registerPushToken(token).then(() => {
+        registered.current = token;
+      });
+    });
+    // A decision on a result is worth a look: bring the outbox up to date.
+    const stopTap = onNotificationTap(() => void syncNow());
+    return () => {
+      alive = false;
+      stopRefresh();
+      stopTap();
+    };
+  }, [boot, online, syncNow]);
 
   // ---- actions ---------------------------------------------------------------------------
   const adopt = useCallback(

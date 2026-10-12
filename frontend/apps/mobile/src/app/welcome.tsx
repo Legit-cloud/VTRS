@@ -1,7 +1,8 @@
 import { useRouter } from "expo-router";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Line, Rect } from "react-native-svg";
+import { LANGUAGES, useI18n } from "../i18n";
 import { Button } from "../ui/kit";
 import { AppText, size, space, useColors } from "../ui/theme";
 
@@ -38,23 +39,45 @@ function Logo({ px = 88 }: { px?: number }) {
 export default function Welcome() {
   const router = useRouter();
   const colors = useColors();
+  const { t, language, setLanguage } = useI18n();
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <View style={{ flex: 1, padding: size.screenPadding, justifyContent: "space-between" }}>
+        <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: space[8] }}>
+          {LANGUAGES.map((l) => (
+            <Pressable
+              key={l.code}
+              accessibilityRole="button"
+              accessibilityState={{ selected: language === l.code }}
+              accessibilityLabel={l.name}
+              onPress={() => setLanguage(l.code)}
+              style={{
+                minHeight: size.hit,
+                paddingHorizontal: space[12],
+                justifyContent: "center",
+                borderBottomWidth: 3,
+                borderBottomColor: language === l.code ? colors.primary : "transparent",
+              }}
+            >
+              <AppText variant="label" tone={language === l.code ? "default" : "muted"}>
+                {l.name}
+              </AppText>
+            </Pressable>
+          ))}
+        </View>
         <View style={{ flex: 1, justifyContent: "center", gap: space[24] }}>
           <Logo />
           <View style={{ gap: space[12] }}>
-            <AppText variant="display">Record your polling unit&apos;s result</AppText>
+            <AppText variant="display">{t("welcome.title")}</AppText>
             <AppText variant="bodyLg" tone="subtle">
-              Enter the numbers from the result sheet, take a photo, and send. It works without a
-              network and sends when you are back online.
+              {t("welcome.body")}
             </AppText>
           </View>
         </View>
         <View style={{ gap: space[12] }}>
-          <Button title="Sign in" forward onPress={() => router.push("/sign-in")} />
+          <Button title={t("welcome.signIn")} forward onPress={() => router.push("/sign-in")} />
           <Button
-            title="I have an invitation"
+            title={t("welcome.invite")}
             variant="secondary"
             onPress={() => router.push("/invite")}
           />

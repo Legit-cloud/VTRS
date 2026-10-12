@@ -3,6 +3,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
 import { View } from "react-native";
 import { tokenFrom } from "../core/invite";
+import { useT } from "../i18n";
 import { useApp } from "../state/app";
 import { Button, Field, Screen, TopBar } from "../ui/kit";
 import { AppText, space } from "../ui/theme";
@@ -11,6 +12,7 @@ const MIN_PASSWORD = 12;
 
 export default function Invite() {
   const { acceptInvitation, completeInvitation, online } = useApp();
+  const t = useT();
   const params = useLocalSearchParams<{ token?: string }>();
   const [link, setLink] = useState(params.token ?? "");
   const [challenge, setChallenge] = useState<{ id: string; hint: string } | null>(null);
@@ -21,11 +23,7 @@ export default function Invite() {
   const [error, setError] = useState<string | null>(null);
 
   const describe = (e: unknown) =>
-    e instanceof ApiError
-      ? e.isNetwork
-        ? "Could not reach the server. Check your network and try again."
-        : e.detail
-      : "Something went wrong. Try again.";
+    e instanceof ApiError ? (e.isNetwork ? t("error.network") : e.detail) : t("error.generic");
 
   async function step1() {
     setBusy(true);
@@ -66,7 +64,7 @@ export default function Invite() {
       footer={
         challenge ? (
           <Button
-            title="Create account"
+            title={t("invite.create")}
             forward
             loading={busy}
             disabled={
@@ -76,7 +74,7 @@ export default function Invite() {
           />
         ) : (
           <Button
-            title="Continue"
+            title={t("signIn.continue")}
             forward
             loading={busy}
             disabled={link.trim().length < 8 || !online}
@@ -87,17 +85,15 @@ export default function Invite() {
     >
       <TopBar />
       <View style={{ gap: space[8] }}>
-        <AppText variant="display">{challenge ? "Check your messages" : "Your invitation"}</AppText>
+        <AppText variant="display">{challenge ? t("invite.codeTitle") : t("invite.title")}</AppText>
         <AppText variant="bodyLg" tone="subtle">
-          {challenge
-            ? `We sent a code to ${challenge.hint || "your phone"}. Enter it and choose a password. This phone becomes the one your account works on.`
-            : "Paste the link from the SMS your party sent you."}
+          {challenge ? t("invite.codeHelper", { hint: challenge.hint || "…" }) : t("invite.helper")}
         </AppText>
       </View>
       {challenge ? (
         <>
           <Field
-            label="Code"
+            label={t("invite.code")}
             value={code}
             onChangeText={setCode}
             numeric
@@ -106,28 +102,28 @@ export default function Invite() {
             maxLength={8}
           />
           <Field
-            label="Choose a password"
-            helper={`At least ${MIN_PASSWORD} characters.`}
+            label={t("invite.password")}
+            helper={t("invite.passwordHelper", { min: MIN_PASSWORD })}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
             autoCapitalize="none"
             textContentType="newPassword"
-            error={tooShort ? `Use at least ${MIN_PASSWORD} characters.` : null}
+            error={tooShort ? t("invite.passwordShort", { min: MIN_PASSWORD }) : null}
           />
           <Field
-            label="Type it again"
+            label={t("invite.again")}
             value={again}
             onChangeText={setAgain}
             secureTextEntry
             autoCapitalize="none"
             textContentType="newPassword"
-            error={mismatch ? "The two passwords are different." : null}
+            error={mismatch ? t("invite.mismatch") : null}
           />
         </>
       ) : (
         <Field
-          label="Invitation link"
+          label={t("invite.link")}
           value={link}
           onChangeText={setLink}
           autoCapitalize="none"

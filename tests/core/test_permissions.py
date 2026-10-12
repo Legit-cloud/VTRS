@@ -18,7 +18,7 @@ EXPECTED = {
     Perm.USERS_MANAGE: {Role.PARTY_ADMIN},
     Perm.ASSIGNMENTS_MANAGE: {Role.PARTY_ADMIN},
     Perm.RESULTS_SUBMIT: {Role.PU_AGENT},
-    Perm.RESULTS_VIEW: set(Role),
+    Perm.RESULTS_VIEW: set(Role) - {Role.PLATFORM_ADMIN},
     Perm.RESULTS_REVIEW: {Role.PARTY_ADMIN, Role.WARD_OFFICER},
     Perm.ANOMALIES_VIEW: {Role.PARTY_ADMIN, Role.LGA_OFFICER, Role.WARD_OFFICER},
     Perm.ANOMALIES_RESOLVE: {Role.PARTY_ADMIN, Role.LGA_OFFICER},
@@ -28,8 +28,9 @@ EXPECTED = {
     Perm.AUDIT_VIEW: {Role.PARTY_ADMIN},
     Perm.DASHBOARD_VIEW: {Role.PARTY_ADMIN, Role.LGA_OFFICER, Role.WARD_OFFICER},
     Perm.GEOGRAPHY_VIEW: set(Role),
-    Perm.SYSTEM_VIEW: {Role.PARTY_ADMIN},
+    Perm.SYSTEM_VIEW: {Role.PARTY_ADMIN, Role.PLATFORM_ADMIN},
     Perm.ALERTS_CONFIGURE: {Role.PARTY_ADMIN},
+    Perm.PLATFORM_MANAGE: {Role.PLATFORM_ADMIN},
 }
 
 
@@ -54,6 +55,8 @@ def test_roles_can_only_be_granted_at_or_below_your_own():
     assert can_assign_role(Role.LGA_OFFICER, Role.LGA_OFFICER)
     assert not can_assign_role(Role.WARD_OFFICER, Role.LGA_OFFICER)
     assert not can_assign_role(Role.LGA_OFFICER, Role.PARTY_ADMIN)
+    # Nobody in a party can mint a platform operator.
+    assert not can_assign_role(Role.PARTY_ADMIN, Role.PLATFORM_ADMIN)
 
 
 def test_actor_rejects_a_scope_that_does_not_match_its_role():

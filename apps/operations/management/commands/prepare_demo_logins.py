@@ -14,15 +14,17 @@ from typing import Any
 
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 
 from apps.accounts.models import Membership, User, UserStatus
 from apps.assignments.models import AgentAssignment
 from apps.core.crypto import blind_index
 from apps.core.rls import system_context
 from apps.elections.models import Election
-from apps.organizations.models import Organization
+from apps.organizations.models import Organization, OrganizationStatus
 
 DOMAIN = "demo.example"
 
@@ -96,10 +98,37 @@ class Command(BaseCommand):
             person(f"ward@{DOMAIN}", "Tunde Okafor", "WARD_OFFICER", "WARD", [unit.ward_id])
             person(f"lga@{DOMAIN}", "Funmi Adeyemi", "LGA_OFFICER", "LGA", [unit.lga_id])
 
+        # A platform operator, and registrations waiting for them to decide on.
+        operator_password = options["password"] + "-ops"
+        call_command(
+            "create_platform_admin",
+            email=f"ops@{DOMAIN}",
+            name="Ngozi Eze",
+            phone="",
+            password=operator_password,
+            verbosity=0,
+        )
+        with transaction.atomic(), system_context():
+            operator = User.objects.get(email_index=blind_index("email", f"ops@{DOMAIN}"))
+            operator.mfa_enabled = False
+            operator.save(update_fields=["mfa_enabled"])
+            Organization.objects.filter(
+                name__startswith="Pending Party", status=OrganizationStatus.PENDING_APPROVAL
+            ).delete()
+            for n in (1, 2, 3):
+                Organization.objects.create(
+                    name=f"Pending Party {n}",
+                    legal_name=f"Pending Party {n} Limited",
+                    status=OrganizationStatus.PENDING_APPROVAL,
+                    verified_at=timezone.now(),
+                )
+
         self.stdout.write(
             f"Ready: {org.name}, election {election.name}.\n"
             f"  admin@{DOMAIN} (party admin, no second factor yet)\n"
             f"  ward@{DOMAIN}  (ward officer)\n"
             f"  lga@{DOMAIN}   (LGA officer)\n"
-            f"  password: {options['password']}"
+            f"  password: {options['password']}\n"
+            f"  ops@{DOMAIN}   (platform operator, no second factor yet)\n"
+            f"  password: {operator_password}"
         )

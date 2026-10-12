@@ -10,7 +10,7 @@ import {
   type ContestSummary,
   type Measure,
 } from "@vtrs/core";
-import { Gauge, Moon, Sun } from "lucide-react";
+import { Gauge } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -30,7 +30,6 @@ import { cn } from "@/lib/cn";
 import { useElection } from "@/lib/election";
 import { useLiveUpdates } from "@/lib/live";
 import { NEXT_LEVEL, startView } from "@/lib/scope-level";
-import { useWarRoomTheme } from "@/lib/war-room-theme";
 
 function useDashboard(electionId: string | undefined, measure: Measure | undefined) {
   return useQuery({
@@ -44,7 +43,6 @@ export default function WarRoomPage() {
   const { me, can } = useAuth();
   const router = useRouter();
   const { election, loading: electionLoading } = useElection();
-  const { dark, toggle } = useWarRoomTheme();
   const [measure, setMeasure] = useState<Measure | undefined>(undefined);
   const [contestId, setContestId] = useState<string | null>(null);
 
@@ -193,18 +191,6 @@ export default function WarRoomPage() {
               ))}
             </div>
           ) : null}
-          <Button
-            variant="outline"
-            size="icon-sm"
-            onClick={toggle}
-            aria-label={dark ? "Switch to the light theme" : "Switch to the War Room theme"}
-          >
-            {dark ? (
-              <Sun className="h-4 w-4" aria-hidden />
-            ) : (
-              <Moon className="h-4 w-4" aria-hidden />
-            )}
-          </Button>
         </div>
       </div>
 

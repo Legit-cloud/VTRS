@@ -6,6 +6,8 @@ export type Query = Record<string, string | number | boolean | null | undefined 
 export interface RequestOptions {
   query?: Query;
   body?: unknown;
+  /** A multipart upload. Sent as is; the runtime sets the boundary. */
+  formData?: FormData;
   /** Reuse a key to make a retry safe; one is generated for every write otherwise. */
   idempotencyKey?: string;
   /** ETag from the last read, for configuration edits. */
@@ -115,7 +117,7 @@ export class ApiClient {
       else if (forceFreshToken) throw networkError(new Error("no token"));
     }
     const hasBody = opts.body !== undefined && method !== "GET";
-    if (hasBody) headers["Content-Type"] = "application/json";
+    if (hasBody && !opts.formData) headers["Content-Type"] = "application/json";
     if (method !== "GET" && method !== "HEAD") {
       headers["Idempotency-Key"] = opts.idempotencyKey ?? uuid7();
     }
@@ -130,7 +132,7 @@ export class ApiClient {
       return await doFetch(`${this.options.baseUrl}${path}${buildQuery(opts.query)}`, {
         method,
         headers,
-        body: hasBody ? JSON.stringify(opts.body) : undefined,
+        body: opts.formData ?? (hasBody ? JSON.stringify(opts.body) : undefined),
         signal: controller.signal,
         credentials: "same-origin",
       });

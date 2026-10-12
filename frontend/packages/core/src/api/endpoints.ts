@@ -48,6 +48,17 @@ import type {
   TotpSetup,
   Ward,
 } from "./types";
+import type {
+  ImportReport,
+  MessagingChannel,
+  MasterDataState,
+  PlatformAuditEvent,
+  PlatformElection,
+  PlatformOrg,
+  PlatformOrgDetail,
+  PlatformOverview,
+  PlatformUnit,
+} from "./platform";
 
 const V1 = "/api/v1";
 
@@ -290,6 +301,58 @@ export function createEndpoints(api: ApiClient) {
           object_id?: string;
         } & Paging = {},
       ) => get<Page<AuditEvent>>("/audit/events", query),
+    },
+
+    platform: {
+      overview: () => get<PlatformOverview>("/platform/overview"),
+      organizations: (query: { status?: string } & Paging = {}) =>
+        get<Page<PlatformOrg>>("/platform/organizations", query),
+      verificationQueue: (query: Paging = {}) =>
+        get<Page<PlatformOrg>>("/platform/verification-queue", query),
+      organization: (id: string) => get<PlatformOrgDetail>(`/platform/organizations/${id}`),
+      approve: (id: string) => post<PlatformOrg>(`/platform/organizations/${id}/approve`),
+      reject: (id: string, reason: string) =>
+        post<PlatformOrg>(`/platform/organizations/${id}/reject`, { reason }),
+      suspend: (id: string, reason: string) =>
+        post<PlatformOrg>(`/platform/organizations/${id}/suspend`, { reason }),
+      reinstate: (id: string) => post<PlatformOrg>(`/platform/organizations/${id}/reinstate`),
+      elections: (query: { status?: string } & Paging = {}) =>
+        get<Page<PlatformElection>>("/platform/elections", query),
+      masterData: () => get<{ states: MasterDataState[] }>("/platform/master-data"),
+      searchUnits: (q: string) =>
+        get<{ results: PlatformUnit[] }>("/platform/master-data/search", { q }),
+      previewImport: (file: Blob, name = "master-data.csv") => {
+        const form = new FormData();
+        form.append("file", file, name);
+        return api
+          .request<ImportReport>("POST", `${V1}/platform/master-data/preview`, {
+            body: {},
+            formData: form,
+          })
+          .then((r) => r.data);
+      },
+      importMasterData: (file: Blob, name = "master-data.csv") => {
+        const form = new FormData();
+        form.append("file", file, name);
+        return api
+          .request<ImportReport>("POST", `${V1}/platform/master-data/import`, {
+            body: {},
+            formData: form,
+          })
+          .then((r) => r.data);
+      },
+      messaging: (hours = 24) =>
+        get<{ hours: number; channels: MessagingChannel[] }>("/platform/messaging", { hours }),
+      testMessage: (channel: "SMS" | "EMAIL") =>
+        post<{ sent_to: string; channel: string }>("/platform/messaging/test", { channel }),
+      audit: (
+        query: {
+          organization_id?: string;
+          action?: string;
+          since?: string;
+          until?: string;
+        } & Paging = {},
+      ) => get<Page<PlatformAuditEvent>>("/platform/audit", query),
     },
 
     admin: {

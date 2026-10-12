@@ -128,3 +128,27 @@ def import_master_data(
             diff={"counts": report.counts, "changes": outcome.changes},
         )
     return outcome
+
+
+class _Discard(Exception):
+    """Raised to roll a preview back; never leaves this module."""
+
+
+def preview_master_data(
+    records: Iterable[Mapping[str, str]], *, expectations: Expectations | None = None
+) -> ImportOutcome:
+    """What an import would change: how many rows it would add and update.
+
+    The changes are computed by applying them inside a savepoint and rolling it back, so the
+    numbers are exactly what the real import would produce, with nothing written.
+    """
+    outcome = import_master_data(records, expectations=expectations, dry_run=True)
+    if not outcome.report.ok:
+        return outcome
+    try:
+        with transaction.atomic():
+            outcome.changes = _apply(outcome.report.rows)
+            raise _Discard
+    except _Discard:
+        pass
+    return outcome

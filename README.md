@@ -74,8 +74,16 @@ table and fails on any view that does neither.
 ## Identity and access
 
 - **Organizations** register at `POST /api/v1/auth/organizations`. They stay pending until
-  the signer verifies an OTP (SMS or email) and a platform operator approves them:
+  the signer verifies an OTP (SMS or email) and a platform operator approves them, in the
+  portal's platform admin surface or with
   `python manage.py approve_organization <id> --operator <name>`.
+- **Platform operators** hold the `PLATFORM_ADMIN` role in the platform organization
+  (`Organization.is_platform`, one only). They are created with
+  `python manage.py create_platform_admin`, never by invitation, and no party role can grant
+  the role. They see organizations, elections' lock state, master-data completeness, delivery
+  rates and a platform-wide audit trail (`/api/v1/platform/*`), never a party's results,
+  evidence or people. Decisions (approve, reject, suspend, reinstate) and master-data imports
+  need a fresh second factor and are audited against the organization concerned.
 - **Agents and officers** are only ever invited (`POST /api/v1/invitations`). The invitee
   accepts with the token from the SMS or email link, an OTP sent to the invited contact, and
   a password. Agents also register their device.

@@ -3,13 +3,13 @@ import { useRouter } from "expo-router";
 import { AlertCircle, CheckCircle2 } from "lucide-react-native";
 import { View } from "react-native";
 import {
-  FIELD_LABEL,
   candidateNumbers,
   describeChecks,
   liveChecks,
   parseCount,
   sheetFieldsOf,
 } from "../../core/capture";
+import { useT } from "../../i18n";
 import { useCapture } from "../../state/capture";
 import { CaptureFrame } from "../../ui/capture-frame";
 import { Button, Field } from "../../ui/kit";
@@ -19,6 +19,7 @@ export default function Totals() {
   const { contest, draft, setTotal } = useCapture();
   const router = useRouter();
   const colors = useColors();
+  const t = useT();
   const fields = sheetFieldsOf(contest);
   const missing = fields.some((f) => parseCount(draft.totals[f]) === null);
 
@@ -30,11 +31,11 @@ export default function Totals() {
   return (
     <CaptureFrame
       step={1}
-      title="Totals from the sheet"
-      helper="These are the totals printed at the bottom of the sheet."
+      title={t("totals.title")}
+      helper={t("totals.helper")}
       footer={
         <Button
-          title="Next"
+          title={t("common.next")}
           forward
           disabled={missing}
           onPress={() => router.push({ pathname: "/capture/photo" })}
@@ -44,10 +45,10 @@ export default function Totals() {
       {fields.map((f) => (
         <Field
           key={f}
-          label={FIELD_LABEL[f]}
+          label={t(`field.${f}` as const)}
           numeric
           value={draft.totals[f] ?? ""}
-          onChangeText={(t) => setTotal(f, t)}
+          onChangeText={(text) => setTotal(f, text)}
           maxLength={7}
           placeholder="0"
         />
@@ -67,7 +68,7 @@ export default function Totals() {
           >
             <CheckCircle2 size={20} color={colors.signalTealText} />
             <AppText variant="label" style={{ flex: 1, color: colors.signalTealText }}>
-              Candidate votes {formatNumber(sum)} = Valid votes {formatNumber(valid)} ✓
+              {t("totals.ok", { sum: formatNumber(sum), valid: formatNumber(valid) })}
             </AppText>
           </View>
         ) : (
@@ -81,15 +82,15 @@ export default function Totals() {
             }}
           >
             {problems.map((p) => (
-              <View key={p} style={{ flexDirection: "row", gap: space[8] }}>
+              <View key={p.key} style={{ flexDirection: "row", gap: space[8] }}>
                 <AlertCircle size={20} color={colors.signalRedText} style={{ marginTop: 2 }} />
                 <AppText variant="body" style={{ flex: 1, color: colors.signalRedText }}>
-                  {p}
+                  {t(p.key, p.params)}
                 </AppText>
               </View>
             ))}
             <AppText variant="caption" style={{ color: colors.signalRedText }}>
-              If the sheet really says this, you can still send it. An officer will look at it.
+              {t("totals.stillSend")}
             </AppText>
           </View>
         )
