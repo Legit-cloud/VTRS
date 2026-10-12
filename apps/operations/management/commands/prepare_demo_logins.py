@@ -46,7 +46,12 @@ class Command(BaseCommand):
             )
             if org is None:
                 raise CommandError("Run simulate_election_day first.")
-            election = Election.objects.filter(organization=org).order_by("-created_at").first()
+            # The election the simulator staffed, not one created by hand afterwards.
+            election = (
+                Election.objects.filter(organization=org, assignments__isnull=False)
+                .order_by("-created_at")
+                .first()
+            )
             first = (
                 AgentAssignment.objects.filter(election=election)
                 .select_related("polling_unit")

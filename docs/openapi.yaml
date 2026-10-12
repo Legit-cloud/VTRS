@@ -5150,6 +5150,10 @@ components:
           type: string
           format: uuid
           readOnly: true
+        state_id:
+          type: string
+          format: uuid
+          readOnly: true
         latitude:
           type: string
           format: decimal
@@ -5170,6 +5174,7 @@ components:
       - inec_code
       - lga_id
       - name
+      - state_id
       - ward_id
     Position:
       type: object

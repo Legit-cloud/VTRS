@@ -63,12 +63,17 @@ def deactivate_user(actor: Actor, membership: Membership) -> User:
         Device.objects.filter(user=user, status=DeviceStatus.ACTIVE).update(
             status=DeviceStatus.REVOKED, revoked_at=timezone.now()
         )
+        # A deactivated agent must stop counting against their polling unit: otherwise the
+        # unit looks covered (and full) while nobody can report from it.
+        from apps.assignments.services import revoke_all_for_agent
+
+        released = revoke_all_for_agent(actor, user.id)
         audit.record(
             action="user.deactivated",
             object_type="user",
             object_id=user.id,
             actor=actor,
-            diff={"sessions_revoked": revoked},
+            diff={"sessions_revoked": revoked, "assignments_ended": released},
         )
     return user
 

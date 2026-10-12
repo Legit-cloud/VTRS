@@ -86,6 +86,33 @@ def assign(
     return assignment
 
 
+def revoke_all_for_agent(actor: Actor, agent_id: Any) -> int:
+    """End every active deployment of an agent (they were deactivated). Returns how many."""
+    now = timezone.now()
+    ended = list(
+        AgentAssignment.objects.select_for_update()
+        .filter(agent_id=agent_id, status=AssignmentStatus.ACTIVE)
+        .values_list("id", "polling_unit_id", "election_id")
+    )
+    for assignment_id, polling_unit_id, election_id in ended:
+        AgentAssignment.objects.filter(id=assignment_id).update(
+            status=AssignmentStatus.REVOKED, revoked_at=now, revoked_by_id=actor.user_id
+        )
+        audit.record(
+            action="assignment.revoked",
+            object_type="assignment",
+            object_id=assignment_id,
+            actor=actor,
+            diff={
+                "agent_id": agent_id,
+                "polling_unit_id": polling_unit_id,
+                "election_id": election_id,
+                "reason": "agent_deactivated",
+            },
+        )
+    return len(ended)
+
+
 def revoke(actor: Actor, assignment: AgentAssignment) -> AgentAssignment:
     authorize(actor, Perm.ASSIGNMENTS_MANAGE)
     with transaction.atomic():
