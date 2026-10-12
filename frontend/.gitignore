@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.expo/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.turbo/
+next-env.d.ts
+*.log
+.env*.local
+android/
+ios/
+test-results/
+playwright-report/

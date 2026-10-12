@@ -1,0 +1,71 @@
+import type { components } from "./schema";
+
+type S = components["schemas"];
+
+export type Me = S["Me"];
+export type Scope = S["Scope"];
+export type TokenPair = S["TokenPair"];
+export type LoginResponse = S["LoginResponse"];
+export type Election = S["Election"];
+export type ElectionCreateRequest = S["ElectionCreateRequest"];
+export type Contest = S["Contest"];
+export type ContestCreateRequest = S["ContestCreateRequest"];
+export type Candidate = S["Candidate"];
+export type CandidateCreateRequest = S["CandidateCreateRequest"];
+export type Dashboard = S["Dashboard"];
+export type ContestSummary = S["ContestSummary"];
+export type AreaResult = S["AreaResult"];
+export type ContestResults = S["ContestResults"];
+export type CoverageTimeline = S["CoverageTimeline"];
+export type PuHistory = S["PuHistory"];
+export type HistoryVersion = S["HistoryVersion"];
+export type Position = S["Position"];
+export type Totals = S["Totals"];
+export type Vote = S["Vote"];
+export type Flag = S["Flag"];
+export type FlagDetail = S["FlagDetail"];
+export type FlagEvent = S["FlagEvent"];
+export type FlagSummary = S["FlagSummary"];
+export type ReviewQueueItem = S["ReviewQueueItem"];
+export type ReviewOutcome = S["ReviewOutcome"];
+export type Member = S["Member"];
+export type Invitation = S["Invitation"];
+export type Assignment = S["Assignment"];
+export type MyAssignment = S["MyAssignment"];
+export type AssignedElection = S["AssignedElection"];
+export type AssignedPollingUnit = S["AssignedPollingUnit"];
+export type ContestBallot = S["ContestBallot"];
+export type CandidateBallot = S["CandidateBallot"];
+export type Lga = S["Lga"];
+export type Ward = S["Ward"];
+export type PollingUnit = S["PollingUnit"];
+export type AuditEvent = S["AuditEvent"];
+export type Notification = S["Notification"];
+export type ExportJob = S["ExportJob"];
+export type ExportRequest = S["ExportRequestRequest"];
+export type Health = S["Health"];
+export type DataQuality = S["DataQuality"];
+export type AlertPolicy = S["AlertPolicy"];
+export type Analytics = S["Analytics"];
+export type Readiness = S["Readiness"];
+export type ReconcileOutcome = S["ReconcileOutcome"];
+export type SubmissionOutcome = S["SubmissionOutcome"];
+export type SubmissionResult = S["SubmissionResult"];
+export type SyncStatusResponse = S["SyncStatus"];
+export type EvidenceUploadEntry = S["EvidenceUploadEntry"];
+export type EvidenceState = S["EvidenceState"];
+export type DeviceRegistration = S["DeviceRegistrationRequest"];
+export type ChallengeResponse = S["ChallengeResponse"];
+export type TotpSetup = S["TotpSetup"];
+export type TotpConfirm = S["TotpConfirm"];
+export type ServerTime = S["ServerTime"];
+
+export interface Page<T> {
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+export type Role = S["RoleEnum"];
+export type Measure = "reported" | "verified";
+export type Level = "pu" | "ward" | "lga";

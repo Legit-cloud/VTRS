@@ -1,0 +1,28 @@
+{
+  "name": "vtrs-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "VTRS agent app and party portal",
+  "workspaces": [
+    "design-system",
+    "packages/*",
+    "apps/*",
+    "e2e"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "tokens": "npm run build --workspace @vtrs/design-system",
+    "gen:api": "npm run gen:api --workspace @vtrs/core",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build:portal": "npm run build --workspace @vtrs/portal",
+    "dev:portal": "npm run dev --workspace @vtrs/portal"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "prettier": "^3.6.2"
+  }
+}
