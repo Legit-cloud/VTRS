@@ -8,8 +8,9 @@ import { useFonts } from "expo-font";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { I18nProvider } from "../i18n";
 import { AppProvider, useApp } from "../state/app";
 import { ThemeProvider } from "../ui/theme";
 
@@ -41,6 +42,12 @@ function Splash({ ready }: { ready: boolean }) {
   return null;
 }
 
+/** Language lives beside the database, so it wraps everything the agent sees. */
+function Localised({ children }: { children: ReactNode }) {
+  const { db } = useApp();
+  return <I18nProvider db={db}>{children}</I18nProvider>;
+}
+
 function Shell() {
   const { boot } = useApp();
   const [fontsLoaded] = useFonts({
@@ -65,7 +72,9 @@ export default function RootLayout() {
       <ThemeProvider>
         <AppProvider>
           <StatusBar style="dark" />
-          <Shell />
+          <Localised>
+            <Shell />
+          </Localised>
         </AppProvider>
       </ThemeProvider>
     </SafeAreaProvider>

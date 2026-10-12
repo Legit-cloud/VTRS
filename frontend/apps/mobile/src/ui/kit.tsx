@@ -28,6 +28,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle as SvgCircle, Path } from "react-native-svg";
+import { useT } from "../i18n";
 import { AppText, radius, size, space, useColors } from "./theme";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -377,6 +378,7 @@ export function IconBadge({
 
 export function OfflineBanner({ online, sending }: { online: boolean; sending: number }) {
   const colors = useColors();
+  const t = useT();
   if (online && sending === 0) return null;
   const back = online;
   return (
@@ -398,8 +400,11 @@ export function OfflineBanner({ online, sending }: { online: boolean; sending: n
         style={{ flex: 1, color: back ? colors.signalTealText : colors.signalAmberText }}
       >
         {back
-          ? `Back online. Sending ${sending} ${sending === 1 ? "result" : "results"}…`
-          : "You're offline. Results are saved on this phone."}
+          ? t("offline.back", {
+              count: sending,
+              noun: sending === 1 ? t("noun.result") : t("noun.results"),
+            })
+          : t("offline.banner")}
       </AppText>
     </View>
   );
@@ -412,7 +417,7 @@ export function StepBar({ steps, current }: { steps: string[]; current: number }
   return (
     <View
       accessibilityRole="progressbar"
-      accessibilityLabel={`Step ${current + 1} of ${steps.length}: ${steps[current]}`}
+      accessibilityLabel={`${current + 1} / ${steps.length}: ${steps[current]}`}
       style={{ flexDirection: "row", gap: space[8] }}
     >
       {steps.map((name, i) => (

@@ -1,12 +1,14 @@
 import { ApiError, formatLocalPhone, normalizePhone } from "@vtrs/core";
 import { useState } from "react";
 import { View } from "react-native";
+import { useT } from "../i18n";
 import { useApp } from "../state/app";
 import { Button, Field, Screen, TopBar } from "../ui/kit";
-import { AppText, space, useColors, radius, size } from "../ui/theme";
+import { AppText, radius, size, space, useColors } from "../ui/theme";
 
 export default function SignIn() {
   const { signIn, online } = useApp();
+  const t = useT();
   const colors = useColors();
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -17,23 +19,18 @@ export default function SignIn() {
   async function submit() {
     setError(null);
     const normalised = normalizePhone(phone);
-    if (!normalised) return setPhoneError("Enter your phone number, like 0803 123 4567.");
+    if (!normalised) return setPhoneError(t("signIn.badPhone"));
     setPhoneError(null);
     setBusy(true);
     try {
       await signIn(normalised, password);
     } catch (e) {
       const api = e instanceof ApiError ? e : null;
-      if (api?.isNetwork) setError("Could not reach the server. Check your network and try again.");
+      if (api?.isNetwork) setError(t("error.network"));
       else if (api?.status === 429)
-        setError(
-          `Too many attempts. Try again in ${Math.ceil((api.retryAfterSeconds ?? 60) / 60)} min.`,
-        );
-      else if (api?.code === "device_not_registered")
-        setError(
-          "This phone is not the one your account was set up on. Ask your officer for a new invitation.",
-        );
-      else setError(api?.detail ?? "Could not sign in. Check your number and password.");
+        setError(t("error.throttled", { minutes: Math.ceil((api.retryAfterSeconds ?? 60) / 60) }));
+      else if (api?.code === "device_not_registered") setError(t("error.device"));
+      else setError(t("error.signIn"));
     } finally {
       setBusy(false);
     }
@@ -43,7 +40,7 @@ export default function SignIn() {
     <Screen
       footer={
         <Button
-          title="Continue"
+          title={t("signIn.continue")}
           forward
           loading={busy}
           disabled={!phone || !password || !online}
@@ -53,15 +50,15 @@ export default function SignIn() {
     >
       <TopBar />
       <View style={{ gap: space[8] }}>
-        <AppText variant="display">Enter your mobile number</AppText>
+        <AppText variant="display">{t("signIn.title")}</AppText>
         <AppText variant="bodyLg" tone="subtle">
-          Use the number your party invited you with.
+          {t("signIn.helper")}
         </AppText>
       </View>
       <Field
-        label="Phone number"
+        label={t("signIn.phone")}
         value={phone}
-        onChangeText={(t) => setPhone(formatLocalPhone(t))}
+        onChangeText={(text) => setPhone(formatLocalPhone(text))}
         keyboardType="phone-pad"
         autoComplete="tel"
         textContentType="telephoneNumber"
@@ -69,7 +66,7 @@ export default function SignIn() {
         error={phoneError}
         prefix={
           <View
-            accessibilityLabel="Country code plus 234"
+            accessibilityLabel="+234"
             style={{
               width: 72,
               height: size.control,
@@ -86,7 +83,7 @@ export default function SignIn() {
         }
       />
       <Field
-        label="Password"
+        label={t("signIn.password")}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -96,7 +93,7 @@ export default function SignIn() {
       />
       {!online ? (
         <AppText variant="caption" tone="subtle">
-          Signing in needs a network. Once you are in, the app works without one.
+          {t("signIn.needsNetwork")}
         </AppText>
       ) : null}
       {error ? (

@@ -3,13 +3,8 @@ import { useRouter } from "expo-router";
 import { Check, Image as ImageIcon, MapPin } from "lucide-react-native";
 import { useEffect, useState } from "react";
 import { Image, View } from "react-native";
-import {
-  FIELD_LABEL,
-  describeChecks,
-  liveChecks,
-  parseCount,
-  sheetFieldsOf,
-} from "../../core/capture";
+import { describeChecks, liveChecks, parseCount, sheetFieldsOf } from "../../core/capture";
+import { useT } from "../../i18n";
 import { askForLocation, locationAccess, type LocationAccess } from "../../platform/location";
 import { useCapture } from "../../state/capture";
 import { CaptureFrame } from "../../ui/capture-frame";
@@ -20,6 +15,7 @@ export default function Review() {
   const { contest, assignment, draft, send } = useCapture();
   const router = useRouter();
   const colors = useColors();
+  const t = useT();
   const [access, setAccess] = useState<LocationAccess>("undetermined");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +33,8 @@ export default function Review() {
     try {
       const versionId = await send();
       router.replace({ pathname: "/done", params: { id: versionId } });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save the result. Try again.");
+    } catch {
+      setError(t("review.saveFailed"));
       setBusy(false);
     }
   }
@@ -46,11 +42,11 @@ export default function Review() {
   return (
     <CaptureFrame
       step={3}
-      title="Check, then send"
-      helper="Once sent, a result cannot be edited. A mistake is fixed by sending a correction."
+      title={t("review.title")}
+      helper={t("review.helper")}
       footer={
         <Button
-          title="Send result"
+          title={t("review.send")}
           loading={busy}
           icon={<Check size={20} color={colors.primaryForeground} strokeWidth={2} />}
           onPress={submit}
@@ -93,7 +89,7 @@ export default function Review() {
         {fields.map((f) => (
           <View key={f} style={{ flexDirection: "row", justifyContent: "space-between" }}>
             <AppText variant="body" tone="subtle">
-              {FIELD_LABEL[f]}
+              {t(`field.${f}` as const)}
             </AppText>
             <AppText
               variant="bodyLg"
@@ -116,11 +112,11 @@ export default function Review() {
           }}
         >
           <AppText variant="label" style={{ color: colors.signalAmberText }}>
-            This will go to an officer for a look
+            {t("review.officerLook")}
           </AppText>
           {warnings.map((w) => (
-            <AppText key={w} variant="body" style={{ color: colors.signalAmberText }}>
-              {w}
+            <AppText key={w.key} variant="body" style={{ color: colors.signalAmberText }}>
+              {t(w.key, w.params)}
             </AppText>
           ))}
         </View>
@@ -130,18 +126,18 @@ export default function Review() {
         <View style={{ flexDirection: "row", gap: space[12], alignItems: "center" }}>
           <Image
             source={{ uri: draft.photo.uri }}
-            accessibilityLabel="Photo of the result sheet"
+            accessibilityLabel={t("review.photo")}
             style={{ width: 72, height: 96, borderRadius: 12, backgroundColor: colors.muted }}
           />
           <View style={{ flex: 1, gap: space[4] }}>
             <View style={{ flexDirection: "row", gap: space[8], alignItems: "center" }}>
               <ImageIcon size={18} color={colors.signalTealText} />
               <AppText variant="label" tone="strong">
-                Result sheet photo
+                {t("review.photo")}
               </AppText>
             </View>
             <Button
-              title="Retake"
+              title={t("photo.retake")}
               variant="ghost"
               onPress={() => router.replace("/capture/photo")}
             />
@@ -165,21 +161,20 @@ export default function Review() {
             color={access === "granted" ? colors.signalTealText : colors.signalAmberText}
           />
           <AppText variant="label" tone="strong">
-            Location
+            {t("review.location")}
           </AppText>
         </View>
         {access === "granted" ? (
           <AppText variant="body" tone="subtle">
-            Your position is recorded once, when you send, to confirm you are at the polling unit.
+            {t("review.locationOn")}
           </AppText>
         ) : (
           <>
             <AppText variant="body" tone="subtle">
-              We use your location once, when you send a result, to confirm you&apos;re at your
-              polling unit. We don&apos;t track you.
+              {t("review.locationAsk")}
             </AppText>
             <Button
-              title="Allow location"
+              title={t("review.allowLocation")}
               variant="secondary"
               onPress={() => void askForLocation().then(setAccess)}
             />

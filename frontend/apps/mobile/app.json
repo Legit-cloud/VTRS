@@ -24,9 +24,10 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "CAMERA",
+        "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "CAMERA",
+        "POST_NOTIFICATIONS"
       ],
       "blockedPermissions": [
         "RECORD_AUDIO"
@@ -61,7 +62,15 @@
           "image": "./assets/icon.png",
           "imageWidth": 120
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#00907F",
+          "defaultChannel": "default"
+        }
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true

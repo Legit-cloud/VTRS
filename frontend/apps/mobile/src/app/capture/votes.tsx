@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { View } from "react-native";
 import { parseCount } from "../../core/capture";
+import { useT } from "../../i18n";
 import { useCapture } from "../../state/capture";
 import { CaptureFrame } from "../../ui/capture-frame";
 import { Button, Field } from "../../ui/kit";
@@ -10,17 +11,18 @@ export default function Votes() {
   const { contest, draft, setVote } = useCapture();
   const router = useRouter();
   const colors = useColors();
+  const t = useT();
   const blank = contest.candidates.filter((c) => parseCount(draft.votes[c.id]) === null).length;
   const ordered = [...contest.candidates].sort((a, b) => a.ballot_order - b.ballot_order);
 
   return (
     <CaptureFrame
       step={0}
-      title="Votes for each candidate"
-      helper="Copy the number beside each name from the result sheet. Write 0 if a candidate has none."
+      title={t("votes.title")}
+      helper={t("votes.helper")}
       footer={
         <Button
-          title="Next"
+          title={t("common.next")}
           forward
           disabled={blank > 0}
           onPress={() => router.push({ pathname: "/capture/totals" })}
@@ -46,10 +48,10 @@ export default function Votes() {
             </AppText>
           </View>
           <Field
-            label="Votes"
+            label={t("votes.label")}
             numeric
             value={draft.votes[c.id] ?? ""}
-            onChangeText={(t) => setVote(c.id, t)}
+            onChangeText={(text) => setVote(c.id, text)}
             maxLength={7}
             placeholder="0"
             returnKeyType="next"

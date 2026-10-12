@@ -9,7 +9,8 @@ frontend/
   design-system/   tokens.json -> CSS variables, Tailwind preset, React Native theme
   packages/core/   typed API client, offline-safe hashing, copy, status vocabulary, formatting
   apps/portal/     Next.js 16: War Room, results, anomalies, agents, elections, evidence,
-                   reports, team, audit, settings
+                   reports, team, audit, settings; and, for platform operators, the
+                   platform admin surface under /platform
   apps/mobile/     Expo: agent app (offline capture and sync)
   e2e/             Playwright browser tests for the portal, with axe accessibility scans
 ```
@@ -58,6 +59,36 @@ Sign-in is throttled per address; run the API with relaxed throttle rates for a 
 throttles themselves are covered by the backend suite). Each run enrols the admin's
 authenticator from scratch, so re-run `prepare_demo_logins` between runs.
 
+## Platform admin
+
+Platform operators run VTRS across all parties. They sign in to the same portal and get
+different chrome (an ink sidebar and a strip across the top naming the surface and the
+environment) and different pages: Overview, Organisations, Verification queue, Elections,
+Master data, System health, Messaging providers, Audit log.
+
+- **Who they are.** A `PLATFORM_ADMIN` membership in the platform organization. No party admin
+  can grant the role and no invitation can carry it: create one on a trusted machine with
+  `python manage.py create_platform_admin --email … --name … --password …`. They enrol an
+  authenticator on first sign-in, and every decision needs a fresh code.
+- **What they see.** Organisations, their admins (contact details masked), elections and their
+  lock state, directory completeness, delivery rates, platform-wide audit. Never a party's
+  results, evidence or people.
+- **Typed confirmation** (the organisation's name) for approve, reject, suspend and
+  reinstate; rejecting and suspending also need a reason that is kept and shown to them. A
+  suspended organisation is signed out at once, agents included.
+- **Master data** is previewed before it is written: the preview applies the import inside a
+  savepoint and rolls it back, so the added and changed counts are exactly what the real import
+  produces. Units missing from a file are kept, because results may refer to them.
+- It shares the portal app and components rather than being a second deployment. The role and
+  the API enforce the boundary, and party users who open `/platform` are sent back. If the
+  platform must live on its own host, serve the same build there and restrict the routes at
+  the proxy.
+
+Not built: real vendor failover for messaging (the page shows delivery rates and sends a test
+message through the live provider; choosing and ordering providers is PB-07), and an
+"acting as" mode that opens a party's pages (deliberately omitted: operators do not need
+results to run the platform).
+
 ## Agent app
 
 ```sh
@@ -99,8 +130,22 @@ Deliberately different from the written design:
 - **Photo is required** before a result can be sent. Without GPS a result still sends and is
   flagged for an officer.
 
-Not built: push notifications (FCM credentials are PB-07), the identity-check screens (PB-08,
-behind a legal decision), Yoruba strings, dark theme switch.
+**Push notifications** register the device's FCM token after sign-in and show alerts (a result
+sent back for correction) while the app is open; tapping one refreshes the Outbox. They need a
+build with Firebase configured (`google-services.json` through EAS) and `VTRS_FCM_SERVICE_ACCOUNT_JSON`
+on the API, and remote push does not work in Expo Go. iOS issues an APNs token the API's FCM
+sender cannot use, so iOS agents rely on the Outbox until the Firebase SDK is added.
+
+**Languages.** English and Yoruba, chosen on the welcome screen or in Help, remembered on the
+phone, defaulting to the phone's language. Every string is a key in `src/i18n/en.ts`; a missing
+Yoruba string falls back to English, and a test keeps the two in step (same keys, same
+placeholders). The Yoruba is a first translation: have a Yoruba speaker review it before the
+pilot. Hausa and Pidgin are an addition of one file each.
+
+Not built: the identity-check screens (PB-08). There is no backend for biometric verification
+and the feature is gated behind a legal and privacy decision; building a face-capture screen
+that collects data nothing can lawfully use yet would be worse than not having it. Dark theme
+switch.
 
 ## Decisions worth knowing
 
@@ -119,7 +164,7 @@ behind a legal decision), Yoruba strings, dark theme switch.
 
 ## Not built yet
 
-- Platform admin app (organisations, verification queue, master-data import, providers). It
-  needs a platform-admin role and cross-organisation endpoints on the API first.
 - Bot challenge widget on public forms (vendor not chosen, PB-07).
-- Yoruba and Pidgin strings (copy is centralised in `packages/core/src/copy.ts`).
+- Portal strings are English only; the agent app has Yoruba (copy is centralised in
+  `packages/core/src/copy.ts` for the portal).
+- Identity check (PB-08), real messaging-provider failover (PB-07).

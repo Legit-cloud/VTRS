@@ -1100,6 +1100,267 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List views read across tenants, so the whole of the read runs in the system context. */
+        get: operations["platform_audit_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/elections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List views read across tenants, so the whole of the read runs in the system context. */
+        get: operations["platform_elections_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/master-data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["platform_master_data_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/master-data/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["platform_master_data_import_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/master-data/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["platform_master_data_preview_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/master-data/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["platform_master_data_search_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/messaging": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["platform_messaging_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/messaging/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Send a test message to the operator's own phone or email, through the live provider. */
+        post: operations["platform_messaging_test_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/organizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List views read across tenants, so the whole of the read runs in the system context. */
+        get: operations["platform_organizations_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/organizations/{organization_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["platform_organizations_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/organizations/{organization_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["platform_organizations_approve_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/organizations/{organization_id}/reinstate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["platform_organizations_reinstate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/organizations/{organization_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["platform_organizations_reject_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/organizations/{organization_id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["platform_organizations_suspend_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["platform_overview_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/verification-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List views read across tenants, so the whole of the read runs in the system context. */
+        get: operations["platform_verification_queue_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/results/{version_id}/review": {
         parameters: {
             query?: never;
@@ -1483,6 +1744,12 @@ export interface components {
             destination_hint?: string;
         };
         /**
+         * @description * `SMS` - SMS
+         *     * `EMAIL` - EMAIL
+         * @enum {string}
+         */
+        ChannelEnum: "SMS" | "EMAIL";
+        /**
          * @description * `WEB` - WEB
          *     * `MOBILE` - MOBILE
          * @enum {string}
@@ -1608,6 +1875,11 @@ export interface components {
          * @enum {string}
          */
         DecisionEnum: "APPROVED" | "REJECTED";
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        DecisionRequest: {
+            /** @default  */
+            reason: string;
+        };
         Delivery: {
             channel: string;
             status: string;
@@ -1689,6 +1961,24 @@ export interface components {
             polls_open_at?: string | null;
             /** Format: date-time */
             polls_close_at?: string | null;
+        };
+        ElectionRow: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            organization_id: string;
+            organization_name: string;
+            name: string;
+            status: string;
+            /** Format: date */
+            election_date: string;
+            /** Format: date-time */
+            locked_at: string | null;
+            /** Format: date-time */
+            opened_at: string | null;
+            /** Format: date-time */
+            closed_at: string | null;
+            config_version: number;
         };
         /**
          * @description * `DRAFT` - DRAFT
@@ -1942,9 +2232,10 @@ export interface components {
          *     * `geography.view` - geography.view
          *     * `system.view` - system.view
          *     * `alerts.configure` - alerts.configure
+         *     * `platform.manage` - platform.manage
          * @enum {string}
          */
-        GrantedPermissionsEnum: "elections.configure" | "candidates.manage" | "users.manage" | "assignments.manage" | "results.submit" | "results.view" | "results.review" | "anomalies.view" | "anomalies.resolve" | "evidence.view" | "evidence.export" | "reports.export" | "audit.view" | "dashboard.view" | "geography.view" | "system.view" | "alerts.configure";
+        GrantedPermissionsEnum: "elections.configure" | "candidates.manage" | "users.manage" | "assignments.manage" | "results.submit" | "results.view" | "results.review" | "anomalies.view" | "anomalies.resolve" | "evidence.view" | "evidence.export" | "reports.export" | "audit.view" | "dashboard.view" | "geography.view" | "system.view" | "alerts.configure" | "platform.manage";
         Health: {
             status: string;
             /** Format: date-time */
@@ -2115,6 +2406,13 @@ export interface components {
             granted_permissions?: components["schemas"]["GrantedPermissionsEnum"][];
         };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
+        MessagingTestRequest: {
+            channel: components["schemas"]["ChannelEnum"];
+        };
+        MessagingTestResult: {
+            sent_to: string;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
         MfaCodeRequest: {
             code: string;
         };
@@ -2169,6 +2467,32 @@ export interface components {
          * @enum {string}
          */
         OfficeEnum: "PRESIDENTIAL" | "GOVERNORSHIP" | "SENATORIAL" | "HOUSE_OF_REPRESENTATIVES" | "STATE_ASSEMBLY" | "LGA_CHAIRMAN" | "COUNCILLOR" | "OTHER";
+        Organization: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            legal_name?: string;
+            status?: components["schemas"]["OrganizationStatusEnum"];
+            status_reason?: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            verified_at?: string | null;
+            /** Format: date-time */
+            approved_at?: string | null;
+            readonly people: number;
+            readonly agents: number;
+            readonly election_count: number;
+        };
+        /**
+         * @description * `PENDING_VERIFICATION` - Pending Verification
+         *     * `PENDING_APPROVAL` - Pending Approval
+         *     * `ACTIVE` - Active
+         *     * `SUSPENDED` - Suspended
+         *     * `REJECTED` - Rejected
+         * @enum {string}
+         */
+        OrganizationStatusEnum: "PENDING_VERIFICATION" | "PENDING_APPROVAL" | "ACTIVE" | "SUSPENDED" | "REJECTED";
         /**
          * @description * `SMS` - SMS
          *     * `EMAIL` - EMAIL
@@ -2236,6 +2560,19 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["Election"][];
+        };
+        PaginatedElectionRowList: {
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cD00ODY%3D"
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+             */
+            previous?: string | null;
+            results: components["schemas"]["ElectionRow"][];
         };
         PaginatedExportJobList: {
             /**
@@ -2314,6 +2651,32 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["Notification"][];
+        };
+        PaginatedOrganizationList: {
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cD00ODY%3D"
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+             */
+            previous?: string | null;
+            results: components["schemas"]["Organization"][];
+        };
+        PaginatedPlatformAuditList: {
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cD00ODY%3D"
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+             */
+            previous?: string | null;
+            results: components["schemas"]["PlatformAudit"][];
         };
         PaginatedPollingUnitList: {
             /**
@@ -2396,6 +2759,23 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+        };
+        PlatformAudit: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            at: string;
+            /** Format: uuid */
+            organization_id: string | null;
+            action: string;
+            object_type: string;
+            object_id: string;
+            /** Format: uuid */
+            actor_id: string | null;
+            actor_role: string;
+            diff: {
+                [key: string]: unknown;
+            };
         };
         /**
          * @description * `ANDROID` - ANDROID
@@ -2566,9 +2946,10 @@ export interface components {
          *     * `LGA_OFFICER` - LGA_OFFICER
          *     * `WARD_OFFICER` - WARD_OFFICER
          *     * `PU_AGENT` - PU_AGENT
+         *     * `PLATFORM_ADMIN` - PLATFORM_ADMIN
          * @enum {string}
          */
-        RoleEnum: "PARTY_ADMIN" | "LGA_OFFICER" | "WARD_OFFICER" | "PU_AGENT";
+        RoleEnum: "PARTY_ADMIN" | "LGA_OFFICER" | "WARD_OFFICER" | "PU_AGENT" | "PLATFORM_ADMIN";
         Scope: {
             type: string;
             ids: string[];
@@ -2741,6 +3122,11 @@ export interface components {
             name: string;
             /** Format: uuid */
             readonly lga_id: string;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        _FileUploadRequest: {
+            /** Format: binary */
+            file: string;
         };
     };
     responses: never;
@@ -4505,6 +4891,382 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    platform_audit_list: {
+        parameters: {
+            query?: {
+                /** @description The pagination cursor value. */
+                cursor?: string;
+                /** @description Number of results to return per page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedPlatformAuditList"];
+                };
+            };
+        };
+    };
+    platform_elections_list: {
+        parameters: {
+            query?: {
+                /** @description The pagination cursor value. */
+                cursor?: string;
+                /** @description Number of results to return per page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedElectionRowList"];
+                };
+            };
+        };
+    };
+    platform_master_data_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    platform_master_data_import_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["_FileUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    platform_master_data_preview_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["_FileUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    platform_master_data_search_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    platform_messaging_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    platform_messaging_test_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessagingTestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagingTestResult"];
+                };
+            };
+        };
+    };
+    platform_organizations_list: {
+        parameters: {
+            query?: {
+                /** @description The pagination cursor value. */
+                cursor?: string;
+                /** @description Number of results to return per page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedOrganizationList"];
+                };
+            };
+        };
+    };
+    platform_organizations_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    platform_organizations_approve_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DecisionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+        };
+    };
+    platform_organizations_reinstate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DecisionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+        };
+    };
+    platform_organizations_reject_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DecisionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+        };
+    };
+    platform_organizations_suspend_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DecisionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Organization"];
+                };
+            };
+        };
+    };
+    platform_overview_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    platform_verification_queue_list: {
+        parameters: {
+            query?: {
+                /** @description The pagination cursor value. */
+                cursor?: string;
+                /** @description Number of results to return per page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedOrganizationList"];
+                };
             };
         };
     };

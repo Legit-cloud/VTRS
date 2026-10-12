@@ -57,6 +57,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   // Roles that must use a second factor get nothing else until it is set up; the API would
   // refuse every other call anyway, so say so up front instead of showing errors.
   const router = useRouter();
+  // Party users have no business on the platform surface.
+  useEffect(() => {
+    // Only once we know who this is: an operator's session is still loading when this first runs.
+    if (me && me.role !== "PLATFORM_ADMIN" && pathname.startsWith("/platform")) {
+      router.replace("/war-room");
+    }
+  }, [me, pathname, router]);
+
   const mustEnrol = !!me && me.mfa_required && !me.mfa_enabled;
   useEffect(() => {
     if (mustEnrol && !pathname.startsWith("/settings")) router.replace("/settings?enrol=1");

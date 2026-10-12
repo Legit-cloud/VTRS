@@ -1,17 +1,17 @@
 import {
+  SYNC_STATUS,
   distanceMetres,
   formatDateTime,
   formatDistance,
   formatNumber,
   formatRelative,
-  wrongLocation,
-  SYNC_STATUS,
 } from "@vtrs/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { MapPin } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import { RefreshControl, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useT } from "../../i18n";
 import { currentFix, locationAccess } from "../../platform/location";
 import { useApp } from "../../state/app";
 import { Button, IconBadge, OfflineBanner, StatusChip } from "../../ui/kit";
@@ -31,6 +31,7 @@ export default function Today() {
   } = useApp();
   const router = useRouter();
   const colors = useColors();
+  const t = useT();
   const [distance, setDistance] = useState<number | null>(null);
 
   const assignment = assignments?.[0] ?? null;
@@ -77,7 +78,7 @@ export default function Today() {
           />
         }
       >
-        <AppText variant="display">Today</AppText>
+        <AppText variant="display">{t("today.title")}</AppText>
         <OfflineBanner online={online} sending={pending} />
 
         {!assignment || !unit ? (
@@ -93,11 +94,9 @@ export default function Today() {
             <IconBadge>
               <MapPin size={28} color="#FFFFFF" strokeWidth={1.75} />
             </IconBadge>
-            <AppText variant="heading">No polling unit yet</AppText>
+            <AppText variant="heading">{t("today.noUnit")}</AppText>
             <AppText variant="body" tone="subtle">
-              {online
-                ? "You have not been placed at a polling unit for an election. Your party officer assigns this. Pull down to check again."
-                : "Connect once to download your assignment. After that the app works without a network."}
+              {online ? t("today.noUnitOnline") : t("today.noUnitOffline")}
             </AppText>
           </View>
         ) : (
@@ -125,7 +124,7 @@ export default function Today() {
               </AppText>
               {unit.registered_voters ? (
                 <AppText variant="body" tone="subtle">
-                  About {formatNumber(unit.registered_voters)} registered voters
+                  {t("today.voters", { count: formatNumber(unit.registered_voters) })}
                 </AppText>
               ) : null}
               {distance !== null ? (
@@ -133,20 +132,15 @@ export default function Today() {
                   <StatusChip
                     status={
                       distance <= 300
-                        ? {
-                            label: "You're at the polling unit",
-                            tone: "teal",
-                            icon: "check-circle-2",
+                        ? { label: t("today.atUnit"), tone: "teal", icon: "check-circle-2" }
+                        : {
+                            label: t("today.away", { distance: formatDistance(distance) }),
+                            tone: "amber",
+                            icon: "flag",
                           }
-                        : { label: `${formatDistance(distance)} away`, tone: "amber", icon: "flag" }
                     }
                   />
                 </View>
-              ) : null}
-              {distance !== null && distance > 300 ? (
-                <AppText variant="caption" tone="subtle">
-                  {wrongLocation(formatDistance(distance), unit.ward, unit.name)}
-                </AppText>
               ) : null}
             </View>
 
@@ -159,12 +153,14 @@ export default function Today() {
                 }}
               >
                 <AppText variant="label" style={{ color: colors.signalAmberText }}>
-                  Result entry is not open yet
+                  {t("today.notOpen")}
                 </AppText>
                 <AppText variant="body" style={{ color: colors.signalAmberText }}>
                   {assignment.election.polls_close_at
-                    ? `Polls close ${formatDateTime(assignment.election.polls_close_at)}. You can still fill in the numbers; they send when capture opens.`
-                    : "Your party opens result entry when polls close."}
+                    ? t("today.notOpenBody", {
+                        when: formatDateTime(assignment.election.polls_close_at),
+                      })
+                    : t("today.notOpenNoTime")}
                 </AppText>
               </View>
             ) : null}
@@ -174,6 +170,7 @@ export default function Today() {
                 (o) => o.contestId === contest.id && o.pollingUnitId === unit.id,
               );
               const latest = mine[0];
+              const rejected = latest?.serverState === "REJECTED";
               return (
                 <View
                   key={contest.id}
@@ -191,22 +188,23 @@ export default function Today() {
                     <View style={{ gap: space[4] }}>
                       <StatusChip
                         status={
-                          latest.serverState === "REJECTED"
-                            ? {
-                                label: "Sent back for correction",
-                                tone: "red",
-                                icon: "alert-circle",
-                              }
+                          rejected
+                            ? { label: t("today.sentBack"), tone: "red", icon: "alert-circle" }
                             : latest.serverState === "APPROVED"
-                              ? { label: "Approved", tone: "teal", icon: "check-circle-2" }
-                              : SYNC_STATUS[latest.status]
+                              ? { label: t("today.approved"), tone: "teal", icon: "check-circle-2" }
+                              : {
+                                  ...SYNC_STATUS[latest.status],
+                                  label: t(`status.${latest.status}` as const),
+                                }
                         }
                       />
                       <AppText variant="caption" tone="subtle">
-                        Version {latest.versionNo ?? mine.length} ·{" "}
-                        {formatRelative(latest.createdAt)}
+                        {t("today.version", {
+                          n: latest.versionNo ?? mine.length,
+                          when: formatRelative(latest.createdAt),
+                        })}
                       </AppText>
-                      {latest.serverState === "REJECTED" && latest.reviewReason ? (
+                      {rejected && latest.reviewReason ? (
                         <AppText variant="body" tone="danger">
                           {latest.reviewReason}
                         </AppText>
@@ -214,9 +212,9 @@ export default function Today() {
                     </View>
                   ) : null}
                   <Button
-                    title={latest ? "Send a correction" : "Start result entry"}
+                    title={latest ? t("today.correct") : t("today.start")}
                     forward
-                    variant={latest && latest.serverState !== "REJECTED" ? "outline" : "primary"}
+                    variant={latest && !rejected ? "outline" : "primary"}
                     onPress={() =>
                       router.push({
                         pathname: "/capture/votes",
@@ -232,7 +230,7 @@ export default function Today() {
 
         {assignmentsAt ? (
           <AppText variant="caption" tone="muted" align="center">
-            Assignment updated {formatRelative(assignmentsAt)}
+            {t("today.updated", { when: formatRelative(assignmentsAt) })}
           </AppText>
         ) : null}
       </ScrollView>

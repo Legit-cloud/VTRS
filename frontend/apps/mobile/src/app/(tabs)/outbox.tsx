@@ -1,26 +1,28 @@
-import { SYNC_STATUS, copy, formatDateTime, formatRelative } from "@vtrs/core";
+import { SYNC_STATUS, formatDateTime, formatRelative } from "@vtrs/core";
 import { Inbox } from "lucide-react-native";
 import { FlatList, RefreshControl, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { OutboxEntry } from "../../core/outbox";
+import { useT } from "../../i18n";
 import { useApp } from "../../state/app";
 import { Button, IconBadge, OfflineBanner, StatusChip } from "../../ui/kit";
 import { AppText, radius, size, space, useColors } from "../../ui/theme";
-
-function photoLine(entry: OutboxEntry): string | null {
-  if (entry.evidence === "NONE") return null;
-  if (entry.evidence === "COMPLETE") return "Photo sent";
-  if (entry.evidence === "FAILED") return "Photo not sent. Tap Try again.";
-  return entry.status === "SYNCED" || entry.status === "REQUIRES_REVIEW"
-    ? "Photo is still sending"
-    : "Photo waits with the result";
-}
 
 /** Every result on this phone and where it is: waiting, sending, sent, or needing a second look. */
 export default function Outbox() {
   const { outbox, online, pending, syncNow, retryFailed, syncing } = useApp();
   const colors = useColors();
+  const t = useT();
   const hasFailed = outbox.some((o) => o.status === "FAILED" || o.evidence === "FAILED");
+
+  const photoLine = (entry: OutboxEntry): string | null => {
+    if (entry.evidence === "NONE") return null;
+    if (entry.evidence === "COMPLETE") return t("outbox.photoSent");
+    if (entry.evidence === "FAILED") return t("outbox.photoFailed");
+    return entry.status === "SYNCED" || entry.status === "REQUIRES_REVIEW"
+      ? t("outbox.photoSending")
+      : t("outbox.photoWaits");
+  };
 
   return (
     <SafeAreaView
@@ -34,11 +36,11 @@ export default function Outbox() {
         refreshControl={<RefreshControl refreshing={syncing} onRefresh={() => void syncNow()} />}
         ListHeaderComponent={
           <View style={{ gap: space[12], marginBottom: space[4] }}>
-            <AppText variant="display">Outbox</AppText>
+            <AppText variant="display">{t("outbox.title")}</AppText>
             <OfflineBanner online={online} sending={pending} />
             {pending > 0 ? (
               <Button
-                title={hasFailed ? "Try again" : "Send all"}
+                title={hasFailed ? t("outbox.tryAgain") : t("outbox.sendAll")}
                 variant={hasFailed ? "primary" : "secondary"}
                 loading={syncing}
                 disabled={!online}
@@ -61,9 +63,9 @@ export default function Outbox() {
             <IconBadge>
               <Inbox size={28} color="#FFFFFF" strokeWidth={1.75} />
             </IconBadge>
-            <AppText variant="heading">Nothing sent yet</AppText>
+            <AppText variant="heading">{t("outbox.emptyTitle")}</AppText>
             <AppText variant="body" tone="subtle">
-              Results you record appear here with their status. Pull down to check for updates.
+              {t("outbox.emptyBody")}
             </AppText>
           </View>
         }
@@ -71,10 +73,10 @@ export default function Outbox() {
           const photo = photoLine(item);
           const status =
             item.serverState === "REJECTED"
-              ? { label: "Sent back for correction", tone: "red" as const, icon: "alert-circle" }
+              ? { label: t("today.sentBack"), tone: "red" as const, icon: "alert-circle" }
               : item.serverState === "APPROVED"
-                ? { label: "Approved", tone: "teal" as const, icon: "check-circle-2" }
-                : SYNC_STATUS[item.status];
+                ? { label: t("today.approved"), tone: "teal" as const, icon: "check-circle-2" }
+                : { ...SYNC_STATUS[item.status], label: t(`status.${item.status}` as const) };
           return (
             <View
               accessible
@@ -100,9 +102,9 @@ export default function Outbox() {
                 <StatusChip status={status} />
               </View>
               <AppText variant="caption" tone="muted">
-                Recorded {formatDateTime(item.createdAt)}
-                {item.versionNo ? ` · version ${item.versionNo}` : ""}
-                {item.sentAt ? ` · sent ${formatRelative(item.sentAt)}` : ""}
+                {t("outbox.recorded", { when: formatDateTime(item.createdAt) })}
+                {item.versionNo ? t("outbox.versionNo", { n: item.versionNo }) : ""}
+                {item.sentAt ? t("outbox.sentWhen", { when: formatRelative(item.sentAt) }) : ""}
               </AppText>
               {photo ? (
                 <AppText variant="caption" tone="subtle">
@@ -111,7 +113,7 @@ export default function Outbox() {
               ) : null}
               {item.status === "REQUIRES_REVIEW" ? (
                 <AppText variant="body" tone="subtle">
-                  An officer will check one thing. You do not need to do anything.
+                  {t("outbox.officer")}
                 </AppText>
               ) : null}
               {item.serverState === "REJECTED" && item.reviewReason ? (
@@ -121,11 +123,11 @@ export default function Outbox() {
               ) : null}
               {item.status === "FAILED" ? (
                 <AppText variant="body" tone="danger">
-                  {item.lastError ?? copy.failedSend.body}
+                  {item.lastError ?? t("done.failedBody")}
                 </AppText>
               ) : item.status === "PENDING" && item.lastError ? (
                 <AppText variant="caption" tone="subtle">
-                  {copy.failedSend.line}
+                  {t("outbox.retryLine")}
                 </AppText>
               ) : null}
             </View>

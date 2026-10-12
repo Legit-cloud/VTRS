@@ -1,8 +1,8 @@
-import { copy, sentTo } from "@vtrs/core";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AlertCircle, Clock, Flag } from "lucide-react-native";
 import { View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useT } from "../i18n";
 import { useApp } from "../state/app";
 import { Button, IconBadge, SuccessMark } from "../ui/kit";
 import { AppText, size, space, useColors } from "../ui/theme";
@@ -16,6 +16,7 @@ export default function Done() {
   const { outbox, syncNow, online } = useApp();
   const router = useRouter();
   const colors = useColors();
+  const t = useT();
   const entry = outbox.find((o) => o.versionId === id);
 
   const state = !entry
@@ -31,18 +32,18 @@ export default function Done() {
             : "saved";
 
   const body = {
-    sent: { head: copy.sent.headline, text: entry ? sentTo(entry.ward, entry.puName) : "" },
-    saved: { head: copy.savedOffline.headline, text: copy.savedOffline.body },
-    review: {
-      head: copy.needsReview.headline,
-      text: "An officer will check one thing. You don't need to do anything.",
+    sent: {
+      head: t("done.sent"),
+      text: entry ? t("done.sentBody", { ward: entry.ward, unit: entry.puName }) : "",
     },
+    saved: { head: t("done.saved"), text: t("done.savedBody") },
+    review: { head: t("done.review"), text: t("done.reviewBody") },
     failed: {
-      head: copy.failedSend.headline,
+      head: t("done.failed"),
       text:
         entry?.status === "FAILED"
-          ? (entry.lastError ?? copy.failedSend.body)
-          : copy.failedSend.body,
+          ? (entry.lastError ?? t("done.failedBody"))
+          : t("done.failedBody"),
     },
   }[state];
 
@@ -78,14 +79,16 @@ export default function Done() {
         </AppText>
         {entry && entry.evidence !== "COMPLETE" && entry.evidence !== "NONE" && state === "sent" ? (
           <AppText variant="caption" tone="muted" align="center">
-            The photo is still sending.
+            {t("done.photoSending")}
           </AppText>
         ) : null}
       </View>
       <View style={{ padding: size.screenPadding, gap: space[8] }}>
-        {state === "failed" ? <Button title="Try again" onPress={() => void syncNow()} /> : null}
+        {state === "failed" ? (
+          <Button title={t("done.tryAgain")} onPress={() => void syncNow()} />
+        ) : null}
         <Button
-          title="Go to Today"
+          title={t("done.goToday")}
           variant={state === "failed" ? "outline" : "primary"}
           onPress={() => router.replace("/")}
         />
