@@ -113,12 +113,12 @@
   color-scheme: dark;
 }
 
-/* Platform admin chrome: ink sidebar and a slim strip across the top. */
+/* Platform admin chrome: brand green sidebar and a slim, darker strip across the top. */
 [data-surface="admin"] {
-  --chrome-sidebar: 11 43 39;
-  --chrome-sidebar-text: 220 231 229;
-  --chrome-sidebar-muted: 159 189 184;
-  --chrome-strip: 6 32 29;
+  --chrome-sidebar: 0 133 117;
+  --chrome-sidebar-text: 255 255 255;
+  --chrome-sidebar-muted: 204 234 230;
+  --chrome-strip: 0 109 97;
   --chrome-strip-text: 255 255 255;
 }
 

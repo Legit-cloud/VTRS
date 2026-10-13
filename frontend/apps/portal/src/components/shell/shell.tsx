@@ -163,24 +163,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Image src="/logo-mark.svg" alt="" width={32} height={32} priority />
           {collapsed ? null : <span className="text-h2 font-extrabold tracking-tight">VTRS</span>}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">{nav(collapsed)}</div>
-        <div className="border-t border-border p-3">
+        <div className="px-3 pb-1">
           <Button
             variant="ghost"
             size="sm"
             className={cn("w-full text-strong-foreground", collapsed && "px-0")}
             onClick={() => setCollapsed(!collapsed)}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
           >
             {collapsed ? (
               <PanelLeftOpen className="h-5 w-5" aria-hidden />
             ) : (
-              <>
-                <PanelLeftClose className="h-5 w-5" aria-hidden /> Collapse
-              </>
+              <PanelLeftClose className="h-5 w-5" aria-hidden />
             )}
           </Button>
         </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">{nav(collapsed)}</div>
       </aside>
 
       {/* Drawer, small screens */}
