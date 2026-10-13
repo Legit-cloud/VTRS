@@ -7,11 +7,18 @@ from django.utils import timezone
 from rest_framework.exceptions import NotAuthenticated
 
 from .domain.actor import Actor
-from .domain.permissions import Perm
+from .domain.permissions import Perm, Role, requires_mfa
 from .errors import Forbidden, StepUpRequired
 
 # Pseudo-permission for endpoints any signed-in, active user may call.
 AUTHENTICATED = "authenticated"
+
+
+def mfa_mandatory(role: Role, permissions: frozenset[Perm]) -> bool:
+    """The domain rule, except that platform operators may be exempted outside production."""
+    if role is Role.PLATFORM_ADMIN and not settings.VTRS_PLATFORM_ADMIN_MFA:
+        return False
+    return requires_mfa(role, permissions)
 
 
 def authorize(actor: Actor | None, perm: Perm | str) -> Actor:

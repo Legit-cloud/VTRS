@@ -296,6 +296,8 @@ VTRS_ACCESS_TOKEN_SECONDS = 600
 VTRS_MOBILE_SESSION_DAYS = 7
 VTRS_WEB_SESSION_HOURS = 12
 VTRS_ENFORCE_MFA = True
+# Platform operators must hold a second factor. Only development settings relax this.
+VTRS_PLATFORM_ADMIN_MFA = True
 VTRS_MFA_STEP_UP_SECONDS = 600
 
 VTRS_OTP_PEPPER = env("VTRS_OTP_PEPPER")
