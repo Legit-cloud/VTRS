@@ -14,8 +14,9 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.audit import services as audit
+from apps.core.authz import mfa_mandatory
 from apps.core.crypto import blind_index
-from apps.core.domain.permissions import Perm, Role, effective_permissions, requires_mfa
+from apps.core.domain.permissions import Perm, Role, effective_permissions
 from apps.organizations.models import OrganizationStatus
 
 from ..domain.contact import looks_like_email, normalize_email, normalize_phone
@@ -137,7 +138,7 @@ def login(
         )
     role = Role(membership.role)
     granted = [Perm(p) for p in membership.granted_permissions if p in Perm._value2member_map_]
-    needs_mfa = requires_mfa(role, effective_permissions(role, granted))
+    needs_mfa = mfa_mandatory(role, effective_permissions(role, granted))
     return LoginResult(tokens=pair, mfa_enrolment_required=needs_mfa)
 
 

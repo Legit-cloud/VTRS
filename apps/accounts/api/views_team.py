@@ -15,7 +15,7 @@ from apps.accounts.models import Invitation, Membership
 from apps.accounts.services import invitations, team
 from apps.core.api.idempotency import idempotent_response
 from apps.core.api.views import StrictQueryParamsMixin
-from apps.core.authz import AUTHENTICATED
+from apps.core.authz import AUTHENTICATED, mfa_mandatory
 from apps.core.domain.permissions import Perm
 from apps.core.pagination import KeysetPagination
 
@@ -46,7 +46,7 @@ class MeView(APIView):
                 "scope": {"type": actor.scope.kind, "ids": sorted(str(i) for i in actor.scope.ids)},
                 "permissions": sorted(actor.permissions),
                 "mfa_enabled": user.mfa_enabled,
-                "mfa_required": actor.requires_mfa,
+                "mfa_required": mfa_mandatory(actor.role, actor.permissions),
                 "device_id": str(device.id) if device else None,
             }
         )

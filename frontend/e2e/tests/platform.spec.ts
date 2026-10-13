@@ -53,8 +53,6 @@ test.describe("platform operator", () => {
     await page.getByRole("button", { name: "Verify" }).click();
 
     await expect(page).toHaveURL(/\/platform/);
-    // The strip names the surface and the environment on every page.
-    await expect(page.getByText("Platform admin").first()).toBeVisible();
     const nav = page.getByRole("navigation", { name: "Main" });
     for (const item of [
       "Overview",

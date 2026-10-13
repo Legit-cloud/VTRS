@@ -6,10 +6,11 @@ import {
   Building2,
   Database,
   History,
-  Landmark,
   LayoutDashboard,
   LogOut,
   MessageSquareText,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   ShieldCheck,
   Vote,
@@ -17,14 +18,37 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ep } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/cn";
 
-const ENVIRONMENT = process.env.NEXT_PUBLIC_ENVIRONMENT ?? "Development";
-const IS_PRODUCTION = /^prod/i.test(ENVIRONMENT);
+const COLLAPSE_KEY = "vtrs.admin.sidebar.collapsed";
+
+function readCollapsed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(COLLAPSE_KEY) === "1";
+  } catch {
+    return false; // storage unavailable: stay expanded
+  }
+}
+
+function useCollapsed(): [boolean, (next: boolean) => void] {
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  return [
+    collapsed,
+    (next) => {
+      setCollapsed(next);
+      try {
+        window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+    },
+  ];
+}
 
 const NAV = [
   { href: "/platform", label: "Overview", icon: LayoutDashboard },
@@ -46,6 +70,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   const { me, logout } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const [collapsed, setCollapsed] = useCollapsed();
 
   const onAllowedPage = pathname.startsWith("/platform") || pathname.startsWith("/settings");
   useEffect(() => {
@@ -67,28 +92,42 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div data-surface="admin" className="flex min-h-screen flex-col bg-canvas">
-      <div className="flex h-strip items-center gap-3 bg-chrome-strip px-4 text-label font-semibold text-chrome-strip-text">
-        <Landmark className="h-4 w-4" aria-hidden />
-        Platform admin
-        <span
+      <div className="flex min-h-0 flex-1">
+        <aside
           className={cn(
-            "rounded-full px-2 text-caption font-semibold",
-            IS_PRODUCTION ? "bg-white/15 text-white" : "bg-signal-amber-mark text-ink-900",
+            "sticky top-0 hidden h-screen shrink-0 flex-col bg-chrome-sidebar text-chrome-text lg:flex",
+            collapsed ? "w-sidebar-collapsed" : "w-sidebar",
           )}
         >
-          {ENVIRONMENT}
-        </span>
-        <span className="ml-auto hidden text-caption font-medium text-chrome-muted sm:inline">
-          Every action here is logged
-        </span>
-      </div>
-      <div className="flex min-h-0 flex-1">
-        <aside className="sticky top-0 hidden h-[calc(100vh-32px)] w-sidebar shrink-0 flex-col bg-chrome-sidebar text-chrome-text lg:flex">
-          <div className="flex h-topbar items-center gap-3 px-4">
+          <div
+            className={cn(
+              "flex h-topbar items-center gap-3 px-4",
+              collapsed && "justify-center px-0",
+            )}
+          >
             <Image src="/logo-mark.svg" alt="" width={32} height={32} />
-            <span className="text-h2 font-extrabold tracking-tight">VTRS</span>
+            {collapsed ? null : <span className="text-h2 font-extrabold tracking-tight">VTRS</span>}
           </div>
-          <nav aria-label="Main" className="flex flex-col gap-1 overflow-y-auto p-3">
+          <div className="px-3 pb-1">
+            <button
+              type="button"
+              onClick={() => setCollapsed(!collapsed)}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!collapsed}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className={cn(
+                "flex h-10 w-full items-center gap-3 rounded-md px-3 text-body-sm font-medium text-chrome-text transition-colors duration-fast hover:bg-black/10",
+                collapsed && "justify-center px-0",
+              )}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-5 w-5" aria-hidden />
+              ) : (
+                <PanelLeftClose className="h-5 w-5" aria-hidden />
+              )}
+            </button>
+          </div>
+          <nav aria-label="Main" className="flex min-h-0 flex-col gap-1 overflow-y-auto p-3">
             {NAV.map((item) => {
               const active =
                 item.href === "/platform"
@@ -104,16 +143,24 @@ export function AdminShell({ children }: { children: ReactNode }) {
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
+                  title={collapsed ? item.label : undefined}
                   className={cn(
-                    "flex h-10 items-center gap-3 rounded-md px-3 text-body-sm font-medium transition-colors duration-fast",
+                    "relative flex h-10 items-center gap-3 rounded-md px-3 text-body-sm font-medium transition-colors duration-fast",
+                    collapsed && "justify-center px-0",
                     active
-                      ? "bg-white/12 font-semibold text-white"
-                      : "text-chrome-text hover:bg-white/8",
+                      ? "bg-black/20 font-semibold text-white"
+                      : "text-chrome-text hover:bg-black/10",
                   )}
                 >
                   <Icon className="h-5 w-5 shrink-0" aria-hidden />
-                  <span className="truncate">{item.label}</span>
-                  {badge ? (
+                  <span className={cn("truncate", collapsed && "sr-only")}>{item.label}</span>
+                  {badge && collapsed ? (
+                    <span
+                      className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-signal-amber-mark"
+                      aria-hidden
+                    />
+                  ) : null}
+                  {badge && !collapsed ? (
                     <span className="ml-auto rounded-full bg-signal-amber-mark px-2 text-caption font-semibold tabular-nums text-ink-900">
                       {badge}
                     </span>
@@ -124,7 +171,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </nav>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-8 z-30 flex h-topbar items-center gap-3 border-b border-border bg-card px-4 lg:px-8">
+          <header className="sticky top-0 z-30 flex h-topbar items-center gap-3 border-b border-border bg-card px-4 lg:px-8">
             <nav aria-label="Sections" className="flex min-w-0 gap-1 overflow-x-auto lg:hidden">
               {NAV.map((item) => (
                 <Link

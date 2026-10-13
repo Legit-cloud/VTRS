@@ -6,7 +6,7 @@ from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import BasePermission
 
 from apps.core import rls
-from apps.core.authz import authorize
+from apps.core.authz import authorize, mfa_mandatory
 from apps.core.errors import MfaRequired
 
 from .actors import resolve_actor
@@ -57,7 +57,7 @@ class PolicyPermission(BasePermission):
         request.actor = actor  # type: ignore[attr-defined]
         if (
             settings.VTRS_ENFORCE_MFA
-            and actor.requires_mfa
+            and mfa_mandatory(actor.role, actor.permissions)
             and actor.mfa_at is None
             and not getattr(view, "allow_without_mfa", False)
         ):
