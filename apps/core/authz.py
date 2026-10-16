@@ -15,8 +15,8 @@ AUTHENTICATED = "authenticated"
 
 
 def mfa_mandatory(role: Role, permissions: frozenset[Perm]) -> bool:
-    """The domain rule, except that platform operators may be exempted outside production."""
-    if role is Role.PLATFORM_ADMIN and not settings.VTRS_PLATFORM_ADMIN_MFA:
+    """The domain rule, unless the deployment turns enforcement off (development only)."""
+    if not settings.VTRS_ENFORCE_MFA:
         return False
     return requires_mfa(role, permissions)
 

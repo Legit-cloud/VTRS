@@ -28,7 +28,7 @@ from apps.accounts.services import sessions
 from apps.aggregation.domain.groups import groups_for_viewer
 from apps.aggregation.domain.tally import PROVISIONAL_NOTICE
 from apps.core import rls
-from apps.core.authz import authorize
+from apps.core.authz import authorize, mfa_mandatory
 from apps.core.domain.actor import Actor
 from apps.core.domain.permissions import Perm
 from apps.elections import selectors as elections
@@ -58,7 +58,7 @@ def _authenticate(token: str, election_id: UUID) -> tuple[Actor, Any]:
                 authorize(actor, Perm.DASHBOARD_VIEW)
             except APIException:
                 raise Refused(CLOSE_FORBIDDEN) from None
-            if actor.requires_mfa and actor.mfa_at is None:
+            if mfa_mandatory(actor.role, actor.permissions) and actor.mfa_at is None:
                 raise Refused(CLOSE_FORBIDDEN)
             try:
                 elections.election_for(actor, election_id)
