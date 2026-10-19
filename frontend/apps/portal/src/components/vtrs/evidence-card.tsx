@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, ExternalLink, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Check, Copy, ExternalLink, FileText, ShieldAlert, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { ApiError, type StatusView } from "@vtrs/core";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,15 @@ export interface EvidenceItem {
   kind: string;
   status: string;
   sha256: string;
+  /** The sheet is a photo (JPEG, PNG, WebP) or a PDF. */
+  mime?: string;
 }
 
 const STATUS: Record<string, StatusView> = {
   VERIFIED: { label: "Verified hash", tone: "teal", icon: "shield-check" },
   STORED: { label: "Verified hash", tone: "teal", icon: "shield-check" },
   PENDING: { label: "Waiting for upload", tone: "ink", icon: "clock" },
+  PENDING_UPLOAD: { label: "Waiting for upload", tone: "ink", icon: "clock" },
   UPLOADED: { label: "Checking", tone: "blue", icon: "refresh-cw" },
   QUARANTINED: { label: "Hash mismatch", tone: "red", icon: "shield-alert" },
   REJECTED: { label: "Hash mismatch", tone: "red", icon: "shield-alert" },
@@ -51,6 +54,8 @@ export function EvidenceCard({
     icon: "circle",
   };
   const bad = status.tone === "red";
+  const pdf = item.mime === "application/pdf";
+  const noun = pdf ? "PDF" : "photo";
 
   async function open() {
     setBusy(true);
@@ -58,7 +63,7 @@ export function EvidenceCard({
       const { url } = await ep.evidence.downloadUrl(item.evidence_id);
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (e) {
-      toast(e instanceof ApiError ? e.detail : "Could not open the photo.");
+      toast(e instanceof ApiError ? e.detail : `Could not open the ${noun}.`);
     } finally {
       setBusy(false);
     }
@@ -80,7 +85,13 @@ export function EvidenceCard({
         className="flex h-24 w-[72px] shrink-0 items-center justify-center rounded-sm bg-muted text-muted-foreground"
         aria-hidden
       >
-        {bad ? <ShieldAlert className="h-8 w-8" /> : <ShieldCheck className="h-8 w-8" />}
+        {bad ? (
+          <ShieldAlert className="h-8 w-8" />
+        ) : pdf ? (
+          <FileText className="h-8 w-8" />
+        ) : (
+          <ShieldCheck className="h-8 w-8" />
+        )}
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -115,7 +126,7 @@ export function EvidenceCard({
               onClick={open}
               leading={<ExternalLink className="h-4 w-4" aria-hidden />}
             >
-              View photo
+              View {noun}
             </Button>
             <span className="ml-2 text-caption text-subtle-foreground">Viewing is logged.</span>
           </div>

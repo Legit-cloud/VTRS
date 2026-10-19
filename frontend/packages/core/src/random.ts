@@ -1,5 +1,5 @@
 // A replaceable source of secure random bytes. Browsers and Node expose
-// `crypto.getRandomValues`; React Native does not, so the app injects one at start-up.
+// `crypto.getRandomValues`; another runtime can inject its own at start-up.
 type RandomSource = (length: number) => Uint8Array;
 
 let source: RandomSource | null = null;

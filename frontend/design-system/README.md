@@ -8,7 +8,6 @@
 | `tokens/globals.css` | portal: CSS variables for light, War Room (`.war-room`) and admin chrome |
 | `tokens/tailwind.preset.ts` | portal: Tailwind v3 preset |
 | `tokens/tailwind-v4.css` | Tailwind v4 `@theme` mapping |
-| `mobile/theme.ts` | agent app: palette, light and dark colours, type, radius, spacing |
 
 Do not edit generated files. Change a token, rebuild, commit the output.
 

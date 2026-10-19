@@ -24,7 +24,7 @@ function LoginForm() {
   const [fieldError, setFieldError] = useState<string | null>(null);
 
   const next = params.get("next");
-  const destination = next && next.startsWith("/") && !next.startsWith("//") ? next : "/war-room";
+  const destination = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
   // Someone who is already signed in has no use for this page. A sign-in in flight decides
   // its own destination below, so it is left alone.

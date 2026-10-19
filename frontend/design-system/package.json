@@ -2,12 +2,11 @@
   "name": "@vtrs/design-system",
   "version": "1.0.0",
   "private": true,
-  "description": "VTRS design tokens: CSS variables, Tailwind preset and React Native theme, generated from tokens/tokens.json",
+  "description": "VTRS design tokens: CSS variables and Tailwind presets, generated from tokens/tokens.json",
   "type": "module",
   "exports": {
     "./tokens/globals.css": "./tokens/globals.css",
     "./tokens/tailwind.preset": "./tokens/tailwind.preset.ts",
-    "./mobile/theme": "./mobile/theme.ts",
     "./assets/*": "./assets/*"
   },
   "scripts": {

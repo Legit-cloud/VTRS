@@ -4,7 +4,7 @@ import { Check } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 export const STAGES = [
-  { key: "DRAFT", label: "Set up", hint: "Add contests and candidates" },
+  { key: "DRAFT", label: "Set up", hint: "Parties and contestants" },
   { key: "CONFIGURED", label: "Ready", hint: "Everything is in place" },
   { key: "LOCKED", label: "Locked", hint: "Setup is frozen" },
   { key: "LIVE", label: "Live", hint: "Agents are reporting" },

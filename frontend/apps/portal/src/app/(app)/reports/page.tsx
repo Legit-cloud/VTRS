@@ -20,7 +20,7 @@ import { DataTable } from "@/components/vtrs/data-table";
 import { PageHeader } from "@/components/vtrs/page-header";
 import { ep } from "@/lib/api";
 import { describeError } from "@/lib/errors";
-import { useContests, useElection } from "@/lib/election";
+import { useElection } from "@/lib/election";
 import { useStepUp } from "@/lib/step-up";
 
 const KINDS = [
@@ -30,7 +30,7 @@ const KINDS = [
   [
     "EVIDENCE_PACK",
     "Evidence pack",
-    "Result-sheet photos with a manifest of their SHA-256 hashes.",
+    "Result sheets (photos and PDFs) with a manifest of their SHA-256 hashes.",
   ],
 ] as const;
 
@@ -46,14 +46,13 @@ const fail = (e: unknown, fallback: string) => describeError(e, fallback);
 
 export default function ReportsPage() {
   const { election } = useElection();
-  const contests = useContests(election?.id);
   const queryClient = useQueryClient();
   const toast = useToast();
   const stepUp = useStepUp();
 
   const [kind, setKind] = useState<(typeof KINDS)[number][0]>("RESULTS");
   const [format, setFormat] = useState("CSV");
-  const [contestId, setContestId] = useState("");
+  const [measure, setMeasure] = useState("reported");
   const [level, setLevel] = useState("lga");
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
@@ -76,7 +75,7 @@ export default function ReportsPage() {
           kind,
           format: (kind === "EVIDENCE_PACK" ? "ZIP" : format) as never,
           election_id: election?.id,
-          contest_id: kind === "RESULTS" ? contestId || contests.data?.[0]?.id : undefined,
+          measure: kind === "RESULTS" ? (measure as never) : undefined,
           level: kind === "RESULTS" ? (level as never) : undefined,
           since: since ? `${since}T00:00:00+01:00` : undefined,
           until: until ? `${until}T23:59:59+01:00` : undefined,
@@ -156,14 +155,11 @@ export default function ReportsPage() {
           </Field>
           {kind === "RESULTS" ? (
             <>
-              <Field label="Contest">
+              <Field label="Count">
                 {(p) => (
-                  <Select {...p} value={contestId} onChange={(e) => setContestId(e.target.value)}>
-                    {(contests.data ?? []).map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.title}
-                      </option>
-                    ))}
+                  <Select {...p} value={measure} onChange={(e) => setMeasure(e.target.value)}>
+                    <option value="reported">All results</option>
+                    <option value="verified">Verified only</option>
                   </Select>
                 )}
               </Field>

@@ -72,7 +72,9 @@ function AcceptForm() {
       }
       setAccessToken(String(body.access_token), String(body.access_expires_at));
       await reloadMe();
-      router.replace("/settings?enrol=1");
+      // The home route sends each role on: agents to their unit, others to enrol a second factor
+      // when their role needs one.
+      router.replace("/");
     } catch (e) {
       setError(e instanceof ApiError ? e : null);
     } finally {

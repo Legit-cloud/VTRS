@@ -9,7 +9,9 @@ export default function Home() {
   const router = useRouter();
   useEffect(() => {
     if (status !== "authenticated" || !me) return;
-    router.replace(me.role === "PLATFORM_ADMIN" ? "/platform" : "/war-room");
+    router.replace(
+      me.role === "PLATFORM_ADMIN" ? "/platform" : me.role === "PU_AGENT" ? "/capture" : "/war-room",
+    );
   }, [status, me, router]);
   return null;
 }

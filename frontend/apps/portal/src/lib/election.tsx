@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Contest, Election } from "@vtrs/core";
+import type { Election } from "@vtrs/core";
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { ep } from "./api";
 import { useAuth } from "./auth";
@@ -86,16 +86,4 @@ export function useElection(): ElectionState {
   const value = useContext(ElectionContext);
   if (!value) throw new Error("useElection must be used inside ElectionProvider");
   return value;
-}
-
-/** Contests of the selected election, in the order the server returns them. */
-export function useContests(electionId: string | undefined) {
-  return useQuery({
-    queryKey: ["contests", electionId],
-    enabled: !!electionId,
-    queryFn: async (): Promise<Contest[]> => {
-      const data = await ep.elections.contests(electionId!);
-      return Array.isArray(data) ? data : data.results;
-    },
-  });
 }

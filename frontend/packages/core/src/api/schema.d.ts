@@ -345,105 +345,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/candidates/{candidate_id}": {
+    "/api/v1/config-issues/{issue_id}/resolve": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["candidates_retrieve"];
+        get?: never;
         put?: never;
-        post?: never;
-        delete: operations["candidates_destroy"];
-        options?: never;
-        head?: never;
-        patch: operations["candidates_partial_update"];
-        trace?: never;
-    };
-    "/api/v1/contests/{contest_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["contests_retrieve"];
-        put?: never;
-        post?: never;
-        delete: operations["contests_destroy"];
-        options?: never;
-        head?: never;
-        patch: operations["contests_partial_update"];
-        trace?: never;
-    };
-    "/api/v1/contests/{contest_id}/candidates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["contests_candidates_list"];
-        put?: never;
-        post: operations["contests_candidates_create"];
+        post: operations["config_issues_resolve_create"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/contests/{contest_id}/coverage-timeline": {
+    "/api/v1/contestants/{candidate_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["contests_coverage_timeline_retrieve"];
+        get: operations["contestants_retrieve"];
         put?: never;
         post?: never;
-        delete?: never;
+        delete: operations["contestants_destroy"];
         options?: never;
         head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/contests/{contest_id}/polling-units/{polling_unit_id}/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Every version a polling unit's result has had for one contest, oldest first. */
-        get: operations["contests_polling_units_history_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/contests/{contest_id}/results": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description Drill-down: LGA scorecards, ward lists and polling-unit lists for one contest. Omit
-         *     `level` to start at the top of the caller's own scope.
-         */
-        get: operations["contests_results_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
+        patch: operations["contestants_partial_update"];
         trace?: never;
     };
     "/api/v1/elections": {
@@ -485,7 +416,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Onboarding, capture, sync and integrity metrics for one election, inside your scope. */
+        /**
+         * @description Onboarding, capture, submission and integrity metrics for one election, inside your
+         *     scope.
+         */
         get: operations["elections_analytics_retrieve"];
         put?: never;
         post?: never;
@@ -495,16 +429,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/elections/{election_id}/contests": {
+    "/api/v1/elections/{election_id}/config-issues": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["elections_contests_list"];
+        /**
+         * @description GET: "party missing" / "contestant missing" tasks for admins (FR-6.3.7).
+         *     POST: an agent reports one from the result form of an assigned unit. Neither ever creates
+         *     or changes a party or contestant.
+         */
+        get: operations["elections_config_issues_list"];
         put?: never;
-        post: operations["elections_contests_create"];
+        /**
+         * @description GET: "party missing" / "contestant missing" tasks for admins (FR-6.3.7).
+         *     POST: an agent reports one from the result form of an assigned unit. Neither ever creates
+         *     or changes a party or contestant.
+         */
+        post: operations["elections_config_issues_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/elections/{election_id}/contestants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["elections_contestants_list"];
+        put?: never;
+        post: operations["elections_contestants_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/elections/{election_id}/coverage-timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["elections_coverage_timeline_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -519,8 +495,9 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description War Room: headline figures per contest over everything the caller may see. Figures are
-         *     provisional and based on party-captured data; they are not an official declaration.
+         * @description War room: every party and contestant side by side over everything the caller may see,
+         *     with the leader status (ties and narrow margins named) and X of Y polling units reported.
+         *     Figures are the party's own collection, not the official INEC count.
          */
         get: operations["elections_dashboard_retrieve"];
         put?: never;
@@ -573,8 +550,63 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Freeze contests and candidates (FR-6.3.3). Needs a fresh second factor. */
+        /** @description Freeze the parties and contestants (FR-6.3.3). Needs a fresh second factor. */
         post: operations["elections_lock_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/elections/{election_id}/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The contesting parties in their fixed order. PUT replaces the whole ordered list. */
+        get: operations["elections_parties_list"];
+        /** @description The contesting parties in their fixed order. PUT replaces the whole ordered list. */
+        put: operations["elections_parties_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/elections/{election_id}/polling-units/{polling_unit_id}/form": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The result form for an assigned unit (FR-6.5.1, AC-16): exactly the configured parties,
+         *     in the admin's order, each with its candidate. Read-only apart from the numbers.
+         */
+        get: operations["elections_polling_units_form_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/elections/{election_id}/polling-units/{polling_unit_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Every version a polling unit's result has had for one election, oldest first. */
+        get: operations["elections_polling_units_history_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -610,6 +642,26 @@ export interface paths {
         };
         /** @description What stands between a closed election and RECONCILED. */
         get: operations["elections_reconciliation_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/elections/{election_id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Drill-down: state, LGA, ward and polling-unit rows for one election, each with every
+         *     party's votes and its leader. Omit `level` to start at the top of the caller's scope.
+         */
+        get: operations["elections_results_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -692,7 +744,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Request a presigned upload for a photo of your own submission (or a fresh URL). */
+        /**
+         * @description Request a presigned upload for the result sheet of your own submission (a photo or a
+         *     PDF), or a fresh URL for one already requested.
+         */
         post: operations["evidence_uploads_create"];
         delete?: never;
         options?: never;
@@ -873,6 +928,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/geography/constituencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["geography_constituencies_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/geography/election-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The configured election types and the constituency kind each is held in. */
+        get: operations["geography_election_types_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/geography/lgas": {
         parameters: {
             query?: never;
@@ -1008,7 +1096,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description What the agent app shows before capture (FR-6.2.5, AC-04). */
+        /**
+         * @description What the agent sees before capture (FR-6.2.5, AC-04): each assigned election and polling
+         *     unit, with the result that currently counts there and the agent's latest submission.
+         */
         get: operations["me_assignments_list"];
         put?: never;
         post?: never;
@@ -1083,7 +1174,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/me/push-token": {
+    "/api/v1/parties": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The organization's party master list (FR-6.3.4). Only admins change it. */
+        get: operations["parties_list"];
+        put?: never;
+        /** @description The organization's party master list (FR-6.3.4). Only admins change it. */
+        post: operations["parties_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{party_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["parties_retrieve"];
+        put?: never;
+        post?: never;
+        delete: operations["parties_destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["parties_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/parties/{party_id}/logo": {
         parameters: {
             query?: never;
             header?: never;
@@ -1091,9 +1216,26 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** @description The mobile app registers its push token for the device the session was opened on. */
-        put: operations["me_push_token_update"];
-        post?: never;
+        put?: never;
+        /** @description Request a presigned upload for a logo (POST) or remove the logo (DELETE). */
+        post: operations["parties_logo_create"];
+        /** @description Request a presigned upload for a logo (POST) or remove the logo (DELETE). */
+        delete: operations["parties_logo_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/parties/{party_id}/logo/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["parties_logo_complete_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1381,23 +1523,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/sync/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["sync_status_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/sync/submissions": {
+    "/api/v1/submissions": {
         parameters: {
             query?: never;
             header?: never;
@@ -1407,11 +1533,32 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description Batch of up to 10 offline submissions. Always 200 with one outcome per item: SYNCED,
-         *     REQUIRES_REVIEW (accepted, flagged) or FAILED (do not retry; correct as a new version).
-         *     Retrying an item with the same version_id is safe and returns `replayed: true`.
+         * @description Submit the numbers for one polling unit (spec section 10). Sending the same
+         *     `version_id` again (a retry or a double tap) is safe: it returns the stored outcome with
+         *     `replayed: true` and never creates a second result. The response status is the outcome's
+         *     `http_status`; refused submissions say why in `code` and `detail`.
          */
-        post: operations["sync_submissions_create"];
+        post: operations["submissions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/submissions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description One of my submissions: its review state, whether the sheet is attached, and why it was
+         *     rejected if it was.
+         */
+        get: operations["submissions_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1477,22 +1624,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["users_deactivate_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/users/{user_id}/devices/{device_id}/revoke": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["users_devices_revoke_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1581,7 +1712,7 @@ export interface components {
             capture: {
                 [key: string]: unknown;
             };
-            sync: {
+            submission: {
                 [key: string]: unknown;
             };
             evidence: {
@@ -1592,8 +1723,8 @@ export interface components {
             };
         };
         /**
-         * @description One area's figures. `votes` and `totals` follow `measure`; the polling-unit counts
-         *     for both measures are always present.
+         * @description One area's figures. `votes` and `totals` follow `measure`; the polling-unit counts for
+         *     both measures are always present, so "X of Y reported" travels with every total.
          */
         AreaResult: {
             level: string;
@@ -1615,15 +1746,16 @@ export interface components {
             open_flags: number;
             registered_voters: number;
             totals: components["schemas"]["Totals"];
-            votes: components["schemas"]["Vote"][];
+            votes: components["schemas"]["PartyVote"][];
             position: components["schemas"]["Position"];
             measure: string;
             /** Format: date-time */
             updated_at: string | null;
-            revision: number | null;
             status?: string;
             /** Format: uuid */
             head_version_id?: string | null;
+            verified?: boolean;
+            completion?: string | null;
         };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
         AssignRequest: {
@@ -1634,11 +1766,11 @@ export interface components {
             /** Format: uuid */
             id: string;
             name: string;
+            election_type_name: string;
             /** Format: date */
             election_date: string;
             status: string;
             capture_open: boolean;
-            config_version: number;
             /** Format: date-time */
             polls_open_at: string | null;
             /** Format: date-time */
@@ -1708,34 +1840,14 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        Candidate: {
+        BallotParty: {
             /** Format: uuid */
-            readonly id: string;
-            /** Format: uuid */
-            readonly contest_id: string;
-            name: string;
-            party_name: string;
-            party_acronym: string;
+            party_id: string;
+            abbreviation: string;
+            full_name: string;
             ballot_order: number;
-            is_own_party?: boolean;
-            config_version: number;
-            row_version?: number;
-        };
-        CandidateBallot: {
-            /** Format: uuid */
-            id: string;
-            name: string;
-            party_acronym: string;
-            ballot_order: number;
-        };
-        /** @description Rejects fields the serializer does not declare (spec section 9). */
-        CandidateCreateRequest: {
-            name: string;
-            party_name: string;
-            party_acronym: string;
-            ballot_order: number;
-            /** @default false */
-            is_own_party: boolean;
+            is_own: boolean;
+            logo_url: string | null;
         };
         ChallengeResponse: {
             /** Format: uuid */
@@ -1750,90 +1862,88 @@ export interface components {
          */
         ChannelEnum: "SMS" | "EMAIL";
         /**
-         * @description * `WEB` - WEB
-         *     * `MOBILE` - MOBILE
+         * @description * `NUMBERS_SUBMITTED` - NUMBERS_SUBMITTED
+         *     * `COMPLETE` - COMPLETE
          * @enum {string}
          */
-        ClientEnum: "WEB" | "MOBILE";
-        Contest: {
+        CompletionEnum: "NUMBERS_SUBMITTED" | "COMPLETE";
+        ConfigIssue: {
             /** Format: uuid */
             readonly id: string;
             /** Format: uuid */
             readonly election_id: string;
-            office: components["schemas"]["OfficeEnum"];
-            title: string;
-            jurisdiction_level: components["schemas"]["JurisdictionLevelEnum"];
-            jurisdiction_ids: string[];
-            sheet_fields?: string[];
-            row_version?: number;
+            /** Format: uuid */
+            readonly polling_unit_id: string;
+            readonly polling_unit_code: string;
+            readonly polling_unit_name: string;
+            readonly ward_name: string;
+            readonly lga_name: string;
+            kind: components["schemas"]["ConfigIssueKindEnum"];
+            note: string;
+            status?: components["schemas"]["ConfigIssueStatusEnum"];
+            readonly raised_by_name: string;
             /** Format: date-time */
             readonly created_at: string;
-        };
-        ContestBallot: {
-            /** Format: uuid */
-            id: string;
-            office: string;
-            title: string;
-            sheet_fields: string[];
-            candidates: components["schemas"]["CandidateBallot"][];
-        };
-        /** @description Rejects fields the serializer does not declare (spec section 9). */
-        ContestCreateRequest: {
-            office: components["schemas"]["OfficeEnum"];
-            title: string;
-            jurisdiction_level: components["schemas"]["JurisdictionLevelEnum"];
-            jurisdiction_ids: string[];
-            sheet_fields?: components["schemas"]["SheetFieldsEnum"][];
-        };
-        ContestResults: {
-            /** Format: uuid */
-            contest_id: string;
-            level: string;
-            /** Format: uuid */
-            parent_id: string | null;
-            measure: string;
-            provisional: boolean;
-            notice: string;
-            rows: components["schemas"]["AreaResult"][];
+            resolution_note?: string;
+            readonly resolved_by_name: string | null;
+            /** Format: date-time */
+            resolved_at?: string | null;
         };
         /**
-         * @description One area's figures. `votes` and `totals` follow `measure`; the polling-unit counts
-         *     for both measures are always present.
+         * @description * `PARTY_MISSING` - PARTY_MISSING
+         *     * `CONTESTANT_MISSING` - CONTESTANT_MISSING
+         * @enum {string}
          */
-        ContestSummary: {
-            level: string;
+        ConfigIssueKindEnum: "PARTY_MISSING" | "CONTESTANT_MISSING";
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        ConfigIssueReportRequest: {
             /** Format: uuid */
-            area_id: string;
-            area_name: string;
-            area_code: string;
+            polling_unit_id: string;
+            kind: components["schemas"]["ConfigIssueKindEnum"];
+            note: string;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        ConfigIssueResolveRequest: {
+            note: string;
+        };
+        /**
+         * @description * `OPEN` - OPEN
+         *     * `RESOLVED` - RESOLVED
+         * @enum {string}
+         */
+        ConfigIssueStatusEnum: "OPEN" | "RESOLVED";
+        Constituency: {
             /** Format: uuid */
-            parent_id: string | null;
-            expected_pus: number;
-            reported_pus: number;
-            verified_pus: number;
-            review_pus: number;
-            /** Format: double */
-            reported_pct: number;
-            /** Format: double */
-            verified_pct: number;
-            counted_pus: number;
-            open_flags: number;
-            registered_voters: number;
-            totals: components["schemas"]["Totals"];
-            votes: components["schemas"]["Vote"][];
-            position: components["schemas"]["Position"];
-            measure: string;
-            /** Format: date-time */
-            updated_at: string | null;
-            revision: number | null;
-            status?: string;
+            readonly id: string;
+            kind: string;
+            code: string;
+            name: string;
             /** Format: uuid */
-            head_version_id?: string | null;
+            readonly state_id: string;
+        };
+        Contestant: {
             /** Format: uuid */
-            contest_id: string;
-            office: string;
-            title: string;
-            areas_in_scope: number;
+            readonly id: string;
+            /** Format: uuid */
+            readonly contest_id: string;
+            /** Format: uuid */
+            readonly constituency_id: string;
+            readonly constituency_name: string;
+            /** Format: uuid */
+            readonly party_id: string;
+            readonly party_abbreviation: string;
+            readonly ballot_order: number | null;
+            name: string;
+            config_version: number;
+            row_version?: number;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        ContestantCreateRequest: {
+            /** Format: uuid */
+            constituency_id: string;
+            /** Format: uuid */
+            party_id: string;
+            name: string;
         };
         /**
          * @description * `REPORTED` - Reported
@@ -1843,7 +1953,7 @@ export interface components {
         CountPolicyEnum: "REPORTED" | "VERIFIED";
         CoverageTimeline: {
             /** Format: uuid */
-            contest_id: string;
+            election_id: string;
             interval: string;
             expected_pus: number;
             points: components["schemas"]["TimelinePoint"][];
@@ -1852,12 +1962,15 @@ export interface components {
             /** Format: uuid */
             election_id: string;
             election_name: string;
+            election_type: string;
+            election_type_name: string;
             status: string;
             measure: string;
-            review_enabled: boolean;
             provisional: boolean;
             notice: string;
-            contests: components["schemas"]["ContestSummary"][];
+            parties: components["schemas"]["BallotParty"][];
+            summary: components["schemas"]["AreaResult"];
+            areas_in_scope: number;
         };
         DataQuality: {
             polling_units: number;
@@ -1889,26 +2002,6 @@ export interface components {
             /** Format: date-time */
             delivered_at: string | null;
         };
-        Device: {
-            /** Format: uuid */
-            readonly id: string;
-            platform: components["schemas"]["PlatformEnum"];
-            app_version: string;
-            status?: components["schemas"]["ActiveRevokedStatusEnum"];
-            /** Format: date-time */
-            readonly created_at: string;
-            /** Format: date-time */
-            last_seen_at?: string | null;
-        };
-        /** @description Rejects fields the serializer does not declare (spec section 9). */
-        DeviceRegistrationRequest: {
-            platform: components["schemas"]["PlatformEnum"];
-            app_version: string;
-            /** @default  */
-            public_key: string;
-            /** @default  */
-            push_token: string;
-        };
         Download: {
             url: string;
             expires_in: number;
@@ -1923,13 +2016,15 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             name: string;
+            election_type: string;
+            election_type_name: string;
+            constituency_kind: string;
             /** Format: uuid */
             state_id: string;
             /** Format: date */
             election_date: string;
             status?: components["schemas"]["ElectionStatusEnum"];
             count_policy?: components["schemas"]["CountPolicyEnum"];
-            review_enabled?: boolean;
             /** Format: date-time */
             polls_open_at?: string | null;
             /** Format: date-time */
@@ -1949,18 +2044,46 @@ export interface components {
         /** @description Rejects fields the serializer does not declare (spec section 9). */
         ElectionCreateRequest: {
             name: string;
+            election_type: string;
             /** Format: uuid */
             state_id: string;
             /** Format: date */
             election_date: string;
             /** @default REPORTED */
             count_policy: components["schemas"]["CountPolicyEnum"];
-            /** @default false */
-            review_enabled: boolean;
             /** Format: date-time */
             polls_open_at?: string | null;
             /** Format: date-time */
             polls_close_at?: string | null;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        ElectionPartiesUpdateRequest: {
+            party_ids: string[];
+        };
+        ElectionParty: {
+            /** Format: uuid */
+            party_id: string;
+            ballot_order: number;
+            abbreviation: string;
+            full_name: string;
+            is_own: boolean;
+            logo_url: string | null;
+        };
+        ElectionResults: {
+            /** Format: uuid */
+            election_id: string;
+            election_name: string;
+            election_type: string;
+            election_type_name: string;
+            status: string;
+            measure: string;
+            provisional: boolean;
+            notice: string;
+            parties: components["schemas"]["BallotParty"][];
+            level: string;
+            /** Format: uuid */
+            parent_id: string | null;
+            rows: components["schemas"]["AreaResult"][];
         };
         ElectionRow: {
             /** Format: uuid */
@@ -1990,14 +2113,30 @@ export interface components {
          * @enum {string}
          */
         ElectionStatusEnum: "DRAFT" | "CONFIGURED" | "LOCKED" | "LIVE" | "CLOSED" | "RECONCILED";
+        ElectionType: {
+            code: string;
+            name: string;
+            constituency_kind: string;
+        };
+        /**
+         * @description * `application/pdf` - application/pdf
+         *     * `image/jpeg` - image/jpeg
+         *     * `image/png` - image/png
+         *     * `image/webp` - image/webp
+         * @enum {string}
+         */
+        EvidenceMimeEnum: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";
         EvidenceState: {
             /** Format: uuid */
             evidence_id: string;
             status: string;
+            completion: string;
         };
         EvidenceStatus: {
             /** Format: uuid */
             evidence_id: string;
+            kind: string;
+            mime: string;
             status: string;
         };
         EvidenceUploadEntry: {
@@ -2018,6 +2157,7 @@ export interface components {
             /** Format: uuid */
             evidence_id: string;
             kind: string;
+            mime: string;
             status: string;
             sha256: string;
         };
@@ -2199,6 +2339,53 @@ export interface components {
             severity: string;
             status: string;
         };
+        FormConstituency: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        FormCurrent: {
+            /** Format: uuid */
+            version_id: string;
+            /** Format: uuid */
+            election_id: string;
+            /** Format: uuid */
+            polling_unit_id: string;
+            version_no: number;
+            state: string;
+            is_head: boolean;
+            completion: components["schemas"]["CompletionEnum"];
+            /** Format: date-time */
+            server_received_at: string;
+            review: components["schemas"]["ReviewNote"] | null;
+            flags: string[];
+            evidence: components["schemas"]["EvidenceStatus"][];
+            totals: {
+                [key: string]: number | null;
+            };
+            votes: {
+                [key: string]: number;
+            };
+        };
+        FormParty: {
+            /** Format: uuid */
+            candidate_id: string;
+            candidate_name: string;
+            /** Format: uuid */
+            party_id: string;
+            party_abbreviation: string;
+            party_name: string;
+            party_logo_url: string | null;
+            ballot_order: number | null;
+        };
+        FormPollingUnit: {
+            /** Format: uuid */
+            id: string;
+            inec_code: string;
+            name: string;
+            ward: string;
+            lga: string;
+        };
         /**
          * @description * `CSV` - CSV
          *     * `XLSX` - XLSX
@@ -2206,6 +2393,15 @@ export interface components {
          * @enum {string}
          */
         FormatEnum: "CSV" | "XLSX" | "ZIP";
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        GpsRequest: {
+            /** Format: decimal */
+            lat: string;
+            /** Format: decimal */
+            lng: string;
+            /** Format: decimal */
+            accuracy_m?: string | null;
+        };
         GpsView: {
             /** Format: decimal */
             lat: string;
@@ -2256,6 +2452,7 @@ export interface components {
             votes: components["schemas"]["VoteView"][];
             flags: components["schemas"]["FlagView"][];
             reviews: components["schemas"]["ReviewEntryView"][];
+            completion: components["schemas"]["CompletionEnum"];
             evidence_count: number;
             evidence?: components["schemas"]["EvidenceView"][];
             submitted_by: components["schemas"]["PersonView"];
@@ -2293,7 +2490,6 @@ export interface components {
             challenge_id: string;
             code: string;
             password: string;
-            device?: components["schemas"]["DeviceRegistrationRequest"] | null;
         };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
         InvitationCreateRequest: {
@@ -2307,13 +2503,6 @@ export interface components {
             /** @default  */
             phone: string;
         };
-        /**
-         * @description * `STATE` - STATE
-         *     * `LGA` - LGA
-         *     * `WARD` - WARD
-         * @enum {string}
-         */
-        JurisdictionLevelEnum: "STATE" | "LGA" | "WARD";
         /**
          * @description * `pu` - pu
          *     * `ward` - ward
@@ -2337,10 +2526,6 @@ export interface components {
         LoginRequest: {
             identifier: string;
             password: string;
-            /** @default WEB */
-            client: components["schemas"]["ClientEnum"];
-            /** Format: uuid */
-            device_id?: string | null;
         };
         LoginResponse: {
             mfa_required: boolean;
@@ -2355,8 +2540,29 @@ export interface components {
             refresh_expires_at?: string;
             /** Format: uuid */
             session_id?: string;
-            /** Format: uuid */
-            device_id?: string | null;
+        };
+        /**
+         * @description * `image/jpeg` - image/jpeg
+         *     * `image/png` - image/png
+         *     * `image/webp` - image/webp
+         * @enum {string}
+         */
+        LogoMimeEnum: "image/jpeg" | "image/png" | "image/webp";
+        LogoUpload: {
+            mime: string;
+            sha256: string;
+            upload: components["schemas"]["Upload"];
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        LogoUploadCompleteRequest: {
+            mime: components["schemas"]["LogoMimeEnum"];
+            sha256: string;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        LogoUploadRequestRequest: {
+            mime: components["schemas"]["LogoMimeEnum"];
+            size: number;
+            sha256: string;
         };
         Marked: {
             marked: number;
@@ -2375,8 +2581,6 @@ export interface components {
             permissions: string[];
             mfa_enabled: boolean;
             mfa_required: boolean;
-            /** Format: uuid */
-            device_id: string | null;
         };
         /**
          * @description * `reported` - reported
@@ -2421,19 +2625,13 @@ export interface components {
             mfa_token: string;
             code: string;
         };
-        /**
-         * @description * `image/jpeg` - image/jpeg
-         *     * `image/png` - image/png
-         *     * `image/webp` - image/webp
-         * @enum {string}
-         */
-        MimeEnum: "image/jpeg" | "image/png" | "image/webp";
-        MyAssignment: {
+        MyAssignmentWithResult: {
             /** Format: uuid */
             assignment_id: string;
             election: components["schemas"]["AssignedElection"];
             polling_unit: components["schemas"]["AssignedPollingUnit"];
-            contests: components["schemas"]["ContestBallot"][];
+            result: components["schemas"]["SubmissionStatus"] | null;
+            my_latest: components["schemas"]["SubmissionStatus"] | null;
         };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
         NoteRequest: {
@@ -2455,18 +2653,6 @@ export interface components {
             created_at: string;
             deliveries: components["schemas"]["Delivery"][];
         };
-        /**
-         * @description * `PRESIDENTIAL` - Presidential
-         *     * `GOVERNORSHIP` - Governorship
-         *     * `SENATORIAL` - Senatorial
-         *     * `HOUSE_OF_REPRESENTATIVES` - House Of Representatives
-         *     * `STATE_ASSEMBLY` - State Assembly
-         *     * `LGA_CHAIRMAN` - Lga Chairman
-         *     * `COUNCILLOR` - Councillor
-         *     * `OTHER` - Other
-         * @enum {string}
-         */
-        OfficeEnum: "PRESIDENTIAL" | "GOVERNORSHIP" | "SENATORIAL" | "HOUSE_OF_REPRESENTATIVES" | "STATE_ASSEMBLY" | "LGA_CHAIRMAN" | "COUNCILLOR" | "OTHER";
         Organization: {
             /** Format: uuid */
             readonly id: string;
@@ -2547,6 +2733,32 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["AuditEvent"][];
+        };
+        PaginatedConfigIssueList: {
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cD00ODY%3D"
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+             */
+            previous?: string | null;
+            results: components["schemas"]["ConfigIssue"][];
+        };
+        PaginatedConstituencyList: {
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cD00ODY%3D"
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?cursor=cj0xJnA9NDg3
+             */
+            previous?: string | null;
+            results: components["schemas"]["Constituency"][];
         };
         PaginatedElectionList: {
             /**
@@ -2717,6 +2929,31 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Ward"][];
         };
+        Party: {
+            /** Format: uuid */
+            readonly id: string;
+            full_name: string;
+            abbreviation: string;
+            is_own?: boolean;
+            readonly logo_url: string | null;
+            row_version?: number;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        PartyCreateRequest: {
+            full_name: string;
+            abbreviation: string;
+            /** @default false */
+            is_own: boolean;
+        };
+        PartyVote: {
+            /** Format: uuid */
+            party_id: string;
+            abbreviation: string;
+            /** Format: uuid */
+            candidate_id: string | null;
+            candidate_name: string | null;
+            votes: number;
+        };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
         PasswordForgotRequest: {
             identifier: string;
@@ -2728,32 +2965,26 @@ export interface components {
             new_password: string;
         };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
-        PatchedCandidateUpdateRequest: {
+        PatchedContestantUpdateRequest: {
             name?: string;
-            party_name?: string;
-            party_acronym?: string;
-            ballot_order?: number;
-            is_own_party?: boolean;
-        };
-        /** @description Rejects fields the serializer does not declare (spec section 9). */
-        PatchedContestUpdateRequest: {
-            office?: components["schemas"]["OfficeEnum"];
-            title?: string;
-            jurisdiction_level?: components["schemas"]["JurisdictionLevelEnum"];
-            jurisdiction_ids?: string[];
-            sheet_fields?: components["schemas"]["SheetFieldsEnum"][];
         };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
         PatchedElectionUpdateRequest: {
             name?: string;
+            election_type?: string;
             /** Format: date */
             election_date?: string;
             count_policy?: components["schemas"]["CountPolicyEnum"];
-            review_enabled?: boolean;
             /** Format: date-time */
             polls_open_at?: string | null;
             /** Format: date-time */
             polls_close_at?: string | null;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        PatchedPartyUpdateRequest: {
+            full_name?: string;
+            abbreviation?: string;
+            is_own?: boolean;
         };
         PersonView: {
             /** Format: uuid */
@@ -2777,12 +3008,6 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        /**
-         * @description * `ANDROID` - ANDROID
-         *     * `IOS` - IOS
-         * @enum {string}
-         */
-        PlatformEnum: "ANDROID" | "IOS";
         PollingUnit: {
             /** Format: uuid */
             readonly id: string;
@@ -2800,13 +3025,18 @@ export interface components {
             longitude?: string | null;
             registered_voters?: number | null;
         };
+        /**
+         * @description The provisional position. `status` is NO_VOTES, TIED, NARROW or LEADING; a tie names no
+         *     leader (`leading_party_ids` lists every party sharing the top).
+         */
         Position: {
+            status: components["schemas"]["PositionStatusEnum"];
             /** Format: uuid */
-            leader_id: string | null;
-            leader_party: string | null;
+            leader_party_id: string | null;
+            leader_abbreviation: string | null;
             /** Format: uuid */
-            runner_up_id: string | null;
-            leading_ids: string[];
+            runner_up_party_id: string | null;
+            leading_party_ids: string[];
             margin: number;
             /** Format: double */
             margin_pct: number | null;
@@ -2814,9 +3044,20 @@ export interface components {
             is_tie: boolean;
             own_margin: number | null;
         };
+        /**
+         * @description * `NO_VOTES` - NO_VOTES
+         *     * `TIED` - TIED
+         *     * `NARROW` - NARROW
+         *     * `LEADING` - LEADING
+         * @enum {string}
+         */
+        PositionStatusEnum: "NO_VOTES" | "TIED" | "NARROW" | "LEADING";
         PuHistory: {
             /** Format: uuid */
+            election_id: string;
+            /** Format: uuid */
             contest_id: string;
+            constituency_name: string;
             /** Format: uuid */
             polling_unit_id: string;
             polling_unit_code: string;
@@ -2830,16 +3071,11 @@ export interface components {
             head_version_id: string | null;
             versions: components["schemas"]["HistoryVersion"][];
         };
-        /** @description Rejects fields the serializer does not declare (spec section 9). */
-        PushTokenRequest: {
-            token: string;
-        };
         Readiness: {
             /** Format: uuid */
             election_id: string;
             status: string;
-            review_enabled: boolean;
-            undecided_results: number;
+            unverified_results: number;
             rollup_differences: string[];
             can_reconcile: boolean;
             /** Format: date-time */
@@ -2864,8 +3100,6 @@ export interface components {
         /** @description Rejects fields the serializer does not declare (spec section 9). */
         RefreshRequest: {
             refresh_token: string;
-            /** Format: uuid */
-            device_id?: string | null;
         };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
         RegisterOrganizationRequest: {
@@ -2890,12 +3124,31 @@ export interface components {
             outcome: components["schemas"]["OutcomeEnum"];
             note: string;
         };
+        ResultForm: {
+            /** Format: uuid */
+            election_id: string;
+            election_name: string;
+            election_status: string;
+            capture_open: boolean;
+            config_version: number;
+            polling_unit: components["schemas"]["FormPollingUnit"];
+            constituency: components["schemas"]["FormConstituency"] | null;
+            parties: components["schemas"]["FormParty"][];
+            totals: string[];
+            current: components["schemas"]["FormCurrent"] | null;
+        };
         ReviewEntryView: {
             decision: string;
             from_state: string;
             reason: string;
             acknowledged_flags: string[];
             decided_by: components["schemas"]["PersonView"];
+            /** Format: date-time */
+            decided_at: string;
+        };
+        ReviewNote: {
+            decision: string;
+            reason: string;
             /** Format: date-time */
             decided_at: string;
         };
@@ -2915,7 +3168,7 @@ export interface components {
             version_id: string;
             /** Format: uuid */
             contest_id: string;
-            contest_title: string;
+            constituency_name: string;
             /** Format: uuid */
             polling_unit_id: string;
             polling_unit_code: string;
@@ -2931,6 +3184,8 @@ export interface components {
             totals: components["schemas"]["TotalsView"];
             votes: components["schemas"]["VoteView"][];
             flags: components["schemas"]["FlagView"][];
+            completion: components["schemas"]["CompletionEnum"];
+            evidence: components["schemas"]["EvidenceStatus"][];
             submitted_by: components["schemas"]["PersonView"];
             /** Format: date-time */
             server_received_at: string;
@@ -2968,22 +3223,8 @@ export interface components {
             /** Format: date-time */
             now: string;
         };
-        /**
-         * @description * `accredited` - accredited
-         *     * `valid` - valid
-         *     * `rejected` - rejected
-         *     * `total_cast` - total_cast
-         * @enum {string}
-         */
-        SheetFieldsEnum: "accredited" | "valid" | "rejected" | "total_cast";
         Status: {
             status: string;
-        };
-        /** @description Rejects fields the serializer does not declare (spec section 9). */
-        SubmissionBatchRequest: {
-            items: {
-                [key: string]: unknown;
-            }[];
         };
         SubmissionOutcome: {
             /** Format: uuid */
@@ -2996,39 +3237,59 @@ export interface components {
             version_no?: number;
             state?: string;
             is_head?: boolean;
+            completion?: components["schemas"]["CompletionEnum"];
             flags?: string[];
-            evidence_uploads?: components["schemas"]["EvidenceUploadEntry"][];
             errors?: unknown;
         };
         /**
-         * @description * `SYNCED` - SYNCED
+         * @description * `ACCEPTED` - ACCEPTED
          *     * `REQUIRES_REVIEW` - REQUIRES_REVIEW
          *     * `FAILED` - FAILED
          * @enum {string}
          */
-        SubmissionOutcomeStatusEnum: "SYNCED" | "REQUIRES_REVIEW" | "FAILED";
-        SubmissionResult: {
-            items: components["schemas"]["SubmissionOutcome"][];
-        };
-        SyncStatus: {
+        SubmissionOutcomeStatusEnum: "ACCEPTED" | "REQUIRES_REVIEW" | "FAILED";
+        /**
+         * @description One polling unit's result, sent from the agent's browser (spec section 10.2).
+         *
+         *     `version_id` is generated by the browser when the form opens and kept with the draft, so a
+         *     retry or double tap sends the same id. `payload_hash` is the SHA-256 (hex) of this object
+         *     without `payload_hash`, as canonical JSON: keys sorted at every level, no whitespace, UTF-8,
+         *     values exactly as sent.
+         */
+        SubmissionRequest: {
             /** Format: uuid */
             version_id: string;
-            status: components["schemas"]["SyncStatusStatusEnum"];
-            state?: string;
-            version_no?: number;
-            is_head?: boolean;
+            /** Format: uuid */
+            election_id: string;
+            /** Format: uuid */
+            polling_unit_id: string;
+            config_version: number;
+            /** Format: uuid */
+            parent_version_id?: string | null;
+            totals: components["schemas"]["TotalsRequest"];
+            votes: components["schemas"]["VoteLineRequest"][];
             /** Format: date-time */
-            server_received_at?: string;
-            evidence?: components["schemas"]["EvidenceStatus"][];
-            review?: unknown;
+            device_captured_at: string;
+            gps?: components["schemas"]["GpsRequest"] | null;
+            payload_hash: string;
         };
-        /**
-         * @description * `SYNCED` - SYNCED
-         *     * `REQUIRES_REVIEW` - REQUIRES_REVIEW
-         *     * `UNKNOWN` - UNKNOWN
-         * @enum {string}
-         */
-        SyncStatusStatusEnum: "SYNCED" | "REQUIRES_REVIEW" | "UNKNOWN";
+        SubmissionStatus: {
+            /** Format: uuid */
+            version_id: string;
+            /** Format: uuid */
+            election_id: string;
+            /** Format: uuid */
+            polling_unit_id: string;
+            version_no: number;
+            state: string;
+            is_head: boolean;
+            completion: components["schemas"]["CompletionEnum"];
+            /** Format: date-time */
+            server_received_at: string;
+            review: components["schemas"]["ReviewNote"] | null;
+            flags: string[];
+            evidence: components["schemas"]["EvidenceStatus"][];
+        };
         TimelinePoint: {
             /** Format: date-time */
             at: string;
@@ -3053,14 +3314,18 @@ export interface components {
             refresh_expires_at: string;
             /** Format: uuid */
             session_id: string;
-            /** Format: uuid */
-            device_id: string | null;
         };
         Totals: {
             accredited: number | null;
             valid: number | null;
             rejected: number | null;
             total_cast: number | null;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        TotalsRequest: {
+            accredited: number;
+            rejected: number;
+            total_cast: number;
         };
         TotalsView: {
             accredited: number | null;
@@ -3085,6 +3350,14 @@ export interface components {
         UnreadCount: {
             unread: number;
         };
+        Upload: {
+            method: string;
+            url: string;
+            headers: {
+                [key: string]: string;
+            };
+            expires_in: number;
+        };
         /**
          * @description * `EC8A` - EC8A
          *     * `EC8B` - EC8B
@@ -3098,22 +3371,23 @@ export interface components {
             evidence_id: string;
             kind: components["schemas"]["UploadRequestKindEnum"];
             size: number;
-            mime: components["schemas"]["MimeEnum"];
+            mime: components["schemas"]["EvidenceMimeEnum"];
             sha256: string;
             /** Format: uuid */
             version_id: string;
         };
-        Vote: {
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        VoteLineRequest: {
             /** Format: uuid */
             candidate_id: string;
-            party_acronym: string;
-            name: string;
             votes: number;
         };
         VoteView: {
             /** Format: uuid */
             candidate_id: string;
-            party_acronym: string;
+            /** Format: uuid */
+            party_id: string;
+            party_abbreviation: string;
             name: string;
             votes: number;
         };
@@ -3655,223 +3929,39 @@ export interface operations {
             };
         };
     };
-    candidates_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                candidate_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Candidate"];
-                };
-            };
-        };
-    };
-    candidates_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                candidate_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    candidates_partial_update: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description ETag from your last read */
-                "If-Match": string;
-            };
-            path: {
-                candidate_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedCandidateUpdateRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Candidate"];
-                };
-            };
-        };
-    };
-    contests_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                contest_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Contest"];
-                };
-            };
-        };
-    };
-    contests_destroy: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                contest_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    contests_partial_update: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description ETag from your last read */
-                "If-Match": string;
-            };
-            path: {
-                contest_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: {
-            content: {
-                "application/json": components["schemas"]["PatchedContestUpdateRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Contest"];
-                };
-            };
-        };
-    };
-    contests_candidates_list: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                contest_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Candidate"][];
-                };
-            };
-        };
-    };
-    contests_candidates_create: {
+    config_issues_resolve_create: {
         parameters: {
             query?: never;
             header: {
                 "Idempotency-Key": string;
             };
             path: {
-                contest_id: string;
+                issue_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CandidateCreateRequest"];
+                "application/json": components["schemas"]["ConfigIssueResolveRequest"];
             };
         };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Candidate"];
-                };
-            };
-        };
-    };
-    contests_coverage_timeline_retrieve: {
-        parameters: {
-            query?: {
-                interval?: "hour" | "minute";
-                parent_id?: string;
-            };
-            header?: never;
-            path: {
-                contest_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CoverageTimeline"];
+                    "application/json": components["schemas"]["ConfigIssue"];
                 };
             };
         };
     };
-    contests_polling_units_history_retrieve: {
+    contestants_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                contest_id: string;
-                polling_unit_id: string;
+                candidate_id: string;
             };
             cookie?: never;
         };
@@ -3882,34 +3972,55 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PuHistory"];
+                    "application/json": components["schemas"]["Contestant"];
                 };
             };
         };
     };
-    contests_results_retrieve: {
+    contestants_destroy: {
         parameters: {
-            query?: {
-                level?: "lga" | "pu" | "state" | "ward";
-                /** @description reported (every counting result) or verified (approved results only). Defaults to the election's count policy. */
-                measure?: "reported" | "verified";
-                /** @description The area one level up */
-                parent_id?: string;
-            };
+            query?: never;
             header?: never;
             path: {
-                contest_id: string;
+                candidate_id: string;
             };
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    contestants_partial_update: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description ETag from your last read */
+                "If-Match": string;
+            };
+            path: {
+                candidate_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedContestantUpdateRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ContestResults"];
+                    "application/json": components["schemas"]["Contestant"];
                 };
             };
         };
@@ -4053,9 +4164,14 @@ export interface operations {
             };
         };
     };
-    elections_contests_list: {
+    elections_config_issues_list: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description The pagination cursor value. */
+                cursor?: string;
+                /** @description Number of results to return per page. */
+                limit?: number;
+            };
             header?: never;
             path: {
                 election_id: string;
@@ -4069,12 +4185,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Contest"][];
+                    "application/json": components["schemas"]["PaginatedConfigIssueList"];
                 };
             };
         };
     };
-    elections_contests_create: {
+    elections_config_issues_create: {
         parameters: {
             query?: never;
             header: {
@@ -4087,7 +4203,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ContestCreateRequest"];
+                "application/json": components["schemas"]["ConfigIssueReportRequest"];
             };
         };
         responses: {
@@ -4096,7 +4212,81 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Contest"];
+                    "application/json": components["schemas"]["ConfigIssue"];
+                };
+            };
+        };
+    };
+    elections_contestants_list: {
+        parameters: {
+            query?: {
+                constituency_id?: string;
+            };
+            header?: never;
+            path: {
+                election_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Contestant"][];
+                };
+            };
+        };
+    };
+    elections_contestants_create: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                election_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContestantCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Contestant"];
+                };
+            };
+        };
+    };
+    elections_coverage_timeline_retrieve: {
+        parameters: {
+            query?: {
+                interval?: "hour" | "minute";
+                parent_id?: string;
+            };
+            header?: never;
+            path: {
+                election_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageTimeline"];
                 };
             };
         };
@@ -4193,6 +4383,96 @@ export interface operations {
             };
         };
     };
+    elections_parties_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                election_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ElectionParty"][];
+                };
+            };
+        };
+    };
+    elections_parties_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                election_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ElectionPartiesUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ElectionParty"][];
+                };
+            };
+        };
+    };
+    elections_polling_units_form_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                election_id: string;
+                polling_unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultForm"];
+                };
+            };
+        };
+    };
+    elections_polling_units_history_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                election_id: string;
+                polling_unit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PuHistory"];
+                };
+            };
+        };
+    };
     elections_reconcile_create: {
         parameters: {
             query?: never;
@@ -4231,6 +4511,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Readiness"];
+                };
+            };
+        };
+    };
+    elections_results_retrieve: {
+        parameters: {
+            query?: {
+                level?: "lga" | "pu" | "state" | "ward";
+                /** @description reported (every counting result) or verified (approved results only). Defaults to the election's count policy. */
+                measure?: "reported" | "verified";
+                /** @description The area one level up */
+                parent_id?: string;
+            };
+            header?: never;
+            path: {
+                election_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ElectionResults"];
                 };
             };
         };
@@ -4594,6 +4901,49 @@ export interface operations {
             };
         };
     };
+    geography_constituencies_list: {
+        parameters: {
+            query?: {
+                /** @description The pagination cursor value. */
+                cursor?: string;
+                /** @description Number of results to return per page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedConstituencyList"];
+                };
+            };
+        };
+    };
+    geography_election_types_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ElectionType"][];
+                };
+            };
+        };
+    };
     geography_lgas_list: {
         parameters: {
             query?: {
@@ -4805,7 +5155,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MyAssignment"][];
+                    "application/json": components["schemas"]["MyAssignmentWithResult"][];
                 };
             };
         };
@@ -4894,18 +5244,81 @@ export interface operations {
             };
         };
     };
-    me_push_token_update: {
+    parties_list: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PushTokenRequest"];
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"][];
+                };
             };
         };
+    };
+    parties_create: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PartyCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
+            };
+        };
+    };
+    parties_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
+            };
+        };
+    };
+    parties_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description No response body */
             204: {
@@ -4913,6 +5326,105 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    parties_partial_update: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description ETag from your last read */
+                "If-Match": string;
+            };
+            path: {
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedPartyUpdateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
+            };
+        };
+    };
+    parties_logo_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogoUploadRequestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogoUpload"];
+                };
+            };
+        };
+    };
+    parties_logo_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
+            };
+        };
+    };
+    parties_logo_complete_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                party_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogoUploadCompleteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Party"];
+                };
             };
         };
     };
@@ -5319,14 +5831,68 @@ export interface operations {
             };
         };
     };
-    sync_status_list: {
+    submissions_create: {
         parameters: {
-            query?: {
-                /** @description Comma-separated version ids (max 50) */
-                ids?: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmissionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOutcome"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOutcome"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOutcome"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOutcome"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmissionOutcome"];
+                };
+            };
+        };
+    };
+    submissions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -5336,30 +5902,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SyncStatus"][];
-                };
-            };
-        };
-    };
-    sync_submissions_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubmissionBatchRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SubmissionResult"];
+                    "application/json": components["schemas"]["SubmissionStatus"];
                 };
             };
         };
@@ -5445,28 +5988,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Member"];
-                };
-            };
-        };
-    };
-    users_devices_revoke_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                device_id: string;
-                user_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Device"];
                 };
             };
         };

@@ -49,7 +49,7 @@ export default function AnomaliesPage() {
   const [status, setStatus] = useState("");
   const [sev, setSev] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [open, setOpen] = useState<{ contest: string; pu: string } | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
 
   const list = useInfiniteQuery({
     queryKey: ["flags", election?.id, "list", status, sev],
@@ -189,7 +189,7 @@ export default function AnomaliesPage() {
               <FlagPanel
                 flagId={active}
                 canResolve={can("anomalies.resolve")}
-                onOpenUnit={(contest, pu) => setOpen({ contest, pu })}
+                onOpenUnit={(pu) => setOpen(pu)}
                 fallback={ordered.find((f) => f.id === active)}
               />
             ) : null}
@@ -198,10 +198,9 @@ export default function AnomaliesPage() {
       )}
 
       <PuDetailPanel
-        contestId={open?.contest ?? null}
-        pollingUnitId={open?.pu ?? null}
+        electionId={open ? election.id : null}
+        pollingUnitId={open}
         onClose={() => setOpen(null)}
-        reviewEnabled={!!election.review_enabled}
       />
     </>
   );
@@ -215,7 +214,7 @@ function FlagPanel({
 }: {
   flagId: string;
   canResolve: boolean;
-  onOpenUnit: (contestId: string, pollingUnitId: string) => void;
+  onOpenUnit: (pollingUnitId: string) => void;
   fallback?: Flag;
 }) {
   const { me } = useAuth();
@@ -331,7 +330,7 @@ function FlagPanel({
             variant="outline"
             size="sm"
             leading={<Eye className="h-4 w-4" aria-hidden />}
-            onClick={() => onOpenUnit(flag.contest_id!, flag.polling_unit_id)}
+            onClick={() => onOpenUnit(flag.polling_unit_id)}
           >
             Open polling unit
           </Button>

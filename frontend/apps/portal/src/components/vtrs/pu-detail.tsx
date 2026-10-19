@@ -10,6 +10,7 @@ import {
   reviewState,
   ruleTitle,
   severity,
+  SUBMISSION_STATUS,
   toastVerb,
   type HistoryVersion,
 } from "@vtrs/core";
@@ -29,20 +30,19 @@ import { ProvisionalBadge } from "./provisional";
 import { Timeline } from "./timeline";
 
 interface Props {
-  contestId: string | null;
+  electionId: string | null;
   pollingUnitId: string | null;
   onClose: () => void;
-  reviewEnabled: boolean;
 }
 
 /** One polling unit's result: the head version, its evidence, its history and the review actions. */
-export function PuDetailPanel({ contestId, pollingUnitId, onClose, reviewEnabled }: Props) {
-  const open = !!contestId && !!pollingUnitId;
+export function PuDetailPanel({ electionId, pollingUnitId, onClose }: Props) {
+  const open = !!electionId && !!pollingUnitId;
   const { can } = useAuth();
   const history = useQuery({
-    queryKey: ["results", "history", contestId, pollingUnitId],
+    queryKey: ["results", "history", electionId, pollingUnitId],
     enabled: open,
-    queryFn: () => ep.contests.history(contestId!, pollingUnitId!),
+    queryFn: () => ep.elections.history(electionId!, pollingUnitId!),
   });
 
   const data = history.data;
@@ -55,7 +55,7 @@ export function PuDetailPanel({ contestId, pollingUnitId, onClose, reviewEnabled
       title={data ? data.polling_unit_name : "Polling unit"}
       description={
         data
-          ? `${data.polling_unit_code} · ${data.status.replace(/_/g, " ").toLowerCase()}`
+          ? `${data.polling_unit_code} · ${data.constituency_name}`
           : undefined
       }
       width={560}
@@ -70,22 +70,16 @@ export function PuDetailPanel({ contestId, pollingUnitId, onClose, reviewEnabled
       ) : data && head ? (
         <div className="flex flex-col gap-6">
           <VersionSummary version={head} />
-          {reviewEnabled &&
-          can("results.review") &&
+          {can("results.review") &&
           (head.state === "REQUIRES_REVIEW" || head.state === "SUBMITTED") ? (
-            <ReviewActions
-              version={head}
-              contestId={contestId!}
-              pollingUnitId={pollingUnitId!}
-              onDone={onClose}
-            />
+            <ReviewActions version={head} onDone={onClose} />
           ) : null}
 
           <section>
-            <h3 className="mb-2 text-h3">Evidence</h3>
+            <h3 className="mb-2 text-h3">Result sheet</h3>
             {(head.evidence ?? []).length === 0 ? (
               <p className="text-body-sm text-subtle-foreground">
-                No result-sheet photo has been received for this version.
+                No result sheet has been received for this version yet.
               </p>
             ) : (
               <div className="flex flex-col gap-3">
@@ -137,7 +131,7 @@ export function PuDetailPanel({ contestId, pollingUnitId, onClose, reviewEnabled
                 },
                 ...v.reviews.map((r, i) => ({
                   id: `${v.version_id}-r${i}`,
-                  title: `${r.decision === "APPROVED" ? "Approved" : "Rejected"} version ${v.version_no}`,
+                  title: `${r.decision === "APPROVED" ? "Verified" : "Rejected"} version ${v.version_no}`,
                   meta: `${r.decided_by.name} · ${formatDateTime(r.decided_at)}`,
                   system: false,
                   detail: r.reason || undefined,
@@ -161,6 +155,9 @@ function VersionSummary({ version }: { version: HistoryVersion }) {
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
         <StatusChip status={state} />
+        <StatusChip
+          status={SUBMISSION_STATUS[version.completion === "COMPLETE" ? "COMPLETE" : "NUMBERS_SUBMITTED"]}
+        />
         {version.version_no > 1 ? (
           <StatusChip
             status={{ label: `Version ${version.version_no}`, tone: "amber", icon: "git-branch" }}
@@ -184,11 +181,11 @@ function VersionSummary({ version }: { version: HistoryVersion }) {
         ))}
       </dl>
       <table className="w-full text-left text-body-sm">
-        <caption className="sr-only">Votes by candidate</caption>
+        <caption className="sr-only">Votes by party</caption>
         <thead>
           <tr className="border-b border-border text-label text-strong-foreground">
-            <th className="py-2 pr-4 font-semibold">Candidate</th>
             <th className="py-2 pr-4 font-semibold">Party</th>
+            <th className="py-2 pr-4 font-semibold">Contestant</th>
             <th className="py-2 text-right font-semibold">Votes</th>
           </tr>
         </thead>
@@ -197,8 +194,8 @@ function VersionSummary({ version }: { version: HistoryVersion }) {
             .sort((a, b) => b.votes - a.votes)
             .map((v) => (
               <tr key={v.candidate_id} className="border-b border-border last:border-0">
-                <td className="py-2 pr-4 font-semibold">{v.name}</td>
-                <td className="py-2 pr-4 text-subtle-foreground">{v.party_acronym}</td>
+                <td className="py-2 pr-4 font-semibold">{v.party_abbreviation}</td>
+                <td className="py-2 pr-4 text-subtle-foreground">{v.name}</td>
                 <td className="py-2 text-right tabular-nums">{formatNumber(v.votes)}</td>
               </tr>
             ))}
@@ -213,17 +210,7 @@ function VersionSummary({ version }: { version: HistoryVersion }) {
   );
 }
 
-function ReviewActions({
-  version,
-  contestId,
-  pollingUnitId,
-  onDone,
-}: {
-  version: HistoryVersion;
-  contestId: string;
-  pollingUnitId: string;
-  onDone: () => void;
-}) {
+function ReviewActions({ version, onDone }: { version: HistoryVersion; onDone: () => void }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [reason, setReason] = useState("");
@@ -233,6 +220,8 @@ function ReviewActions({
   const activeFlags = version.flags.filter(
     (f) => f.status === "OPEN" || f.status === "ACKNOWLEDGED",
   );
+  // A result is verified against its sheet, so there is nothing to verify until it is in.
+  const sheetIn = version.completion === "COMPLETE";
 
   const decide = useMutation({
     mutationFn: (decision: "APPROVED" | "REJECTED") =>
@@ -242,7 +231,7 @@ function ReviewActions({
         acknowledge_flags: decision === "APPROVED" ? acknowledge : undefined,
       }),
     onSuccess: (_result, decision) => {
-      toast(decision === "APPROVED" ? toastVerb.approve : toastVerb.reject);
+      toast(decision === "APPROVED" ? toastVerb.verify : toastVerb.reject);
       void queryClient.invalidateQueries({ queryKey: ["results"] });
       void queryClient.invalidateQueries({ queryKey: ["review-queue"] });
       void queryClient.invalidateQueries({ queryKey: ["dash"] });
@@ -251,12 +240,15 @@ function ReviewActions({
     },
     onError: (e) => setError(e instanceof ApiError ? e.detail : "Could not record the decision."),
   });
-  void contestId;
-  void pollingUnitId;
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border border-border bg-canvas p-4">
-      <h3 className="text-h3">Review this result</h3>
+      <h3 className="text-h3">Verify this result</h3>
+      <p className="text-body-sm text-subtle-foreground">
+        {sheetIn
+          ? "Compare every number with the result sheet before you verify it."
+          : "The agent has not attached the result sheet yet. You can reject the result now, or verify it once the sheet is in."}
+      </p>
       {activeFlags.length > 0 ? (
         <label className="flex cursor-pointer items-start gap-3 text-body-sm">
           <Checkbox.Root
@@ -270,7 +262,7 @@ function ReviewActions({
           </Checkbox.Root>
           <span>
             I have looked at the {activeFlags.length} open{" "}
-            {activeFlags.length === 1 ? "flag" : "flags"} on this result and still approve it.
+            {activeFlags.length === 1 ? "flag" : "flags"} on this result and it matches the sheet.
           </span>
         </label>
       ) : null}
@@ -300,10 +292,10 @@ function ReviewActions({
             <Button
               leading={<Check className="h-4 w-4" aria-hidden />}
               loading={decide.isPending}
-              disabled={activeFlags.length > 0 && !acknowledge}
+              disabled={!sheetIn || (activeFlags.length > 0 && !acknowledge)}
               onClick={() => decide.mutate("APPROVED")}
             >
-              Approve result
+              Verify result
             </Button>
             <Button variant="outline" onClick={() => setMode("reject")}>
               Reject result

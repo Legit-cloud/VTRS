@@ -16,6 +16,8 @@ export interface RequestOptions {
   /** Skip the bearer token (login, OTP, invitation acceptance). */
   anonymous?: boolean;
   headers?: Record<string, string>;
+  /** Error statuses whose JSON body is a normal reply for this call (e.g. a refused submission). */
+  acceptStatuses?: number[];
 }
 
 export interface Reply<T> {
@@ -66,11 +68,11 @@ export class ApiClient {
       const token = await this.refresh();
       if (token) {
         const retry = await this.send(method, path, opts, true);
-        return this.finish<T>(retry);
+        return this.finish<T>(retry, opts.acceptStatuses);
       }
       this.options.onSessionExpired?.();
     }
-    return this.finish<T>(first);
+    return this.finish<T>(first, opts.acceptStatuses);
   }
 
   get<T>(path: string, opts?: RequestOptions): Promise<T> {
@@ -144,8 +146,10 @@ export class ApiClient {
     }
   }
 
-  private async finish<T>(response: Response): Promise<Reply<T>> {
-    if (!response.ok) throw await problemFromResponse(response);
+  private async finish<T>(response: Response, accept: number[] = []): Promise<Reply<T>> {
+    if (!response.ok && !accept.includes(response.status)) {
+      throw await problemFromResponse(response);
+    }
     const etag = response.headers.get("ETag");
     if (response.status === 204) return { data: undefined as T, etag, status: 204 };
     try {

@@ -1,15 +1,12 @@
 import { payloadHash, type Json } from "./canonical";
 
-export type SheetField = "accredited" | "valid" | "rejected" | "total_cast";
-export const SHEET_FIELD_ORDER: readonly SheetField[] = [
-  "accredited",
-  "valid",
-  "rejected",
-  "total_cast",
-];
+/** The totals every result records, as the result sheet shows them. Valid votes are not
+ * entered: the server takes them as the sum of the party votes. */
+export type SheetField = "accredited" | "rejected" | "total_cast";
+export const SHEET_FIELD_ORDER: readonly SheetField[] = ["accredited", "total_cast", "rejected"];
 
 export type EvidenceKind = "EC8A" | "EC8B" | "EC8C";
-export type EvidenceMime = "image/jpeg" | "image/png" | "image/webp";
+export type EvidenceMime = "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
 
 export interface EvidenceManifest {
   evidence_id: string;
@@ -20,47 +17,49 @@ export interface EvidenceManifest {
 }
 
 export interface SubmissionDraft {
+  /** Made when the form opens and kept with the draft: a retry or double tap reuses it. */
   versionId: string;
-  contestId: string;
+  electionId: string;
   pollingUnitId: string;
   configVersion: number;
   parentVersionId: string | null;
-  totals: Partial<Record<SheetField, number>>;
-  votes: Array<{ candidateId: string; votes: number }>;
+  totals: Partial<Record<SheetField, number | null>>;
+  /** One line per party on the form; null means the agent left it blank. */
+  votes: Array<{ candidateId: string; votes: number | null }>;
   capturedAt: Date;
   gps: { lat: number; lng: number; accuracyM?: number | null } | null;
-  deviceId: string;
-  appVersion: string;
-  evidence: EvidenceManifest[];
 }
 
 /** Fixed-point string with six decimals, the precision the server stores. */
 export const coordinate = (value: number): string => value.toFixed(6);
 
+const isCount = (value: number | null | undefined): value is number =>
+  value !== null && value !== undefined && Number.isSafeInteger(value) && value >= 0;
+
 /**
- * Build the exact object that is sent and signed. Everything that could print differently on
- * the two sides (timestamps, coordinates) is already a string here.
+ * Build the exact object that is sent and hashed. Everything that could print differently on
+ * the two sides (timestamps, coordinates) is already a string here. Throws if any party or
+ * total is blank: zero is a number, blank is not.
  */
-export function buildSubmissionItem(
-  draft: SubmissionDraft,
-  sheetFields: readonly SheetField[],
-): { [key: string]: Json } {
+export function buildSubmission(draft: SubmissionDraft): { [key: string]: Json } {
   const totals: { [key: string]: Json } = {};
-  for (const field of sheetFields) {
+  for (const field of SHEET_FIELD_ORDER) {
     const value = draft.totals[field];
-    if (value === undefined || !Number.isSafeInteger(value) || value < 0) {
-      throw new Error(`Result field ${field} is missing.`);
-    }
+    if (!isCount(value)) throw new Error(`Result field ${field} is missing.`);
     totals[field] = value;
   }
+  const votes = draft.votes.map((v) => {
+    if (!isCount(v.votes)) throw new Error("Every party needs a number, 0 included.");
+    return { candidate_id: v.candidateId, votes: v.votes };
+  });
   const item: { [key: string]: Json } = {
     version_id: draft.versionId,
-    contest_id: draft.contestId,
+    election_id: draft.electionId,
     polling_unit_id: draft.pollingUnitId,
     config_version: draft.configVersion,
     parent_version_id: draft.parentVersionId,
     totals,
-    votes: draft.votes.map((v) => ({ candidate_id: v.candidateId, votes: v.votes })),
+    votes,
     device_captured_at: draft.capturedAt.toISOString(),
     gps: draft.gps
       ? {
@@ -69,9 +68,6 @@ export function buildSubmissionItem(
           ...(draft.gps.accuracyM != null ? { accuracy_m: draft.gps.accuracyM.toFixed(2) } : {}),
         }
       : null,
-    device_id: draft.deviceId,
-    app_version: draft.appVersion,
-    evidence: draft.evidence.map((e) => ({ ...e })),
   };
   return { ...item, payload_hash: payloadHash(item) };
 }

@@ -262,64 +262,6 @@ ${semanticNames.map((n) => `  --color-${n}: rgb(var(--${n}));`).join("\n")}
 }
 `;
 
-const mobileColors = (theme) =>
-  Object.fromEntries(Object.entries(theme).map(([k, ref]) => [k, resolve(ref)]));
-const camel = (s) => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-const camelKeys = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [camel(k), v]));
-const fontFor = (weight) => `${font.family}_${weight}`;
-
-const mobileTheme = `${HEADER.replace("/*", "//").replace(" */", "")}
-export const palette = ${JSON.stringify(
-  {
-    teal: color.teal,
-    ink: color.ink,
-    amber: color.amber,
-    red: color.red,
-    blue: color.blue,
-    series: color.series,
-    white: color.white,
-  },
-  null,
-  2,
-)} as const;
-
-export type ThemeColors = {
-${semanticNames.map((n) => `  ${camel(n)}: string;`).join("\n")}
-};
-
-export const light: ThemeColors = ${JSON.stringify(camelKeys(mobileColors(tokens.themes.light)), null, 2)};
-
-export const dark: ThemeColors = ${JSON.stringify(camelKeys(mobileColors(tokens.themes.dark)), null, 2)};
-
-export const fontFamily = {
-${font.weights.map((w) => `  ${w}: ${JSON.stringify(fontFor(w))},`).join("\n")}
-} as const;
-
-export const radius = ${JSON.stringify(radius.mobile)} as const;
-export const size = ${JSON.stringify(size.mobile)} as const;
-export const space = ${JSON.stringify(Object.fromEntries(tokens.space.map((n) => [n, n])))} as const;
-export const motion = ${JSON.stringify(motion)} as const;
-
-export const typography = {
-${Object.entries(tokens.type.mobile)
-  .map(
-    ([k, v]) =>
-      `  ${JSON.stringify(camel(k))}: { fontSize: ${v.size}, lineHeight: ${v.line}, fontFamily: ${JSON.stringify(
-        fontFor(v.weight),
-      )}, fontWeight: ${JSON.stringify(String(v.weight))}${
-        k === "numeral" ? ', fontVariant: ["tabular-nums"]' : ""
-      } },`,
-  )
-  .join("\n")}
-} as const;
-
-export const shadow = {
-  card: { shadowColor: "#0B2B27", shadowOpacity: 0.08, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
-  float: { shadowColor: "#0B2B27", shadowOpacity: 0.16, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
-  sheet: { shadowColor: "#0B2B27", shadowOpacity: 0.18, shadowRadius: 24, shadowOffset: { width: 0, height: -8 }, elevation: 12 },
-} as const;
-`;
-
 const write = (rel, content) => {
   const target = join(root, rel);
   mkdirSync(dirname(target), { recursive: true });
@@ -329,4 +271,3 @@ const write = (rel, content) => {
 write("tokens/globals.css", globalsCss);
 write("tokens/tailwind.preset.ts", tailwindPreset);
 write("tokens/tailwind-v4.css", tailwindV4);
-write("mobile/theme.ts", mobileTheme);

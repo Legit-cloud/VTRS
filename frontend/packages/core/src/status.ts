@@ -12,30 +12,48 @@ export interface StatusView {
   hint?: string;
 }
 
-// ---- sync (the phone's own state for a result) -------------------------------------------
+// ---- submission (where an agent's result is: phone, sending, numbers in, sheet in) -------
 
-export type SyncStatus = "PENDING" | "SYNCING" | "SYNCED" | "FAILED" | "REQUIRES_REVIEW";
+export type SubmissionPhase = "DRAFT" | "SENDING" | "NUMBERS_SUBMITTED" | "COMPLETE" | "NOT_SENT";
 
-export const SYNC_STATUS: Record<SyncStatus, StatusView> = {
-  PENDING: { label: "Waiting to send", tone: "ink", icon: "clock" },
-  SYNCING: { label: "Sending", tone: "blue", icon: "refresh-cw" },
-  SYNCED: { label: "Sent", tone: "teal", icon: "check-circle-2" },
-  FAILED: { label: "Not sent", tone: "red", icon: "alert-circle" },
-  REQUIRES_REVIEW: { label: "Needs review", tone: "amber", icon: "flag" },
+export const SUBMISSION_STATUS: Record<SubmissionPhase, StatusView> = {
+  DRAFT: { label: "Draft on this phone", tone: "ink", icon: "pencil" },
+  SENDING: { label: "Sending", tone: "blue", icon: "refresh-cw" },
+  NUMBERS_SUBMITTED: {
+    label: "Sheet missing",
+    tone: "amber",
+    icon: "file-clock",
+    hint: "Votes received. Add a photo or PDF of the result sheet to complete it.",
+  },
+  COMPLETE: { label: "Sheet uploaded", tone: "teal", icon: "check-circle-2" },
+  NOT_SENT: { label: "Not sent", tone: "red", icon: "alert-circle" },
 };
 
 // ---- review (the server's state for a result version) ------------------------------------
 
+/** Every result is unverified until a coordinator verifies it against its sheet. */
 export const REVIEW_STATE: Record<string, StatusView> = {
-  SUBMITTED: { label: "Submitted", tone: "ink", icon: "inbox" },
+  SUBMITTED: { label: "Unverified", tone: "ink", icon: "inbox" },
   REQUIRES_REVIEW: { label: "Needs review", tone: "amber", icon: "flag" },
-  IN_REVIEW: { label: "In review", tone: "blue", icon: "eye" },
-  APPROVED: { label: "Approved", tone: "teal", icon: "check-circle-2" },
+  APPROVED: { label: "Verified", tone: "teal", icon: "check-circle-2" },
   REJECTED: { label: "Rejected", tone: "red", icon: "x-circle" },
 };
 
 export const reviewState = (state: string): StatusView =>
   REVIEW_STATE[state] ?? { label: sentence(state), tone: "ink", icon: "circle" };
+
+// ---- leader status (war room) ------------------------------------------------------------
+
+/** A tie or a narrow lead is named as such, never as a plain leader. */
+export const LEADER_STATUS: Record<string, StatusView> = {
+  LEADING: { label: "Leading", tone: "teal", icon: "trending-up" },
+  NARROW: { label: "Narrow margin", tone: "amber", icon: "scale" },
+  TIED: { label: "Tied", tone: "amber", icon: "equal" },
+  NO_VOTES: { label: "No results yet", tone: "ink", icon: "circle-dashed" },
+};
+
+export const leaderStatus = (value: string): StatusView =>
+  LEADER_STATUS[value] ?? { label: sentence(value), tone: "ink", icon: "circle" };
 
 // ---- anomaly severity --------------------------------------------------------------------
 
@@ -68,8 +86,8 @@ export const flagStatus = (value: string): StatusView =>
 
 /** Plain titles for the rule codes the platform raises (see README, Anomalies). */
 export const RULE_TITLES: Record<string, string> = {
-  ARITHMETIC_VARIANCE: "Totals do not add up",
-  OVER_VOTING: "More votes than accredited or registered voters",
+  ARITHMETIC_VARIANCE: "Party votes and rejected do not reach total cast",
+  OVER_VOTING: "More accredited voters than registered",
   DUPLICATE_SOURCE: "Another source reported the same polling unit",
   VERSION_FORK: "Correction does not follow the previous version",
   UNASSIGNED_PU_ATTEMPT: "Submission from an agent not assigned to this unit",
@@ -78,18 +96,18 @@ export const RULE_TITLES: Record<string, string> = {
   GPS_MISSING: "No GPS position with the submission",
   GPS_OUT_OF_GEOFENCE: "Submitted away from the polling unit",
   GPS_LOW_ACCURACY: "Imprecise GPS position",
-  DEVICE_CLOCK_AHEAD: "Device clock is ahead of the server",
+  DEVICE_CLOCK_AHEAD: "Phone clock is ahead of the server",
   CAPTURED_BEFORE_POLLS_OPEN: "Captured before polls opened",
   CAPTURED_BEFORE_POLLS_CLOSE: "Captured before polls closed",
   TURNOUT_OUTLIER: "Turnout is unusual for neighbouring units",
   VOTE_SHARE_OUTLIER: "Vote share is unusual for neighbouring units",
   HIGH_REJECTED_RATE: "Unusually many rejected ballots",
-  UNANIMOUS_RESULT: "Every valid vote went to one candidate",
-  DUPLICATE_EVIDENCE: "Result-sheet photo matches another polling unit's",
+  UNANIMOUS_RESULT: "Every valid vote went to one party",
+  DUPLICATE_EVIDENCE: "Result sheet matches another polling unit's",
   EXIF_TIME_MISMATCH: "Photo time does not match the declared capture time",
   EXIF_GPS_MISMATCH: "Photo location is far from the polling unit",
-  MISSING_EVIDENCE: "No result-sheet photo after the waiting period",
-  EVIDENCE_QUARANTINED: "Result-sheet photo failed verification",
+  MISSING_EVIDENCE: "No result sheet after the waiting period",
+  EVIDENCE_QUARANTINED: "Result sheet failed verification",
 };
 
 export const ruleTitle = (code: string): string => RULE_TITLES[code] ?? sentence(code);
@@ -113,22 +131,23 @@ export type RoleCode =
 
 export const ROLE_LABEL: Record<RoleCode, string> = {
   PARTY_ADMIN: "Party admin",
-  LGA_OFFICER: "LGA officer",
-  WARD_OFFICER: "Ward officer",
+  LGA_OFFICER: "LGA coordinator",
+  WARD_OFFICER: "Ward coordinator",
   PU_AGENT: "Polling unit agent",
   PLATFORM_ADMIN: "Platform admin",
 };
 
-export const OFFICE_LABEL: Record<string, string> = {
-  PRESIDENTIAL: "Presidential",
-  GOVERNORSHIP: "Governorship",
-  SENATORIAL: "Senatorial",
-  HOUSE_OF_REPRESENTATIVES: "House of Representatives",
-  STATE_ASSEMBLY: "State Assembly",
-  LGA_CHAIRMAN: "LGA chairman",
-  COUNCILLOR: "Councillor",
-  OTHER: "Other",
+export const CONSTITUENCY_KIND_LABEL: Record<string, string> = {
+  STATE: "State",
+  SENATORIAL_DISTRICT: "Senatorial district",
+  FEDERAL_CONSTITUENCY: "Federal constituency",
+  STATE_CONSTITUENCY: "State constituency",
+  LGA: "LGA",
+  WARD: "Ward",
 };
+
+export const constituencyKind = (value: string): string =>
+  CONSTITUENCY_KIND_LABEL[value] ?? sentence(value);
 
 export const USER_STATUS: Record<string, StatusView> = {
   ACTIVE: { label: "Active", tone: "teal", icon: "check-circle-2" },

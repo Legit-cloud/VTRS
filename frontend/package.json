@@ -2,7 +2,7 @@
   "name": "vtrs-frontend",
   "private": true,
   "version": "1.0.0",
-  "description": "VTRS agent app and party portal",
+  "description": "VTRS web app (one role-based app for agents, coordinators and party leadership)",
   "workspaces": [
     "design-system",
     "packages/*",

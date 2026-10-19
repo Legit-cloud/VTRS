@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   };
   const upstream = await callBackend("/api/v1/auth/login", {
     method: "POST",
-    body: { identifier, password, client: "WEB" },
+    body: { identifier, password },
   });
   if (!upstream.ok) return relayProblem(upstream);
   const result = (await upstream.json()) as LoginResult;

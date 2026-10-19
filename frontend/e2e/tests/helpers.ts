@@ -5,6 +5,10 @@ export const ADMIN = {
   identifier: process.env.E2E_ADMIN_ID ?? "admin@demo.example",
   password: process.env.E2E_ADMIN_PASSWORD ?? "Demo-passphrase-2026",
 };
+export const AGENT = {
+  identifier: process.env.E2E_AGENT_ID ?? "agent@demo.example",
+  password: process.env.E2E_AGENT_PASSWORD ?? "Demo-passphrase-2026",
+};
 export const OFFICER = {
   identifier: process.env.E2E_OFFICER_ID ?? "ward@demo.example",
   password: process.env.E2E_OFFICER_PASSWORD ?? "Demo-passphrase-2026",

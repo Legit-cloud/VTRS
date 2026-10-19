@@ -4,18 +4,19 @@ import type {
   Analytics,
   Assignment,
   AuditEvent,
-  Candidate,
-  CandidateCreateRequest,
   ChallengeResponse,
-  Contest,
-  ContestCreateRequest,
-  ContestResults,
+  ConfigIssue,
+  Constituency,
+  Contestant,
+  ContestantCreateRequest,
   CoverageTimeline,
   DataQuality,
   Dashboard,
-  DeviceRegistration,
   Election,
   ElectionCreateRequest,
+  ElectionParty,
+  ElectionResults,
+  ElectionType,
   EvidenceState,
   EvidenceUploadEntry,
   ExportJob,
@@ -32,17 +33,21 @@ import type {
   Measure,
   Member,
   MyAssignment,
+  LogoUpload,
   Notification,
   Page,
+  Party,
+  PartyCreateRequest,
   PollingUnit,
   PuHistory,
   Readiness,
   ReconcileOutcome,
+  ResultForm,
   ReviewOutcome,
   ReviewQueueItem,
   ServerTime,
-  SubmissionResult,
-  SyncStatusResponse,
+  SubmissionOutcome,
+  SubmissionStatus,
   TokenPair,
   TotpConfirm,
   TotpSetup,
@@ -67,7 +72,7 @@ type Paging = {
   limit?: number;
 };
 
-/** Every endpoint the two clients use, grouped by what it is for. */
+/** Every endpoint the web app uses, grouped by what it is for. */
 export function createEndpoints(api: ApiClient) {
   const get = <T>(path: string, query?: Query, opts?: RequestOptions) =>
     api.get<T>(`${V1}${path}`, { ...opts, query });
@@ -78,15 +83,11 @@ export function createEndpoints(api: ApiClient) {
     time: () => get<ServerTime>("/time", undefined, { anonymous: true }),
 
     auth: {
-      login: (body: {
-        identifier: string;
-        password: string;
-        client?: "WEB" | "MOBILE";
-        device_id?: string | null;
-      }) => post<LoginResponse>("/auth/login", body, { anonymous: true }),
+      login: (body: { identifier: string; password: string }) =>
+        post<LoginResponse>("/auth/login", body, { anonymous: true }),
       loginMfa: (body: { mfa_token: string; code: string }) =>
         post<TokenPair>("/auth/login/mfa", body, { anonymous: true }),
-      refresh: (body: { refresh_token: string; device_id?: string | null }) =>
+      refresh: (body: { refresh_token: string }) =>
         post<TokenPair>("/auth/refresh", body, { anonymous: true }),
       logout: () => post<void>("/auth/logout"),
       acceptInvitation: (token: string) =>
@@ -96,7 +97,6 @@ export function createEndpoints(api: ApiClient) {
         challenge_id: string;
         code: string;
         password: string;
-        device?: DeviceRegistration | null;
       }) => post<TokenPair>("/auth/invitations/complete", body, { anonymous: true }),
       requestOtp: (body: { challenge_id: string; bot_token?: string }) =>
         post<ChallengeResponse>("/auth/otp/request", body, { anonymous: true }),
@@ -118,8 +118,7 @@ export function createEndpoints(api: ApiClient) {
 
     me: {
       get: () => get<Me>("/me"),
-      assignments: () => get<MyAssignment[] | Page<MyAssignment>>("/me/assignments"),
-      registerPushToken: (token: string) => api.put<void>(`${V1}/me/push-token`, { token }),
+      assignments: () => get<MyAssignment[]>("/me/assignments"),
       notifications: (query: { unread?: boolean } & Paging = {}) =>
         get<Page<Notification>>("/me/notifications", query),
       unreadCount: () => get<{ unread: number }>("/me/notifications/unread-count"),
@@ -127,13 +126,31 @@ export function createEndpoints(api: ApiClient) {
       markAllRead: () => post<{ marked: number }>("/me/notifications/read-all"),
     },
 
-    sync: {
-      submit: (items: unknown[], idempotencyKey?: string) =>
-        post<SubmissionResult>("/sync/submissions", { items }, { idempotencyKey }),
-      status: (ids: string[]) =>
-        get<{ items: SyncStatusResponse[] } | SyncStatusResponse[]>("/sync/status", {
-          ids: ids.join(","),
-        }),
+    agent: {
+      form: (electionId: string, pollingUnitId: string) =>
+        get<ResultForm>(`/elections/${electionId}/polling-units/${pollingUnitId}/form`),
+      /**
+       * One submission. The browser makes `version_id` when the form opens and keeps it, so a
+       * retry or a double tap is a replay, never a second result. Refusals come back as an
+       * outcome with `status: "FAILED"`, a `code` and a `detail`; they are not thrown.
+       */
+      submit: (item: unknown) =>
+        api
+          .request<SubmissionOutcome>("POST", `${V1}/submissions`, {
+            body: item,
+            idempotencyKey: (item as { version_id?: string }).version_id,
+            acceptStatuses: [400, 403, 404, 409],
+          })
+          .then((r) => r.data),
+      status: (versionId: string) => get<SubmissionStatus>(`/submissions/${versionId}`),
+      reportIssue: (
+        electionId: string,
+        body: {
+          polling_unit_id: string;
+          kind: "PARTY_MISSING" | "CONTESTANT_MISSING";
+          note: string;
+        },
+      ) => post<ConfigIssue>(`/elections/${electionId}/config-issues`, body),
     },
 
     evidence: {
@@ -141,7 +158,7 @@ export function createEndpoints(api: ApiClient) {
         evidence_id: string;
         version_id: string;
         kind: "EC8A" | "EC8B" | "EC8C";
-        mime: string;
+        mime: "image/jpeg" | "image/png" | "image/webp" | "application/pdf";
         size: number;
         sha256: string;
       }) => post<EvidenceUploadEntry>("/evidence/uploads", body),
@@ -163,36 +180,49 @@ export function createEndpoints(api: ApiClient) {
       analytics: (id: string) => get<Analytics>(`/elections/${id}/analytics`),
       readiness: (id: string) => get<Readiness>(`/elections/${id}/reconciliation`),
       reconcile: (id: string) => post<ReconcileOutcome>(`/elections/${id}/reconcile`),
-      contests: (id: string) => get<Page<Contest> | Contest[]>(`/elections/${id}/contests`),
-      createContest: (id: string, body: ContestCreateRequest) =>
-        post<Contest>(`/elections/${id}/contests`, body),
-    },
-
-    contests: {
-      get: (id: string) => api.request<Contest>("GET", `${V1}/contests/${id}`),
-      update: (id: string, body: Partial<ContestCreateRequest>, etag: string) =>
-        api.patch<Contest>(`${V1}/contests/${id}`, body, { ifMatch: etag }),
-      remove: (id: string, etag: string) =>
-        api.delete<void>(`${V1}/contests/${id}`, { ifMatch: etag }),
-      candidates: (id: string) => get<Page<Candidate> | Candidate[]>(`/contests/${id}/candidates`),
-      createCandidate: (id: string, body: CandidateCreateRequest) =>
-        post<Candidate>(`/contests/${id}/candidates`, body),
+      parties: (id: string) => get<ElectionParty[]>(`/elections/${id}/parties`),
+      setParties: (id: string, partyIds: string[]) =>
+        api.put<ElectionParty[]>(`${V1}/elections/${id}/parties`, { party_ids: partyIds }),
+      contestants: (id: string, constituencyId?: string) =>
+        get<Contestant[]>(`/elections/${id}/contestants`, { constituency_id: constituencyId }),
+      createContestant: (id: string, body: ContestantCreateRequest) =>
+        post<Contestant>(`/elections/${id}/contestants`, body),
+      issues: (id: string, query: { status?: "OPEN" | "RESOLVED" } & Paging = {}) =>
+        get<Page<ConfigIssue>>(`/elections/${id}/config-issues`, query),
       results: (
         id: string,
         query: { level?: Level; parent_id?: string | null; measure?: Measure } = {},
-      ) => get<ContestResults>(`/contests/${id}/results`, query),
+      ) => get<ElectionResults>(`/elections/${id}/results`, query),
       coverage: (id: string, query: { interval?: string; parent_id?: string | null } = {}) =>
-        get<CoverageTimeline>(`/contests/${id}/coverage-timeline`, query),
-      history: (contestId: string, pollingUnitId: string) =>
-        get<PuHistory>(`/contests/${contestId}/polling-units/${pollingUnitId}/history`),
+        get<CoverageTimeline>(`/elections/${id}/coverage-timeline`, query),
+      history: (electionId: string, pollingUnitId: string) =>
+        get<PuHistory>(`/elections/${electionId}/polling-units/${pollingUnitId}/history`),
     },
 
-    candidates: {
-      get: (id: string) => api.request<Candidate>("GET", `${V1}/candidates/${id}`),
-      update: (id: string, body: Partial<CandidateCreateRequest>, etag: string) =>
-        api.patch<Candidate>(`${V1}/candidates/${id}`, body, { ifMatch: etag }),
-      remove: (id: string, etag: string) =>
-        api.delete<void>(`${V1}/candidates/${id}`, { ifMatch: etag }),
+    contestants: {
+      get: (id: string) => api.request<Contestant>("GET", `${V1}/contestants/${id}`),
+      rename: (id: string, name: string, etag: string) =>
+        api.patch<Contestant>(`${V1}/contestants/${id}`, { name }, { ifMatch: etag }),
+      remove: (id: string) => api.delete<void>(`${V1}/contestants/${id}`),
+    },
+
+    configIssues: {
+      resolve: (id: string, note: string) =>
+        post<ConfigIssue>(`/config-issues/${id}/resolve`, { note }),
+    },
+
+    parties: {
+      list: () => get<Party[]>("/parties"),
+      get: (id: string) => api.request<Party>("GET", `${V1}/parties/${id}`),
+      create: (body: PartyCreateRequest) => post<Party>("/parties", body),
+      update: (id: string, body: Partial<PartyCreateRequest>, etag: string) =>
+        api.patch<Party>(`${V1}/parties/${id}`, body, { ifMatch: etag }),
+      remove: (id: string) => api.delete<void>(`${V1}/parties/${id}`),
+      requestLogo: (id: string, body: { mime: string; size: number; sha256: string }) =>
+        post<LogoUpload>(`/parties/${id}/logo`, body),
+      completeLogo: (id: string, body: { mime: string; sha256: string }) =>
+        post<Party>(`/parties/${id}/logo/complete`, body),
+      removeLogo: (id: string) => api.delete<Party>(`${V1}/parties/${id}/logo`),
     },
 
     dashboard: (electionId: string, measure?: Measure) =>
@@ -202,7 +232,6 @@ export function createEndpoints(api: ApiClient) {
       queue: (
         electionId: string,
         query: {
-          contest_id?: string;
           ward_id?: string;
           lga_id?: string;
           flagged?: boolean;
@@ -246,8 +275,6 @@ export function createEndpoints(api: ApiClient) {
         id: string,
         body: { role: string; scope_ids?: string[]; granted_permissions?: string[] },
       ) => api.put<Member>(`${V1}/users/${id}/membership`, body),
-      revokeDevice: (userId: string, deviceId: string) =>
-        post<unknown>(`/users/${userId}/devices/${deviceId}/revoke`),
       invitations: (query: Paging = {}) => get<Page<Invitation>>("/invitations", query),
       invite: (body: {
         role: string;
@@ -280,6 +307,9 @@ export function createEndpoints(api: ApiClient) {
       /** `ids` is a comma-separated list of polling unit ids (up to 100). */
       pollingUnits: (query: { ward?: string; lga?: string; ids?: string } & Paging = {}) =>
         get<Page<PollingUnit>>("/geography/polling-units", query),
+      electionTypes: () => get<ElectionType[]>("/geography/election-types"),
+      constituencies: (query: { kind?: string; state?: string; search?: string } & Paging = {}) =>
+        get<Page<Constituency>>("/geography/constituencies", query),
     },
 
     exports: {

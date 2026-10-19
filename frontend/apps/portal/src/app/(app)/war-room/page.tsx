@@ -1,15 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import {
-  formatNumber,
-  formatPercent,
-  formatTime,
-  type AreaResult,
-  type Candidate,
-  type ContestSummary,
-  type Measure,
-} from "@vtrs/core";
+import { formatNumber, formatPercent, formatTime, type AreaResult, type Measure } from "@vtrs/core";
 import { Gauge } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -18,50 +10,51 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, Skeleton } from "@/components/ui/card";
 import { EmptyState, QueryError } from "@/components/ui/feedback";
 import { AnomalyCard } from "@/components/vtrs/anomaly-card";
-import { CandidateBars, type BarRow } from "@/components/vtrs/candidate-bar";
+import { areaColumns } from "@/components/vtrs/area-table";
+import {
+  ContestantBars,
+  LeaderChip,
+  toContestantRows,
+} from "@/components/vtrs/contestant-bar";
 import { CoverageChart, CoverageGrid, coverageStyle } from "@/components/vtrs/coverage";
+import { DataTable } from "@/components/vtrs/data-table";
 import { LiveIndicator } from "@/components/vtrs/live-indicator";
+import { MeasureToggle } from "@/components/vtrs/measure-toggle";
 import { PageHeader } from "@/components/vtrs/page-header";
 import { ProvisionalBadge } from "@/components/vtrs/provisional";
 import { StatTile } from "@/components/vtrs/stat-tile";
 import { ep } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { cn } from "@/lib/cn";
 import { useElection } from "@/lib/election";
 import { useLiveUpdates } from "@/lib/live";
 import { NEXT_LEVEL, startView } from "@/lib/scope-level";
-
-function useDashboard(electionId: string | undefined, measure: Measure | undefined) {
-  return useQuery({
-    queryKey: ["dash", electionId, measure ?? "default"],
-    enabled: !!electionId,
-    queryFn: () => ep.dashboard(electionId!, measure),
-  });
-}
 
 export default function WarRoomPage() {
   const { me, can } = useAuth();
   const router = useRouter();
   const { election, loading: electionLoading } = useElection();
   const [measure, setMeasure] = useState<Measure | undefined>(undefined);
-  const [contestId, setContestId] = useState<string | null>(null);
 
   const live = useLiveUpdates(
     election?.id ?? null,
     election?.status === "LIVE" || election?.status === "CLOSED",
   );
-  const dashboard = useDashboard(election?.id, measure);
-
-  const contests = useMemo(() => dashboard.data?.contests ?? [], [dashboard.data]);
-  const contest: ContestSummary | undefined =
-    contests.find((c) => c.contest_id === contestId) ?? contests[0];
+  const dashboard = useQuery({
+    queryKey: ["dash", election?.id, measure ?? "default"],
+    enabled: !!election,
+    queryFn: () => ep.dashboard(election!.id, measure),
+  });
+  // The election's count policy picks the default; the toggle overrides it. The API names the
+  // measure in capitals (REPORTED); queries and the toggle use lower case.
+  const effectiveMeasure =
+    (dashboard.data?.measure?.toLowerCase() as Measure | undefined) ?? measure;
 
   const start = startView(me?.scope);
   const childLevel = start?.level ?? null;
-  // Where a tile leads: the next level down, or the polling units of the ward you are in.
+  // Where a row leads: the next level down, or the polling units of the ward you are in.
   const openArea = (row: { area_id: string; area_name: string }) => {
     const next = childLevel ? NEXT_LEVEL[childLevel] : null;
-    const q = new URLSearchParams({ contest: contest!.contest_id });
+    const q = new URLSearchParams();
     if (next) {
       q.set("level", next);
       q.set("parent", row.area_id);
@@ -72,13 +65,12 @@ export default function WarRoomPage() {
     }
     return `/results?${q.toString()}`;
   };
-  const effectiveMeasure = (dashboard.data?.measure as Measure | undefined) ?? measure;
 
   const areas = useQuery({
-    queryKey: ["results", contest?.contest_id, childLevel, start?.parent, effectiveMeasure],
-    enabled: !!contest && !!childLevel,
+    queryKey: ["results", election?.id, childLevel, start?.parent, effectiveMeasure],
+    enabled: !!election && !!childLevel && !!dashboard.data,
     queryFn: () =>
-      ep.contests.results(contest!.contest_id, {
+      ep.elections.results(election!.id, {
         level: childLevel!,
         parent_id: start?.parent,
         measure: effectiveMeasure,
@@ -86,9 +78,9 @@ export default function WarRoomPage() {
   });
 
   const timeline = useQuery({
-    queryKey: ["dash", "coverage", contest?.contest_id],
-    enabled: !!contest,
-    queryFn: () => ep.contests.coverage(contest!.contest_id, { interval: "hour" }),
+    queryKey: ["dash", "coverage", election?.id],
+    enabled: !!election,
+    queryFn: () => ep.elections.coverage(election!.id, { interval: "hour" }),
   });
 
   const flags = useQuery({
@@ -97,30 +89,12 @@ export default function WarRoomPage() {
     queryFn: async () => (await ep.flags.list(election!.id, { status: "OPEN", limit: 6 })).results,
   });
 
-  const candidates = useQuery({
-    queryKey: ["candidates", contest?.contest_id],
-    enabled: !!contest,
-    retry: false,
-    queryFn: async (): Promise<Candidate[]> => {
-      const data = await ep.contests.candidates(contest!.contest_id);
-      return Array.isArray(data) ? data : data.results;
-    },
-  });
-
-  const bars: BarRow[] = useMemo(() => {
-    if (!contest) return [];
-    const own = new Set((candidates.data ?? []).filter((c) => c.is_own_party).map((c) => c.id));
-    return [...contest.votes]
-      .sort((a, b) => b.votes - a.votes)
-      .map((v) => ({
-        id: v.candidate_id,
-        name: v.name,
-        party: v.party_acronym,
-        votes: v.votes,
-        own: own.has(v.candidate_id),
-        leader: contest.position.leader_id === v.candidate_id && !contest.position.is_tie,
-      }));
-  }, [contest, candidates.data]);
+  const parties = useMemo(() => dashboard.data?.parties ?? [], [dashboard.data]);
+  const summary = dashboard.data?.summary;
+  const rows = useMemo(
+    () => (summary ? toContestantRows(summary.votes, parties) : []),
+    [summary, parties],
+  );
 
   if (electionLoading) return <WarRoomSkeleton />;
 
@@ -144,20 +118,19 @@ export default function WarRoomPage() {
     );
   }
 
-  const leader = contest?.votes.find((v) => v.candidate_id === contest.position.leader_id);
-  const asOf = contest?.updated_at ? new Date(contest.updated_at).getTime() : null;
+  const position = summary?.position;
+  const asOf = summary?.updated_at ? new Date(summary.updated_at).getTime() : null;
   const stale = live.state !== "live" && live.state !== "off";
-
-  const ledger = [...(areas.data?.rows ?? [])].sort((a, b) => a.reported_pct - b.reported_pct);
+  const areaRows = areas.data?.rows ?? [];
+  const ledger = [...areaRows].sort((a, b) => a.reported_pct - b.reported_pct);
+  const own = parties.find((p) => p.is_own);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-5 py-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <h1 className="truncate text-h2">{election.name}</h1>
-          {contest ? (
-            <span className="text-body text-subtle-foreground">{contest.title}</span>
-          ) : null}
+          <span className="text-body text-subtle-foreground">{election.election_type_name}</span>
           <LiveIndicator state={live.state} asOf={asOf} />
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -167,30 +140,7 @@ export default function WarRoomPage() {
               as of {formatTime(asOf)}
             </span>
           ) : null}
-          {dashboard.data?.review_enabled ? (
-            <div
-              role="group"
-              aria-label="Count"
-              className="inline-flex rounded-md border border-border p-0.5"
-            >
-              {(["reported", "verified"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setMeasure(m)}
-                  aria-pressed={effectiveMeasure === m}
-                  className={cn(
-                    "h-7 rounded-sm px-3 text-label font-semibold capitalize",
-                    effectiveMeasure === m
-                      ? "bg-primary text-primary-foreground"
-                      : "text-strong-foreground hover:bg-muted",
-                  )}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <MeasureToggle value={effectiveMeasure} onChange={setMeasure} />
         </div>
       </div>
 
@@ -208,38 +158,17 @@ export default function WarRoomPage() {
         <QueryError error={dashboard.error} onRetry={() => void dashboard.refetch()} />
       ) : null}
 
-      {contests.length > 1 ? (
-        <div role="tablist" aria-label="Contest" className="flex flex-wrap gap-2">
-          {contests.map((c) => (
-            <button
-              key={c.contest_id}
-              role="tab"
-              aria-selected={c.contest_id === contest?.contest_id}
-              onClick={() => setContestId(c.contest_id)}
-              className={cn(
-                "h-control-dense rounded-full border px-4 text-label font-semibold",
-                c.contest_id === contest?.contest_id
-                  ? "border-primary bg-primary-soft text-primary-soft-foreground"
-                  : "border-border bg-card text-strong-foreground hover:bg-muted",
-              )}
-            >
-              {c.title}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
       {dashboard.isLoading ? <WarRoomSkeleton /> : null}
 
-      {!dashboard.isLoading && !contest ? (
+      {!dashboard.isLoading && dashboard.data && parties.length === 0 ? (
         <EmptyState
           icon={<Gauge className="h-8 w-8" aria-hidden />}
-          title="No contests in this election"
-          description="Results appear here once a contest is added and the election goes live."
+          title="No contesting parties yet"
+          description="Results appear here once the parties and their candidates are set up and the election goes live."
         />
       ) : null}
 
-      {contest ? (
+      {summary && position && parties.length > 0 ? (
         <>
           <section
             aria-label="Headline figures"
@@ -247,32 +176,38 @@ export default function WarRoomPage() {
           >
             <StatTile
               emphasized
-              value={formatPercent(contest.reported_pct)}
+              value={formatPercent(summary.reported_pct)}
               label="Polling units reported"
-              detail={`${formatNumber(contest.reported_pus)} of ${formatNumber(contest.expected_pus)}`}
-              progress={contest.reported_pct}
+              detail={`${formatNumber(summary.reported_pus)} of ${formatNumber(summary.expected_pus)} · ${formatNumber(summary.verified_pus)} verified`}
+              progress={summary.reported_pct}
             />
             <StatTile
-              value={contest.position.is_tie ? "Tied" : leader ? leader.name : "No results yet"}
+              value={<LeaderChip position={position} parties={parties} className="text-body" />}
               label="Leading"
               detail={
-                leader ? `${leader.party_acronym} · ${formatNumber(leader.votes)} votes` : undefined
-              }
-              badge={leader || contest.position.is_tie ? <ProvisionalBadge /> : undefined}
-              className="[&_.text-numeral]:text-h1 [&_.text-numeral]:leading-tight"
-            />
-            <StatTile
-              value={contest.position.margin > 0 ? formatNumber(contest.position.margin) : "–"}
-              label="Margin in votes"
-              detail={
-                contest.position.margin_pct != null && contest.position.margin > 0
-                  ? `${formatPercent(contest.position.margin_pct)} of votes counted`
+                position.status === "LEADING" || position.status === "NARROW"
+                  ? `${formatNumber(position.total_votes)} votes counted`
                   : undefined
               }
-              badge={contest.position.margin > 0 ? <ProvisionalBadge /> : undefined}
+              badge={position.status !== "NO_VOTES" ? <ProvisionalBadge /> : undefined}
             />
             <StatTile
-              value={formatNumber(contest.open_flags)}
+              value={
+                position.status === "LEADING" || position.status === "NARROW"
+                  ? formatNumber(position.margin)
+                  : "–"
+              }
+              label="Margin in votes"
+              detail={
+                own && position.own_margin != null
+                  ? `${own.abbreviation} ${position.own_margin >= 0 ? "ahead by" : "behind by"} ${formatNumber(Math.abs(position.own_margin))}`
+                  : position.margin_pct != null && position.margin > 0
+                    ? `${formatPercent(position.margin_pct)} of votes counted`
+                    : undefined
+              }
+            />
+            <StatTile
+              value={formatNumber(summary.open_flags)}
               label="Open anomalies"
               detail={
                 can("anomalies.view") ? (
@@ -284,37 +219,24 @@ export default function WarRoomPage() {
             />
           </section>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-            <Card className="xl:col-span-8">
+          <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-12">
+            <Card className="xl:col-span-7">
               <CardHeader
-                title={
-                  childLevel === "lga"
-                    ? "Coverage by LGA"
-                    : childLevel === "ward"
-                      ? "Coverage by ward"
-                      : "Coverage by polling unit"
-                }
-                description="Share of polling units that have reported. Select an area to open it."
+                title="Contestants side by side"
+                description={`${formatNumber(position.total_votes)} valid votes counted so far, ${effectiveMeasure === "verified" ? "verified results only" : "all results"}`}
               />
               <div className="p-5 pt-2">
-                {areas.isLoading ? (
-                  <Skeleton className="h-64" />
-                ) : areas.isError ? (
-                  <QueryError error={areas.error} onRetry={() => void areas.refetch()} />
-                ) : childLevel ? (
-                  <CoverageGrid
-                    rows={areas.data?.rows ?? []}
-                    onSelect={(row: AreaResult) => router.push(openArea(row))}
-                  />
-                ) : (
+                {rows.length === 0 ? (
                   <p className="text-body text-subtle-foreground">
-                    Your account covers individual polling units. Open Results to see them.
+                    Votes appear as results are reported.
                   </p>
+                ) : (
+                  <ContestantBars rows={rows} position={position} />
                 )}
               </div>
             </Card>
 
-            <Card className="xl:col-span-4">
+            <Card className="xl:col-span-5">
               <CardHeader
                 title="New anomalies"
                 actions={
@@ -339,20 +261,61 @@ export default function WarRoomPage() {
             </Card>
           </div>
 
+          {childLevel ? (
+            <Card>
+              <CardHeader
+                title={
+                  childLevel === "lga"
+                    ? "By LGA"
+                    : childLevel === "ward"
+                      ? "By ward"
+                      : "By polling unit"
+                }
+                description="Each area's votes per party and who leads it. The bar shows the leader's colour; ties and narrow margins are named."
+              />
+              <div className="p-5 pt-2">
+                {areas.isLoading ? (
+                  <Skeleton className="h-64" />
+                ) : areas.isError ? (
+                  <QueryError error={areas.error} onRetry={() => void areas.refetch()} />
+                ) : (
+                  <DataTable<AreaResult>
+                    caption="Results by area"
+                    columns={areaColumns(childLevel, parties)}
+                    rows={areaRows}
+                    rowKey={(r) => r.area_id}
+                    onRowClick={(r) => router.push(openArea(r))}
+                    initialSort={{ key: "name", dir: "asc" }}
+                    empty="No areas in your scope yet."
+                  />
+                )}
+              </div>
+            </Card>
+          ) : (
+            <Card>
+              <div className="p-5">
+                <p className="text-body text-subtle-foreground">
+                  Your account covers individual polling units. Open Results to see them.
+                </p>
+              </div>
+            </Card>
+          )}
+
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader
-                title="Candidate results"
-                description={`${formatNumber(contest.position.total_votes)} valid votes counted so far`}
+                title="Coverage"
+                description="Share of polling units that have reported. Select an area to open it."
               />
               <div className="p-5 pt-2">
-                {bars.length === 0 ? (
-                  <p className="text-body text-subtle-foreground">
-                    Votes appear as results are reported.
-                  </p>
-                ) : (
-                  <CandidateBars rows={bars} />
-                )}
+                {areas.isLoading ? (
+                  <Skeleton className="h-64" />
+                ) : childLevel ? (
+                  <CoverageGrid
+                    rows={areaRows}
+                    onSelect={(row: AreaResult) => router.push(openArea(row))}
+                  />
+                ) : null}
               </div>
             </Card>
             <Card>
@@ -363,7 +326,7 @@ export default function WarRoomPage() {
               <div className="p-5 pt-2">
                 <CoverageChart
                   points={timeline.data?.points ?? []}
-                  expected={timeline.data?.expected_pus ?? contest.expected_pus}
+                  expected={timeline.data?.expected_pus ?? summary.expected_pus}
                 />
               </div>
             </Card>
@@ -390,6 +353,7 @@ export default function WarRoomPage() {
                             {formatNumber(row.reported_pus)} of {formatNumber(row.expected_pus)}
                           </span>
                         </span>
+                        <LeaderChip position={row.position} parties={parties} />
                         <span className="text-caption text-subtle-foreground">
                           {style.label}
                           {row.open_flags > 0

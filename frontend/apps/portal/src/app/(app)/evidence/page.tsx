@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ApiError, reviewState, type AreaResult } from "@vtrs/core";
+import { ApiError, reviewState, SUBMISSION_STATUS, type AreaResult } from "@vtrs/core";
 import { FileSearch, PackageOpen } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,26 +14,22 @@ import { EvidenceCard } from "@/components/vtrs/evidence-card";
 import { PageHeader } from "@/components/vtrs/page-header";
 import { ep } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useContests, useElection } from "@/lib/election";
+import { useElection } from "@/lib/election";
 import { useElectionLgas } from "@/lib/geo-names";
 import { useStepUp } from "@/lib/step-up";
 
 /**
- * There is no flat list of photos on the API: evidence belongs to a result version. So this page
- * works the way a reviewer does: pick a ward, see its polling units, open one to see its photos.
+ * There is no flat list of sheets on the API: evidence belongs to a result version. So this page
+ * works the way a reviewer does: pick a ward, see its polling units, open one to see its sheet.
  */
 export default function EvidencePage() {
   const { election } = useElection();
   const { can } = useAuth();
-  const contests = useContests(election?.id);
   const toast = useToast();
   const stepUp = useStepUp();
   const [lgaId, setLgaId] = useState("");
   const [wardId, setWardId] = useState("");
-  const [contestId, setContestId] = useState("");
   const [openUnit, setOpenUnit] = useState<string | null>(null);
-
-  const activeContest = contestId || contests.data?.[0]?.id || "";
 
   const { lgas } = useElectionLgas();
   const wards = useQuery({
@@ -43,9 +39,9 @@ export default function EvidencePage() {
     staleTime: 10 * 60_000,
   });
   const units = useQuery({
-    queryKey: ["results", activeContest, "pu", wardId, "evidence"],
-    enabled: !!activeContest && !!wardId,
-    queryFn: () => ep.contests.results(activeContest, { level: "pu", parent_id: wardId }),
+    queryKey: ["results", election?.id, "pu", wardId, "evidence"],
+    enabled: !!election && !!wardId,
+    queryFn: () => ep.elections.results(election!.id, { level: "pu", parent_id: wardId }),
   });
 
   const pack = useMutation({
@@ -69,7 +65,7 @@ export default function EvidencePage() {
         <EmptyState
           icon={<FileSearch className="h-8 w-8" aria-hidden />}
           title="No election yet"
-          description="Result-sheet photos appear here once agents start sending results."
+          description="Result sheets (photos or PDFs) appear here once agents start sending results."
         />
       </>
     );
@@ -79,7 +75,7 @@ export default function EvidencePage() {
     <>
       <PageHeader
         title="Evidence"
-        description="Result-sheet photos, each with its SHA-256 hash. Opening a photo is recorded in its chain of custody."
+        description="Result sheets (photo or PDF), each with its SHA-256 hash. Opening one is recorded in its chain of custody."
         actions={
           can("evidence.export") && wardId ? (
             <Button
@@ -95,19 +91,6 @@ export default function EvidencePage() {
       />
 
       <div className="mb-6 flex flex-wrap items-end gap-3">
-        {contests.data && contests.data.length > 1 ? (
-          <Field label="Contest" className="w-56">
-            {(p) => (
-              <Select {...p} value={activeContest} onChange={(e) => setContestId(e.target.value)}>
-                {contests.data!.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-        ) : null}
         <Field label="LGA" className="w-56">
           {(p) => (
             <Select
@@ -154,7 +137,7 @@ export default function EvidencePage() {
         <EmptyState
           icon={<FileSearch className="h-8 w-8" aria-hidden />}
           title="Choose a ward"
-          description="Pick an LGA and a ward to see its polling units and their result-sheet photos."
+          description="Pick an LGA and a ward to see its polling units and their result sheets."
         />
       ) : units.isLoading ? (
         <Skeleton className="h-64" />
@@ -164,7 +147,7 @@ export default function EvidencePage() {
         <EmptyState
           icon={<FileSearch className="h-8 w-8" aria-hidden />}
           title="No polling units here"
-          description="This ward has no polling units in the selected contest."
+          description="This ward has no polling units in this election."
         />
       ) : (
         <ul className="flex flex-col gap-3">
@@ -179,8 +162,19 @@ export default function EvidencePage() {
                 <span className="font-semibold">{row.area_name}</span>
                 <span className="mono text-caption text-subtle-foreground">{row.area_code}</span>
                 <span className="ml-auto">
-                  {row.status && row.status !== "NOT_REPORTED" ? (
-                    <StatusChip status={reviewState(row.status)} />
+                  {row.status && row.status !== "NO_RESULT" ? (
+                    <span className="flex flex-wrap gap-1">
+                      <StatusChip status={reviewState(row.status)} />
+                      {row.completion ? (
+                        <StatusChip
+                          status={
+                            SUBMISSION_STATUS[
+                              row.completion === "COMPLETE" ? "COMPLETE" : "NUMBERS_SUBMITTED"
+                            ]
+                          }
+                        />
+                      ) : null}
+                    </span>
                   ) : (
                     <span className="text-body-sm text-subtle-foreground">Not reported</span>
                   )}
@@ -188,7 +182,7 @@ export default function EvidencePage() {
               </button>
               {openUnit === row.area_id ? (
                 <UnitEvidence
-                  contestId={activeContest}
+                  electionId={election.id}
                   unitId={row.area_id}
                   canView={can("evidence.view")}
                 />
@@ -202,17 +196,17 @@ export default function EvidencePage() {
 }
 
 function UnitEvidence({
-  contestId,
+  electionId,
   unitId,
   canView,
 }: {
-  contestId: string;
+  electionId: string;
   unitId: string;
   canView: boolean;
 }) {
   const history = useQuery({
-    queryKey: ["results", "history", contestId, unitId],
-    queryFn: () => ep.contests.history(contestId, unitId),
+    queryKey: ["results", "history", electionId, unitId],
+    queryFn: () => ep.elections.history(electionId, unitId),
   });
   if (history.isLoading) return <Skeleton className="m-4 h-24" />;
   if (history.isError) {
@@ -227,9 +221,9 @@ function UnitEvidence({
   return (
     <div className="flex flex-col gap-3 border-t border-border p-4">
       {evidence.length === 0 ? (
-        <InlineAlert tone="warning" title="No photo received">
-          This result has no result-sheet photo yet. A flag is raised if none arrives within 30
-          minutes.
+        <InlineAlert tone="warning" title="No result sheet yet">
+          This result is not complete: its sheet has not been attached. A flag is raised if none
+          arrives within 30 minutes.
         </InlineAlert>
       ) : (
         evidence.map((e) => (

@@ -8,59 +8,62 @@ export const copy = {
   app: { name: "VTRS" },
   provisional: {
     label: "Provisional",
-    caption: "Based on results reported so far. Not the official declaration.",
+    caption: "Collected by our agents so far. Not the official INEC count.",
   },
-  offline: {
-    banner: "You're offline. Results are saved on this phone.",
-    backOnline: (count: number) =>
-      count > 0
-        ? `Back online. Sending ${count} ${count === 1 ? "result" : "results"}…`
-        : "Back online.",
+  connection: {
+    banner: "No connection. Your numbers are kept on this phone; we'll send them when you're back.",
+    backOnline: "Back online. Sending…",
   },
-  sent: { headline: "Result sent", toast: "Result sent" },
-  savedOffline: {
-    headline: "Saved on this phone",
-    body: "We'll send it as soon as you have a network. You can close the app.",
-    line: "Result saved on this phone. It will send when you're back online.",
+  received: {
+    headline: "Votes received",
+    body: "Now add a photo or PDF of the result sheet. Your result isn't complete without it.",
+    toast: "Votes received",
   },
-  failedSend: {
+  complete: { headline: "Result sheet uploaded", toast: "Sheet uploaded" },
+  notSent: {
     headline: "Not sent yet",
-    body: "Your result is safe on this phone. Check your network and try again.",
-    line: "Result not sent. Check your network, then tap Try again. Your result is safe on this phone.",
+    body: "Your numbers are kept on this phone. We're trying again; check your network.",
   },
-  needsReview: { headline: "Sent, needs review" },
+  needsReview: { headline: "Received, needs review" },
+  blankParty: (abbreviation: string) =>
+    `Enter ${abbreviation}'s votes. Use 0 if they got none.`,
+  missingParty:
+    "Is a party or candidate missing? Tell an admin. Don't add it to another party's votes.",
   emptyAnomalies: "No anomalies in your area. New flags appear here as results come in.",
   live: { paused: "Live updates paused. Reconnecting…", live: "Live" },
+  ownCollection: "Our agents' collection, not the official INEC count.",
 } as const;
 
-export function mismatchCandidates(sum: number, valid: number): string {
-  return `Candidate votes add up to ${formatNumber(sum)}, but valid votes is ${formatNumber(
-    valid,
-  )}. Check the result sheet.`;
+export function mismatchTotalCast(partyVotes: number, rejected: number, cast: number): string {
+  return `Party votes plus rejected (${formatNumber(
+    partyVotes + rejected,
+  )}) are more than total votes cast (${formatNumber(cast)}). Check the result sheet.`;
 }
 
-export function mismatchRejected(valid: number, rejected: number, cast: number): string {
-  return `Valid votes (${formatNumber(valid)}) plus rejected (${formatNumber(
-    rejected,
-  )}) is ${formatNumber(valid + rejected)}, but total cast is ${formatNumber(cast)}. Check the result sheet.`;
+export function shortfallTotalCast(partyVotes: number, rejected: number, cast: number): string {
+  return `Party votes plus rejected (${formatNumber(
+    partyVotes + rejected,
+  )}) are less than total votes cast (${formatNumber(
+    cast,
+  )}). If the sheet says so, send it: a coordinator will check it.`;
 }
 
 export function mismatchAccredited(cast: number, accredited: number): string {
-  return `${formatNumber(cast)} votes were cast, but only ${formatNumber(
+  return `Total votes cast (${formatNumber(cast)}) are more than accredited voters (${formatNumber(
     accredited,
-  )} voters were accredited. Check the result sheet.`;
+  )}). Check the result sheet.`;
 }
 
 export function wrongLocation(distance: string, ward: string, unit: string): string {
-  return `You're ${distance} from ${ward}, ${unit}. Move to your polling unit to submit.`;
+  return `You're ${distance} from ${ward}, ${unit}.`;
 }
 
-export function sentTo(ward: string, unit: string): string {
-  return `Your party can now see ${ward}, ${unit}.`;
+export function completeFor(ward: string, unit: string): string {
+  return `Your party can now see ${ward}, ${unit}, with its sheet.`;
 }
 
 export const toastVerb = {
-  approve: "Result approved",
+  verify: "Result verified",
   reject: "Result rejected",
   invite: "Invitation sent",
   revoke: "Invitation revoked",
@@ -69,4 +72,6 @@ export const toastVerb = {
   resolve: "Flag resolved",
   acknowledge: "Flag acknowledged",
   export: "Export requested",
+  partySaved: "Party saved",
+  issueResolved: "Issue resolved",
 } as const;

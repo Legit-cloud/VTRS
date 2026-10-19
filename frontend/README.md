@@ -1,18 +1,23 @@
 # VTRS frontend
 
-The party portal (Next.js) and the agent app (Expo), built on one design system and one typed
+One role-based web app (Next.js) for everyone: party leadership, LGA and ward coordinators,
+polling unit agents (in their phone's browser) and platform operators. What a person sees
+depends only on their role and assigned area. It is built on one design system and one typed
 API package. The API is the Django service in the repository root; its contract is
-`docs/openapi.yaml`.
+`docs/openapi.yaml`. Since the October 2026 product change there is no mobile app and no
+offline capture.
 
 ```
 frontend/
-  design-system/   tokens.json -> CSS variables, Tailwind preset, React Native theme
-  packages/core/   typed API client, offline-safe hashing, copy, status vocabulary, formatting
-  apps/portal/     Next.js 16: War Room, results, anomalies, agents, elections, evidence,
-                   reports, team, audit, settings; and, for platform operators, the
-                   platform admin surface under /platform
-  apps/mobile/     Expo: agent app (offline capture and sync)
-  e2e/             Playwright browser tests for the portal, with axe accessibility scans
+  design-system/   tokens.json -> CSS variables and Tailwind preset; DESIGN_SYSTEM.md is
+                   the written system (October 2026 revision)
+  packages/core/   typed API client, submission hashing, arithmetic checks, copy, status
+                   vocabulary, formatting
+  apps/portal/     Next.js 16, the one web app: result capture for agents (/capture); War
+                   Room, results and verification, anomalies, agents, elections and
+                   contestants, parties, evidence, reports, team, audit, settings; and, for
+                   platform operators, the platform admin surface under /platform
+  e2e/             Playwright browser tests (desktop and phone width), with axe scans
 ```
 
 ## Setup
@@ -41,6 +46,10 @@ route handlers; the access token is held in memory only. The live dashboard sock
 `NEXT_PUBLIC_WS_URL`, so that origin must be allowed by the API's `VTRS_CORS_ALLOWED_ORIGINS`
 (or its `ALLOWED_HOSTS` when that is empty).
 
+Agents upload result sheets straight to object storage with a presigned PUT, which is
+cross-origin: the bucket must allow PUT from the web app's origin. `python manage.py
+ensure_evidence_bucket` writes that rule from `VTRS_CORS_ALLOWED_ORIGINS`.
+
 ## Browser tests
 
 They run against a real API with real data, not mocks.
@@ -48,7 +57,7 @@ They run against a real API with real data, not mocks.
 ```sh
 # 1. dev stack up, migrated, with a located directory imported (docker compose up -d)
 # 2. a simulated election day, so there are results, flags and agents:
-VTRS_ALLOW_SIMULATION=1 python manage.py simulate_election_day --agents 60 --state SYN
+VTRS_ALLOW_SIMULATION=1 python manage.py simulate_election_day --agents 120
 # 3. workers must be running so rollups complete (celery worker and beat), then:
 python manage.py prepare_demo_logins
 # 4. portal built and started, then:
@@ -56,8 +65,11 @@ cd frontend/e2e && npx playwright install chromium && npm test
 ```
 
 Sign-in is throttled per address; run the API with relaxed throttle rates for a test run (the
-throttles themselves are covered by the backend suite). Each run enrols the admin's
-authenticator from scratch, so re-run `prepare_demo_logins` between runs.
+throttles themselves are covered by the backend suite), and with the second factor enforced
+(`VTRS_ENFORCE_MFA = True`; development turns it off), because the suite walks through
+enrolment. Each run enrols the admin's authenticator from scratch, so re-run
+`prepare_demo_logins` between runs. The phone-width project signs in as the demo agent
+(`agent@demo.example`), sends a result and uploads a generated sheet photo to the object store.
 
 ## Platform admin
 
@@ -89,63 +101,31 @@ message through the live provider; choosing and ordering providers is PB-07), an
 "acting as" mode that opens a party's pages (deliberately omitted: operators do not need
 results to run the platform).
 
-## Agent app
+## Agents, in the browser
 
-```sh
-cd frontend/apps/mobile
-EXPO_PUBLIC_API_URL=http://<host>:8000 npx expo start     # Expo Go or a development build
-```
+Agents get their own phone-first screens in the same app: an agent who signs in lands on
+`/capture` and cannot open anything else but Settings.
 
-The Android emulator reaches the host at `10.0.2.2` (the default). A real phone needs the
-machine's address or the staging URL. `EXPO_PUBLIC_SUPPORT_PHONE` sets the Help tab's call and
-WhatsApp buttons.
+1. **My polling units** lists each assignment with its state: not started, draft on this phone,
+   sheet missing, sheet uploaded, and the review state beside it (unverified, needs review,
+   verified, rejected with the coordinator's reason).
+2. **The result form** has one row per configured party in the admin's order (abbreviation,
+   logo, candidate) and the three totals. Zero is a number; blank is refused, naming the party.
+   The same arithmetic the server applies runs as the agent types. "Party or candidate
+   missing?" files a report for an admin.
+3. **Send.** The version id is made when the form opens and kept with the draft in local
+   storage, so a reload keeps the typed numbers and a retry is a replay. Location is asked for
+   once, at sending. Network failures, 429 and 5xx retry with backoff (2 s to 60 s, full jitter,
+   honouring Retry-After) while the page is open, and say so on screen.
+4. **Attach the sheet.** "Take a photo" opens the camera; "Choose a photo or PDF" opens the
+   picker. Photos are scaled to about 2,200 px on the long side and re-encoded as JPEG,
+   stepping quality down to about 2 MB; PDFs go as they are. The browser hashes the exact bytes,
+   gets a presigned PUT, uploads straight to storage, confirms, and shows "Uploaded".
+5. **Corrections** open the form prefilled from the current version and send a new version
+   that points at it; nothing is overwritten.
 
-How it works offline: a finished result and its photo are written to SQLite in one step, hashed
-and signed as they will be sent. A sync engine sends them in batches of ten under a stable
-idempotency key, backs off with jitter on failure, uploads each photo to its presigned URL once
-the server has the result, then confirms it. It runs on start, on return to the foreground, when
-the network comes back, after every save, and every minute while anything waits.
-
-Tests:
-
-```sh
-npm test --workspace @vtrs/mobile           # engine, outbox, capture rules (real SQL via node:sqlite)
-# against a running API, with a real agent on their registered device (see the file header):
-VTRS_LIVE_API=http://127.0.0.1:8000 VTRS_LIVE_AGENT='{...}' npx vitest run test/live.test.ts
-```
-
-The live test signs in on the device, sends a hashed result, uploads its photo to the object
-store, completes it, and replays it. It passed against the dev stack, so the contract holds.
-
-**Not yet exercised on a device or emulator** (none was available here): the camera, GPS and
-secure-store screens run on the native modules, and are covered only by the bundle build, type
-checks, and the layout preview in a browser. Do a pass on a low-end Android phone before pilot.
-
-Deliberately different from the written design:
-
-- **Sign-in is phone number and password**, not a code on every sign-in. That is what the API
-  does: an agent sets a password when accepting the invitation, and signs in from the device the
-  server bound them to. The code step happens once, at invitation.
-- **The device id is kept on sign-out.** The server created it; signing in again needs it.
-- **Photo is required** before a result can be sent. Without GPS a result still sends and is
-  flagged for an officer.
-
-**Push notifications** register the device's FCM token after sign-in and show alerts (a result
-sent back for correction) while the app is open; tapping one refreshes the Outbox. They need a
-build with Firebase configured (`google-services.json` through EAS) and `VTRS_FCM_SERVICE_ACCOUNT_JSON`
-on the API, and remote push does not work in Expo Go. iOS issues an APNs token the API's FCM
-sender cannot use, so iOS agents rely on the Outbox until the Firebase SDK is added.
-
-**Languages.** English and Yoruba, chosen on the welcome screen or in Help, remembered on the
-phone, defaulting to the phone's language. Every string is a key in `src/i18n/en.ts`; a missing
-Yoruba string falls back to English, and a test keeps the two in step (same keys, same
-placeholders). The Yoruba is a first translation: have a Yoruba speaker review it before the
-pilot. Hausa and Pidgin are an addition of one file each.
-
-Not built: the identity-check screens (PB-08). There is no backend for biometric verification
-and the feature is gated behind a legal and privacy decision; building a face-capture screen
-that collects data nothing can lawfully use yet would be worse than not having it. Dark theme
-switch.
+Not built: an installable app (PWA, on the spec's cut list). A real low-end Android phone pass
+is still worth doing before the pilot (the browser suite runs at Pixel 5 size in Chromium).
 
 ## Decisions worth knowing
 
@@ -156,8 +136,11 @@ switch.
 - **No map.** The directories carry names and counts, not boundaries, and there is no Mapbox
   token, so coverage is a tile grid (the design's sequential scale) rather than an inaccurate
   map. Add a map when boundary data exists.
-- **Evidence.** The API has no flat list of photos; evidence belongs to a result version. The
-  Evidence page works the way a reviewer does: ward, then polling unit, then its photos.
+- **Evidence.** The API has no flat list of sheets; evidence belongs to a result version. The
+  Evidence page works the way a reviewer does: ward, then polling unit, then its sheet.
+- **Verification.** Every result is unverified until a coordinator verifies it against its
+  sheet, which needs the sheet to be in. The War Room and Results switch between all results
+  and verified only; ties and narrow margins are named, never shown as a plain leader.
 - **Idempotency.** Every write carries an `Idempotency-Key`. Retries reuse it.
 - **Provisional.** Every leader and margin carries the Provisional badge; the words "winner",
   "won" and "declared" never appear.
@@ -165,6 +148,6 @@ switch.
 ## Not built yet
 
 - Bot challenge widget on public forms (vendor not chosen, PB-07).
-- Portal strings are English only; the agent app has Yoruba (copy is centralised in
-  `packages/core/src/copy.ts` for the portal).
+- Strings are English only (copy is centralised in `packages/core/src/copy.ts`). The Yoruba
+  translation went with the mobile app; it can be brought back for the capture screens.
 - Identity check (PB-08), real messaging-provider failover (PB-07).

@@ -1,90 +1,120 @@
 "use client";
 
-import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Candidate, Contest } from "@vtrs/core";
+import { useQuery } from "@tanstack/react-query";
+import type { Contestant, ElectionParty } from "@vtrs/core";
 import { useMemo } from "react";
 import { ep } from "@/lib/api";
 
-export interface ContestSetup {
-  contest: Contest;
-  candidates: Candidate[];
-  /** Why this contest is not ready, in words. Empty when it is. */
+export interface ConstituencySetup {
+  constituencyId: string;
+  constituencyName: string;
+  /** In the election's party order. */
+  contestants: Contestant[];
+  /** Why this constituency is not ready, in words. Empty when it is. */
   problems: string[];
-  hasOwnCandidate: boolean;
+  hasOwnContestant: boolean;
 }
 
 export interface Configuration {
   loading: boolean;
-  contests: ContestSetup[];
+  error: unknown;
+  /** Contesting parties in their fixed display order. */
+  parties: ElectionParty[];
+  constituencies: ConstituencySetup[];
   /** Mirrors the server's rules for marking an election ready or locking it. */
   blockers: string[];
   /** Worth fixing, but they do not stop anything. */
   advice: string[];
   ready: boolean;
-  candidateCount: number;
+  contestantCount: number;
 }
 
 /**
- * Contests and their candidates for one election, with the same completeness rules the server
- * applies when moving to Ready and Locked, so the screen can say what is missing before the
- * button is pressed rather than after it fails.
+ * The contesting parties and contestants of one election, with the same completeness rules the
+ * server applies when moving to Ready and Locked (`configuration_problems`), so the screen can
+ * say what is missing before the button is pressed rather than after it fails.
  */
 export function useConfiguration(electionId: string): Configuration {
-  const contests = useQuery({
-    queryKey: ["contests", electionId],
-    queryFn: async (): Promise<Contest[]> => {
-      const data = await ep.elections.contests(electionId);
-      return Array.isArray(data) ? data : data.results;
-    },
+  const parties = useQuery({
+    queryKey: ["election-parties", electionId],
+    queryFn: () => ep.elections.parties(electionId),
   });
-  const candidates = useQueries({
-    queries: (contests.data ?? []).map((c) => ({
-      queryKey: ["candidates", c.id],
-      queryFn: async (): Promise<Candidate[]> => {
-        const data = await ep.contests.candidates(c.id);
-        return Array.isArray(data) ? data : data.results;
-      },
-    })),
+  const contestants = useQuery({
+    queryKey: ["contestants", electionId],
+    queryFn: () => ep.elections.contestants(electionId),
   });
 
   return useMemo(() => {
-    const list = contests.data ?? [];
-    const loading = contests.isLoading || candidates.some((q) => q.isLoading);
-    const setups: ContestSetup[] = list.map((contest, i) => {
-      const people = candidates[i]?.data ?? [];
-      const problems: string[] = [];
-      if (people.length < 2) {
-        problems.push(
-          people.length === 0
-            ? `${contest.title} has no candidates yet. Add at least two.`
-            : `${contest.title} has one candidate. Add at least one more.`,
+    const ordered = [...(parties.data ?? [])].sort((a, b) => a.ballot_order - b.ballot_order);
+    const contesting = new Set(ordered.map((p) => p.party_id));
+    const own = ordered.find((p) => p.is_own);
+    const order = Object.fromEntries(ordered.map((p) => [p.party_id, p.ballot_order]));
+
+    const groups = new Map<string, ConstituencySetup>();
+    for (const c of contestants.data ?? []) {
+      let group = groups.get(c.constituency_id);
+      if (!group) {
+        group = {
+          constituencyId: c.constituency_id,
+          constituencyName: c.constituency_name,
+          contestants: [],
+          problems: [],
+          hasOwnContestant: false,
+        };
+        groups.set(c.constituency_id, group);
+      }
+      group.contestants.push(c);
+    }
+    const constituencies = [...groups.values()].sort((a, b) =>
+      a.constituencyName.localeCompare(b.constituencyName),
+    );
+    for (const group of constituencies) {
+      group.contestants.sort((a, b) => (order[a.party_id] ?? 999) - (order[b.party_id] ?? 999));
+      const n = group.contestants.length;
+      if (n < 2) {
+        group.problems.push(
+          `${group.constituencyName} has one contestant. Add another party's contestant.`,
         );
       }
-      if (people.filter((p) => p.is_own_party).length > 1) {
-        problems.push(`${contest.title} marks more than one candidate as yours. Keep one.`);
+      const stray = group.contestants.filter((c) => !contesting.has(c.party_id));
+      if (stray.length > 0) {
+        group.problems.push(
+          `${group.constituencyName}: ${stray.map((c) => c.name).join(", ")} ${
+            stray.length === 1 ? "stands" : "stand"
+          } for a party that is not contesting. Add the party or remove the contestant.`,
+        );
       }
-      return {
-        contest,
-        candidates: people,
-        problems,
-        hasOwnCandidate: people.some((p) => p.is_own_party),
-      };
-    });
-    const blockers = list.length === 0 ? ["Add the contest you are tracking."] : [];
-    blockers.push(...setups.flatMap((s) => s.problems));
-    const advice = setups
-      .filter((s) => s.candidates.length >= 2 && !s.hasOwnCandidate)
-      .map(
-        (s) =>
-          `Mark which ${s.contest.title} candidate is yours, so the dashboard can show how you are doing.`,
+      group.hasOwnContestant = !!own && group.contestants.some((c) => c.party_id === own.party_id);
+    }
+
+    const blockers: string[] = [];
+    if (ordered.length < 2) blockers.push("Choose at least two contesting parties.");
+    if (constituencies.length === 0) blockers.push("Add the contestants for a constituency.");
+    blockers.push(...constituencies.flatMap((g) => g.problems));
+
+    const advice: string[] = [];
+    if (ordered.length > 0 && !own) {
+      advice.push(
+        "Your own party is not among the contesting parties, so the War Room cannot show your margin.",
       );
+    } else if (own) {
+      for (const g of constituencies) {
+        if (g.contestants.length >= 2 && !g.hasOwnContestant) {
+          advice.push(`${g.constituencyName} has no ${own.abbreviation} contestant.`);
+        }
+      }
+    }
+
+    const loading = parties.isLoading || contestants.isLoading;
     return {
       loading,
-      contests: setups,
+      error: parties.error ?? contestants.error,
+      parties: ordered,
+      constituencies,
       blockers,
       advice,
       ready: !loading && blockers.length === 0,
-      candidateCount: setups.reduce((n, s) => n + s.candidates.length, 0),
+      contestantCount: (contestants.data ?? []).length,
     };
-  }, [contests.data, contests.isLoading, candidates]);
+  }, [parties.data, parties.isLoading, parties.error, contestants.data, contestants.isLoading, contestants.error]);
 }

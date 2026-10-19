@@ -2,95 +2,78 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  OFFICE_LABEL,
+  constituencyKind,
   electionStatus,
   formatDate,
   formatDateTime,
   formatNumber,
-  type Candidate,
-  type Contest,
+  toastVerb,
+  type ConfigIssue,
+  type Constituency,
+  type Contestant,
   type Election,
+  type ElectionParty,
 } from "@vtrs/core";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowRight,
-  BookOpenCheck,
+  ArrowUp,
   CheckCircle2,
   Circle,
+  Flag,
   Lock,
   Pencil,
   Plus,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, Skeleton } from "@/components/ui/card";
 import { StatusChip } from "@/components/ui/chip";
 import { ConfirmDialog, SidePanel } from "@/components/ui/dialog";
 import { InlineAlert, QueryError } from "@/components/ui/feedback";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { useToast } from "@/components/ui/toast";
 import {
   useConfiguration,
   type Configuration,
-  type ContestSetup,
+  type ConstituencySetup,
 } from "@/components/elections/use-configuration";
 import { StageTracker } from "@/components/elections/workflow";
+import { PartyMark } from "@/components/vtrs/contestant-bar";
 import { PageHeader } from "@/components/vtrs/page-header";
 import { ep } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useElection } from "@/lib/election";
 import { errorLines } from "@/lib/errors";
-import { useElectionLgas, useStates } from "@/lib/geo-names";
+import { useStates } from "@/lib/geo-names";
 import { useStepUp } from "@/lib/step-up";
 
-const OFFICES = Object.keys(OFFICE_LABEL);
-
-const SHEET_FIELDS = [
-  ["valid", "Valid votes", "Always recorded. The total of all candidates' votes."],
-  ["accredited", "Accredited voters", "How many people were checked in to vote."],
-  ["rejected", "Rejected ballots", "Spoiled or invalid ballot papers."],
-  ["total_cast", "Total votes cast", "Valid plus rejected."],
-] as const;
-
-/** How results should appear on the dashboard, in words, mapped to the two server settings. */
+/** Which count the War Room shows first. Both are always stored; this only picks the default. */
 const DISPLAY = [
   {
-    value: "AS_SENT",
-    title: "As agents send them",
-    body: "Every result appears on the dashboard as soon as it arrives. There is no review step.",
-    policy: "REPORTED" as const,
-    review: false,
+    value: "REPORTED" as const,
+    title: "All results as they arrive",
+    body: "Every result counts as soon as it arrives. Coordinators verify them against the sheet, and anyone can switch to verified results only.",
   },
   {
-    value: "REVIEWED",
-    title: "As they arrive, with officer review",
-    body: "Results appear straight away. Ward officers can approve or reject them, and you can switch the dashboard between all results and approved ones.",
-    policy: "REPORTED" as const,
-    review: true,
-  },
-  {
-    value: "APPROVED_ONLY",
-    title: "Only after an officer approves",
-    body: "The dashboard counts a result only once a ward officer has approved it. Slower, but every number has been checked.",
-    policy: "VERIFIED" as const,
-    review: true,
+    value: "VERIFIED" as const,
+    title: "Verified results only",
+    body: "The War Room opens on results a coordinator has verified against the uploaded sheet. Slower, but every number has been checked. All results stay one click away.",
   },
 ];
 
-const displayOf = (e: Pick<Election, "count_policy" | "review_enabled">) =>
-  DISPLAY.find(
-    (d) => d.policy === (e.count_policy ?? "REPORTED") && d.review === !!e.review_enabled,
-  ) ?? DISPLAY[0]!;
+const displayOf = (e: Pick<Election, "count_policy">) =>
+  DISPLAY.find((d) => d.value === (e.count_policy ?? "REPORTED")) ?? DISPLAY[0]!;
 
 export default function ElectionsPage() {
   const { elections, election, select, loading, error, refetch } = useElection();
   const { states } = useStates();
   const [creating, setCreating] = useState(false);
-  // After creating an election, walk straight into adding its first contest.
-  const [guidedFor, setGuidedFor] = useState<string | null>(null);
 
   return (
     <>
@@ -138,8 +121,8 @@ export default function ElectionsPage() {
                       >
                         <span className="text-body font-semibold">{e.name}</span>
                         <span className="text-body-sm text-subtle-foreground">
-                          {where ? `${where} · ` : ""}
-                          {formatDate(e.election_date)}
+                          {e.election_type_name}
+                          {where ? ` · ${where}` : ""} · {formatDate(e.election_date)}
                         </span>
                         <StatusChip status={electionStatus(e.status ?? "DRAFT")} />
                       </button>
@@ -149,24 +132,14 @@ export default function ElectionsPage() {
               </ul>
             </section>
           ) : null}
-          {election ? (
-            <Workspace
-              key={election.id}
-              electionId={election.id}
-              openContestFirst={guidedFor === election.id}
-              onGuidedDone={() => setGuidedFor(null)}
-            />
-          ) : null}
+          {election ? <Workspace key={election.id} electionId={election.id} /> : null}
         </div>
       )}
 
       <CreateElectionPanel
         open={creating}
         onClose={() => setCreating(false)}
-        onCreated={(id) => {
-          select(id);
-          setGuidedFor(id);
-        }}
+        onCreated={(id) => select(id)}
       />
     </>
   );
@@ -175,16 +148,23 @@ export default function ElectionsPage() {
 /** The first thing someone sees: what they are about to do, in four steps. */
 function FirstElection({ onStart }: { onStart: () => void }) {
   const steps: [string, string][] = [
-    ["Create the election", "Name it, choose the state and the election day."],
-    ["Add what you are tracking", "A contest such as Governorship, and its candidates."],
-    ["Lock it", "Freezes the setup so agents and officers work from one fixed list."],
+    ["Create the election", "Its type, the state and the election day."],
+    [
+      "Choose the parties and contestants",
+      "Which parties contest, in the order agents see them, and each party's candidate per constituency.",
+    ],
+    ["Lock it", "Freezes the setup so agents and coordinators work from one fixed list."],
     ["Go live", "Agents send results; the War Room fills in as they arrive."],
   ];
   return (
     <Card className="p-6 md:p-8">
       <h2 className="text-h2">Set up your first election</h2>
       <p className="mt-1 max-w-2xl text-body text-subtle-foreground">
-        It takes a few minutes. You can change anything until you lock it.
+        It takes a few minutes. You can change anything until you lock it.{" "}
+        <Link href="/parties" className="font-semibold text-primary">
+          Add your party list first
+        </Link>{" "}
+        if you have not yet.
       </p>
       <ol className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
         {steps.map(([title, body], i) => (
@@ -210,23 +190,14 @@ function FirstElection({ onStart }: { onStart: () => void }) {
 
 // ---- the workspace for one election ------------------------------------------------------
 
-function Workspace({
-  electionId,
-  openContestFirst,
-  onGuidedDone,
-}: {
-  electionId: string;
-  openContestFirst: boolean;
-  onGuidedDone: () => void;
-}) {
+function Workspace({ electionId }: { electionId: string }) {
   const queryClient = useQueryClient();
   const config = useConfiguration(electionId);
   const detail = useQuery({
     queryKey: ["election", electionId],
     queryFn: () => ep.elections.get(electionId),
   });
-  const [addContest, setAddContest] = useState(openContestFirst);
-  const [addCandidateFor, setAddCandidateFor] = useState<Contest | null>(null);
+  const [adding, setAdding] = useState<{ constituency: Constituency | null } | null>(null);
   const [editing, setEditing] = useState(false);
 
   const election = detail.data?.data;
@@ -234,8 +205,8 @@ function Workspace({
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["election", electionId] });
     void queryClient.invalidateQueries({ queryKey: ["elections"] });
-    void queryClient.invalidateQueries({ queryKey: ["contests", electionId] });
-    void queryClient.invalidateQueries({ queryKey: ["candidates"] });
+    void queryClient.invalidateQueries({ queryKey: ["election-parties", electionId] });
+    void queryClient.invalidateQueries({ queryKey: ["contestants", electionId] });
   };
 
   if (detail.isLoading) return <Skeleton className="h-64" />;
@@ -258,9 +229,10 @@ function Workspace({
         election={election}
         config={config}
         onChanged={refresh}
-        onAddContest={() => setAddContest(true)}
-        onAddCandidate={(c) => setAddCandidateFor(c)}
+        onAddContestants={() => setAdding({ constituency: null })}
       />
+
+      <IssuesCard electionId={electionId} />
 
       <DetailsCard
         election={election}
@@ -271,92 +243,39 @@ function Workspace({
         onSaved={refresh}
       />
 
-      <section aria-label="Contests and candidates">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-h2">Contests and candidates</h2>
-            {editable ? (
-              <p className="text-body-sm text-subtle-foreground">
-                A contest is one race on the ballot. Each needs at least two candidates.
-              </p>
-            ) : null}
-          </div>
-          {editable && config.contests.length > 0 ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              leading={<Plus className="h-4 w-4" aria-hidden />}
-              onClick={() => setAddContest(true)}
-            >
-              Add another contest
-            </Button>
-          ) : null}
-        </div>
-        {config.loading ? (
-          <Skeleton className="h-32" />
-        ) : config.contests.length === 0 ? (
-          <Card className="flex flex-col items-start gap-3 p-6">
-            <BookOpenCheck className="h-8 w-8 text-primary" aria-hidden />
-            <h3 className="text-h3">No contests yet</h3>
-            <p className="max-w-xl text-body text-subtle-foreground">
-              Add the contest you are tracking, for example the governorship. Then add its
-              candidates, in the order they appear on the ballot paper.
-            </p>
-            {editable ? (
-              <Button
-                leading={<Plus className="h-4 w-4" aria-hidden />}
-                onClick={() => setAddContest(true)}
-              >
-                Add a contest
-              </Button>
-            ) : null}
-          </Card>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {config.contests.map((setup) => (
-              <ContestCard
-                key={setup.contest.id}
-                setup={setup}
-                editable={editable}
-                onAddCandidate={() => setAddCandidateFor(setup.contest)}
-                onChanged={refresh}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      <PartiesCard
+        electionId={electionId}
+        parties={config.parties}
+        loading={config.loading}
+        editable={editable}
+        onSaved={refresh}
+      />
+
+      <ContestantsCard
+        election={election}
+        config={config}
+        editable={editable}
+        onAdd={(constituency) => setAdding({ constituency })}
+        onChanged={refresh}
+      />
 
       {editable ? (
         <DeleteElection
           election={election}
-          contests={config.contests.length}
-          candidates={config.candidateCount}
+          contestants={config.contestantCount}
           onDeleted={refresh}
         />
       ) : null}
 
-      <AddContestPanel
-        open={addContest}
-        electionId={electionId}
-        stateId={election.state_id}
-        onClose={() => {
-          setAddContest(false);
-          onGuidedDone();
-        }}
-        onAdded={(contest) => {
-          refresh();
-          setAddContest(false);
-          onGuidedDone();
-          // The next thing needed is its candidates.
-          setAddCandidateFor(contest);
-        }}
-      />
-      <AddCandidatePanel
-        contest={addCandidateFor}
-        existing={
-          config.contests.find((c) => c.contest.id === addCandidateFor?.id)?.candidates ?? []
-        }
-        onClose={() => setAddCandidateFor(null)}
+      <AddContestantPanel
+        // A fresh panel each time it opens, starting from the constituency it was opened for.
+        key={adding ? `open-${adding.constituency?.id ?? "any"}` : "closed"}
+        open={!!adding}
+        election={election}
+        parties={config.parties}
+        constituencies={config.constituencies}
+        initial={adding?.constituency ?? null}
+        onClose={() => setAdding(null)}
         onAdded={refresh}
       />
     </div>
@@ -369,14 +288,12 @@ function NextStep({
   election,
   config,
   onChanged,
-  onAddContest,
-  onAddCandidate,
+  onAddContestants,
 }: {
   election: Election;
   config: Configuration;
   onChanged: () => void;
-  onAddContest: () => void;
-  onAddCandidate: (contest: Contest) => void;
+  onAddContestants: () => void;
 }) {
   const toast = useToast();
   const stepUp = useStepUp();
@@ -419,10 +336,10 @@ function NextStep({
     },
   });
 
-  const counts = `${formatNumber(config.contests.length)} ${
-    config.contests.length === 1 ? "contest" : "contests"
-  } and ${formatNumber(config.candidateCount)} ${
-    config.candidateCount === 1 ? "candidate" : "candidates"
+  const counts = `${formatNumber(config.parties.length)} ${
+    config.parties.length === 1 ? "party" : "parties"
+  } and ${formatNumber(config.contestantCount)} ${
+    config.contestantCount === 1 ? "contestant" : "contestants"
   }`;
 
   let heading = "";
@@ -434,10 +351,10 @@ function NextStep({
     body = (
       <>
         <p className="text-body text-subtle-foreground">
-          Add your contests and their candidates. When the checklist is complete, mark the election
-          ready.
+          Choose the contesting parties and add each party&apos;s contestant per constituency.
+          When the checklist is complete, mark the election ready.
         </p>
-        <Checklist config={config} onAddContest={onAddContest} onAddCandidate={onAddCandidate} />
+        <Checklist config={config} onAddContestants={onAddContestants} />
       </>
     );
     actions = (
@@ -458,7 +375,7 @@ function NextStep({
           Setup is complete: {counts}. Locking freezes them, so everyone works from the same list.
           You can still go back and edit until you lock.
         </p>
-        <Checklist config={config} onAddContest={onAddContest} onAddCandidate={onAddCandidate} />
+        <Checklist config={config} onAddContestants={onAddContestants} />
       </>
     );
     actions = (
@@ -527,7 +444,7 @@ function NextStep({
             </p>
           ) : (
             <InlineAlert tone="warning" title="Not ready yet">
-              {formatNumber(readiness.data.undecided_results)} results still need a decision
+              {formatNumber(readiness.data.unverified_results)} results still need a decision
               {readiness.data.rollup_differences.length
                 ? `, and ${readiness.data.rollup_differences.length} totals differ from a fresh count`
                 : ""}
@@ -579,7 +496,7 @@ function NextStep({
         open={confirm === "lock"}
         onOpenChange={(open) => !open && setConfirm(null)}
         title="Lock this election?"
-        description={`${counts} will be frozen. You will not be able to add, remove or reorder candidates afterwards. You will be asked for your authenticator code.`}
+        description={`${counts} will be frozen. You will not be able to add, remove or reorder parties or contestants afterwards. You will be asked for your authenticator code.`}
         confirmLabel="Lock the election"
         loading={move.isPending}
         onConfirm={() => move.mutate("lock")}
@@ -597,7 +514,7 @@ function NextStep({
         open={confirm === "close"}
         onOpenChange={(open) => !open && setConfirm(null)}
         title="Close result capture?"
-        description="Agents will no longer be able to send results for this election. You can still review what has arrived."
+        description="Agents will no longer be able to send results for this election. You can still verify what has arrived."
         confirmLabel="Close result capture"
         danger
         loading={move.isPending}
@@ -618,30 +535,45 @@ function NextStep({
 
 function Checklist({
   config,
-  onAddContest,
-  onAddCandidate,
+  onAddContestants,
 }: {
   config: Configuration;
-  onAddContest: () => void;
-  onAddCandidate: (contest: Contest) => void;
+  onAddContestants: () => void;
 }) {
   if (config.loading) return <Skeleton className="h-24" />;
+  const n = config.parties.length;
   return (
     <ul className="flex flex-col gap-2" aria-label="What is left to do">
-      <Item done>The election has a name, a state and a date</Item>
-      <Item done={config.contests.length > 0}>
-        {config.contests.length > 0
-          ? `${formatNumber(config.contests.length)} ${config.contests.length === 1 ? "contest" : "contests"} added`
-          : "Add the contest you are tracking"}
-        {config.contests.length === 0 ? (
-          <button type="button" className="ml-3 font-semibold text-primary" onClick={onAddContest}>
-            Add a contest
+      <Item done>The election has a type, a state and a date</Item>
+      <Item done={n >= 2}>
+        {n >= 2
+          ? `${formatNumber(n)} contesting parties, in display order`
+          : n === 1
+            ? "One contesting party chosen. Choose at least one more"
+            : "Choose the contesting parties"}
+      </Item>
+      <Item done={config.constituencies.length > 0}>
+        {config.constituencies.length > 0
+          ? `Contestants in ${formatNumber(config.constituencies.length)} ${
+              config.constituencies.length === 1 ? "constituency" : "constituencies"
+            }`
+          : "Add each party's contestant for a constituency"}
+        {config.constituencies.length === 0 && n >= 2 ? (
+          <button
+            type="button"
+            className="ml-3 font-semibold text-primary"
+            onClick={onAddContestants}
+          >
+            Add contestants
           </button>
         ) : null}
       </Item>
-      {config.contests.map((s) => (
-        <ContestItem key={s.contest.id} setup={s} onAddCandidate={onAddCandidate} />
-      ))}
+      {config.constituencies
+        .filter((g) => g.problems.length > 0)
+        .flatMap((g) => g.problems)
+        .map((p) => (
+          <Item key={p}>{p}</Item>
+        ))}
       {config.advice.map((a) => (
         <li key={a} className="flex items-start gap-2 text-body-sm text-subtle-foreground">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
@@ -649,33 +581,6 @@ function Checklist({
         </li>
       ))}
     </ul>
-  );
-}
-
-function ContestItem({
-  setup,
-  onAddCandidate,
-}: {
-  setup: ContestSetup;
-  onAddCandidate: (contest: Contest) => void;
-}) {
-  const n = setup.candidates.length;
-  const ok = n >= 2 && setup.problems.length === 0;
-  return (
-    <Item done={ok}>
-      <span className="font-semibold">{setup.contest.title}:</span>{" "}
-      {n === 0 ? "no candidates yet" : `${n} ${n === 1 ? "candidate" : "candidates"}`}
-      {n < 2 ? " (needs at least 2)" : ""}
-      {!ok ? (
-        <button
-          type="button"
-          className="ml-3 font-semibold text-primary"
-          onClick={() => onAddCandidate(setup.contest)}
-        >
-          Add a candidate
-        </button>
-      ) : null}
-    </Item>
   );
 }
 
@@ -692,6 +597,113 @@ function Item({ done, children }: { done?: boolean; children: React.ReactNode })
       )}
       <span>{children}</span>
     </li>
+  );
+}
+
+// ---- configuration issues raised by agents -----------------------------------------------
+
+function IssuesCard({ electionId }: { electionId: string }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [resolving, setResolving] = useState<ConfigIssue | null>(null);
+  const [note, setNote] = useState("");
+  const [error, setError] = useState<string[]>([]);
+  const issues = useQuery({
+    queryKey: ["config-issues", electionId],
+    queryFn: async () => (await ep.elections.issues(electionId, { status: "OPEN", limit: 100 })).results,
+  });
+  const resolve = useMutation({
+    mutationFn: () => ep.configIssues.resolve(resolving!.id, note.trim()),
+    onSuccess: () => {
+      toast(toastVerb.issueResolved);
+      setResolving(null);
+      setNote("");
+      setError([]);
+      void queryClient.invalidateQueries({ queryKey: ["config-issues", electionId] });
+    },
+    onError: (e) => setError(errorLines(e, "Could not resolve the issue.")),
+  });
+
+  const open = issues.data ?? [];
+  if (issues.isLoading || open.length === 0) return null;
+
+  return (
+    <Card className="border-signal-amber-mark">
+      <CardHeader
+        title={`${formatNumber(open.length)} ${open.length === 1 ? "report" : "reports"} from agents`}
+        description="An agent could not find a party or contestant on their result form. Fix the setup if they are right, then resolve the report with a note."
+      />
+      <ul className="divide-y divide-border p-5 pt-0">
+        {open.map((issue) => (
+          <li key={issue.id} className="flex flex-wrap items-start gap-3 py-3">
+            <Flag className="mt-1 h-4 w-4 shrink-0 text-signal-amber-text" aria-hidden />
+            <div className="min-w-0 flex-1">
+              <p className="text-body-sm font-semibold">
+                {issue.kind === "PARTY_MISSING" ? "Party missing" : "Contestant missing"} ·{" "}
+                {issue.polling_unit_name}{" "}
+                <span className="mono font-normal text-subtle-foreground">
+                  {issue.polling_unit_code}
+                </span>
+              </p>
+              <p className="text-body-sm">&ldquo;{issue.note}&rdquo;</p>
+              <p className="text-caption text-subtle-foreground">
+                {issue.raised_by_name} · {issue.ward_name}, {issue.lga_name} ·{" "}
+                {formatDateTime(issue.created_at)}
+              </p>
+            </div>
+            <Button size="sm" variant="secondary" onClick={() => setResolving(issue)}>
+              Resolve
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <SidePanel
+        open={!!resolving}
+        onOpenChange={(next) => {
+          if (!next) {
+            setResolving(null);
+            setError([]);
+          }
+        }}
+        title="Resolve this report"
+        description="Say what you did, or why nothing needed changing. The note is kept with the report."
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setResolving(null)}>
+              Cancel
+            </Button>
+            <Button
+              loading={resolve.isPending}
+              disabled={note.trim().length < 3}
+              onClick={() => resolve.mutate()}
+            >
+              Resolve
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-4">
+          {error.length > 0 ? (
+            <InlineAlert tone="danger" title="Not resolved">
+              {error.join(" ")}
+            </InlineAlert>
+          ) : null}
+          {resolving ? (
+            <p className="rounded-md bg-muted p-3 text-body-sm">&ldquo;{resolving.note}&rdquo;</p>
+          ) : null}
+          <Field label="Resolution note">
+            {(p) => (
+              <Textarea
+                {...p}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                maxLength={500}
+              />
+            )}
+          </Field>
+        </div>
+      </SidePanel>
+    </Card>
   );
 }
 
@@ -719,17 +731,11 @@ function DetailsCard({
   const [error, setError] = useState<string[]>([]);
   const { states } = useStates();
 
-  const chosen = DISPLAY.find((d) => d.value === display)!;
   const save = useMutation({
     mutationFn: () =>
       ep.elections.update(
         election.id,
-        {
-          name: name.trim(),
-          election_date: date,
-          count_policy: chosen.policy,
-          review_enabled: chosen.review,
-        },
+        { name: name.trim(), election_date: date, count_policy: display },
         etag,
       ),
     onSuccess: () => {
@@ -795,9 +801,13 @@ function DetailsCard({
         </form>
       ) : (
         <dl className="grid grid-cols-1 gap-x-8 gap-y-3 p-5 pt-2 md:grid-cols-2">
+          <Row label="Type">
+            {election.election_type_name} ({constituencyKind(election.constituency_kind)}{" "}
+            constituencies)
+          </Row>
           <Row label="State">{stateLabel}</Row>
           <Row label="Election day">{formatDate(election.election_date)}</Row>
-          <Row label="Results appear on the dashboard">{displayOf(election).title}</Row>
+          <Row label="The War Room opens on">{displayOf(election).title}</Row>
           {election.locked_at ? (
             <Row label="Locked">{formatDateTime(election.locked_at)}</Row>
           ) : null}
@@ -816,11 +826,17 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function DisplayChoice({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function DisplayChoice({
+  value,
+  onChange,
+}: {
+  value: "REPORTED" | "VERIFIED";
+  onChange: (value: "REPORTED" | "VERIFIED") => void;
+}) {
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-1 text-label text-strong-foreground">
-        How should results appear on the dashboard?
+        What should the War Room show first?
       </legend>
       {DISPLAY.map((d) => (
         <label
@@ -847,153 +863,445 @@ function DisplayChoice({ value, onChange }: { value: string; onChange: (value: s
   );
 }
 
-// ---- contests -----------------------------------------------------------------------------
+// ---- contesting parties -------------------------------------------------------------------
 
-function ContestCard({
-  setup,
+function PartiesCard({
+  electionId,
+  parties,
+  loading,
   editable,
-  onAddCandidate,
-  onChanged,
+  onSaved,
 }: {
-  setup: ContestSetup;
+  electionId: string;
+  parties: ElectionParty[];
+  loading: boolean;
   editable: boolean;
-  onAddCandidate: () => void;
-  onChanged: () => void;
+  onSaved: () => void;
 }) {
   const toast = useToast();
-  const { contest, candidates } = setup;
-  const [removing, setRemoving] = useState<Candidate | null>(null);
-  const [removingContest, setRemovingContest] = useState(false);
+  const master = useQuery({ queryKey: ["parties"], queryFn: () => ep.parties.list() });
+  const [order, setOrder] = useState<string[] | null>(null);
+  const [adding, setAdding] = useState("");
+  const [error, setError] = useState<string[]>([]);
 
-  const removeCandidate = useMutation({
-    mutationFn: (c: Candidate) => ep.candidates.remove(c.id, `"${c.row_version ?? 0}"`),
+  // Until the person changes something, show what the server has.
+  const current = useMemo(() => parties.map((p) => p.party_id), [parties]);
+  const ids = order ?? current;
+  const dirty = order !== null && order.join() !== current.join();
+  const byId = useMemo(() => {
+    const map: Record<string, { abbreviation: string; full_name: string; logo_url: string | null; is_own: boolean }> = {};
+    for (const p of master.data ?? []) {
+      map[p.id] = {
+        abbreviation: p.abbreviation,
+        full_name: p.full_name,
+        logo_url: p.logo_url,
+        is_own: !!p.is_own,
+      };
+    }
+    for (const p of parties) map[p.party_id] = p;
+    return map;
+  }, [master.data, parties]);
+  const available = (master.data ?? []).filter((p) => !ids.includes(p.id));
+
+  const save = useMutation({
+    mutationFn: () => ep.elections.setParties(electionId, ids),
     onSuccess: () => {
-      setRemoving(null);
-      toast("Candidate removed");
-      onChanged();
+      toast("Contesting parties saved");
+      setOrder(null);
+      setError([]);
+      onSaved();
     },
-    onError: (e) => {
-      setRemoving(null);
-      toast(errorLines(e, "Could not remove the candidate.").join(" "));
-    },
-  });
-  const removeContest = useMutation({
-    mutationFn: async () => {
-      const current = await ep.contests.get(contest.id);
-      return ep.contests.remove(contest.id, current.etag ?? "");
-    },
-    onSuccess: () => {
-      setRemovingContest(false);
-      toast("Contest removed");
-      onChanged();
-    },
-    onError: (e) => {
-      setRemovingContest(false);
-      toast(errorLines(e, "Could not remove the contest.").join(" "));
-    },
+    onError: (e) => setError(errorLines(e, "Could not save the parties.")),
   });
 
-  const ok = candidates.length >= 2;
-  const sorted = [...candidates].sort((a, b) => a.ballot_order - b.ballot_order);
+  const move = (index: number, by: -1 | 1) => {
+    const next = [...ids];
+    const [item] = next.splice(index, 1);
+    next.splice(index + by, 0, item!);
+    setOrder(next);
+  };
 
   return (
     <Card>
       <CardHeader
-        title={contest.title}
-        description={`${OFFICE_LABEL[contest.office] ?? contest.office} · ${
-          contest.jurisdiction_level === "STATE"
-            ? "whole state"
-            : `${formatNumber(contest.jurisdiction_ids.length)} ${contest.jurisdiction_ids.length === 1 ? "LGA" : "LGAs"}`
-        }`}
+        title="Contesting parties"
+        description="The parties on this election's result form, in the order agents see them. Agents never type a party name."
+        actions={
+          <Link href="/parties" className="text-label font-semibold text-primary">
+            Party list
+          </Link>
+        }
+      />
+      <div className="flex flex-col gap-4 p-5 pt-2">
+        {error.length > 0 ? (
+          <InlineAlert tone="danger" title="Not saved">
+            {error.join(" ")}
+          </InlineAlert>
+        ) : null}
+        {loading || master.isLoading ? (
+          <Skeleton className="h-24" />
+        ) : ids.length === 0 ? (
+          <p className="text-body text-subtle-foreground">
+            No parties chosen yet.{" "}
+            {(master.data ?? []).length === 0 ? (
+              <>
+                Your party list is empty:{" "}
+                <Link href="/parties" className="font-semibold text-primary">
+                  add the parties first
+                </Link>
+                .
+              </>
+            ) : (
+              "Add them below in the order they appear on the result sheet."
+            )}
+          </p>
+        ) : (
+          <ol className="divide-y divide-border rounded-md border border-border">
+            {ids.map((id, i) => {
+              const p = byId[id];
+              return (
+                <li key={id} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-label font-bold tabular-nums">
+                    {i + 1}
+                  </span>
+                  <PartyMark abbreviation={p?.abbreviation ?? "?"} logoUrl={p?.logo_url} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-body font-semibold">{p?.abbreviation}</span>
+                    <span className="block text-body-sm text-subtle-foreground">
+                      {p?.full_name}
+                    </span>
+                  </span>
+                  {p?.is_own ? (
+                    <StatusChip status={{ label: "Your party", tone: "teal", icon: "star" }} />
+                  ) : null}
+                  {editable ? (
+                    <span className="flex gap-1">
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={`Move ${p?.abbreviation} up`}
+                        disabled={i === 0}
+                        onClick={() => move(i, -1)}
+                      >
+                        <ArrowUp className="h-4 w-4" aria-hidden />
+                      </Button>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={`Move ${p?.abbreviation} down`}
+                        disabled={i === ids.length - 1}
+                        onClick={() => move(i, 1)}
+                      >
+                        <ArrowDown className="h-4 w-4" aria-hidden />
+                      </Button>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={`Remove ${p?.abbreviation}`}
+                        onClick={() => setOrder(ids.filter((x) => x !== id))}
+                      >
+                        <X className="h-4 w-4" aria-hidden />
+                      </Button>
+                    </span>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        )}
+        {editable ? (
+          <div className="flex flex-wrap items-end gap-3">
+            {available.length > 0 ? (
+              <>
+                <Field label="Add a party" className="w-64">
+                  {(p) => (
+                    <Select {...p} value={adding} onChange={(e) => setAdding(e.target.value)}>
+                      <option value="">Choose a party…</option>
+                      {available.map((party) => (
+                        <option key={party.id} value={party.id}>
+                          {party.abbreviation} · {party.full_name}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+                <Button
+                  variant="secondary"
+                  disabled={!adding}
+                  leading={<Plus className="h-4 w-4" aria-hidden />}
+                  onClick={() => {
+                    setOrder([...ids, adding]);
+                    setAdding("");
+                  }}
+                >
+                  Add
+                </Button>
+              </>
+            ) : null}
+            {dirty ? (
+              <>
+                <Button loading={save.isPending} onClick={() => save.mutate()}>
+                  Save order
+                </Button>
+                <Button variant="outline" onClick={() => setOrder(null)}>
+                  Undo changes
+                </Button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+// ---- contestants by constituency ----------------------------------------------------------
+
+function ContestantsCard({
+  election,
+  config,
+  editable,
+  onAdd,
+  onChanged,
+}: {
+  election: Election;
+  config: Configuration;
+  editable: boolean;
+  onAdd: (constituency: Constituency | null) => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const [removing, setRemoving] = useState<Contestant | null>(null);
+  const [renaming, setRenaming] = useState<Contestant | null>(null);
+  const [newName, setNewName] = useState("");
+
+  const remove = useMutation({
+    mutationFn: (c: Contestant) => ep.contestants.remove(c.id),
+    onSuccess: () => {
+      setRemoving(null);
+      toast("Contestant removed");
+      onChanged();
+    },
+    onError: (e) => {
+      setRemoving(null);
+      toast(errorLines(e, "Could not remove the contestant.").join(" "));
+    },
+  });
+  const rename = useMutation({
+    mutationFn: async () => {
+      const current = await ep.contestants.get(renaming!.id);
+      return ep.contestants.rename(renaming!.id, newName.trim(), current.etag ?? "");
+    },
+    onSuccess: () => {
+      setRenaming(null);
+      toast("Contestant renamed");
+      onChanged();
+    },
+    onError: (e) => toast(errorLines(e, "Could not rename the contestant.").join(" ")),
+  });
+
+  const kind = constituencyKind(election.constituency_kind).toLowerCase();
+
+  return (
+    <section aria-label="Contestants">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-h2">Contestants</h2>
+          <p className="text-body-sm text-subtle-foreground">
+            A contestant is a party&apos;s candidate in one {kind}. Each {kind} with results needs
+            contestants from at least two parties.
+          </p>
+        </div>
+        {editable && config.parties.length >= 2 ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            leading={<Plus className="h-4 w-4" aria-hidden />}
+            onClick={() => onAdd(null)}
+          >
+            Add contestants
+          </Button>
+        ) : null}
+      </div>
+      {config.loading ? (
+        <Skeleton className="h-32" />
+      ) : config.constituencies.length === 0 ? (
+        <Card className="flex flex-col items-start gap-3 p-6">
+          <Users className="h-8 w-8 text-primary" aria-hidden />
+          <h3 className="text-h3">No contestants yet</h3>
+          <p className="max-w-xl text-body text-subtle-foreground">
+            {config.parties.length < 2
+              ? "Choose the contesting parties first. Then add each party's candidate for the constituencies you are tracking."
+              : `Pick a ${kind} and add each contesting party's candidate there.`}
+          </p>
+          {editable && config.parties.length >= 2 ? (
+            <Button leading={<Plus className="h-4 w-4" aria-hidden />} onClick={() => onAdd(null)}>
+              Add contestants
+            </Button>
+          ) : null}
+        </Card>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {config.constituencies.map((g) => (
+            <ConstituencyCard
+              key={g.constituencyId}
+              group={g}
+              parties={config.parties}
+              editable={editable}
+              onAdd={() =>
+                onAdd({
+                  id: g.constituencyId,
+                  name: g.constituencyName,
+                  kind: election.constituency_kind,
+                  code: "",
+                  state_id: election.state_id,
+                })
+              }
+              onRemove={setRemoving}
+              onRename={(c) => {
+                setRenaming(c);
+                setNewName(c.name);
+              }}
+            />
+          ))}
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(open) => !open && setRemoving(null)}
+        title={`Remove ${removing?.name ?? "this contestant"}?`}
+        description={`${removing?.party_abbreviation ?? "The party"} will have no contestant in ${removing?.constituency_name ?? "this constituency"}.`}
+        confirmLabel="Remove contestant"
+        danger
+        loading={remove.isPending}
+        onConfirm={() => removing && remove.mutate(removing)}
+      />
+      <SidePanel
+        open={!!renaming}
+        onOpenChange={(next) => !next && setRenaming(null)}
+        title="Rename contestant"
+        description={
+          renaming ? `${renaming.party_abbreviation} in ${renaming.constituency_name}` : undefined
+        }
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setRenaming(null)}>
+              Cancel
+            </Button>
+            <Button
+              loading={rename.isPending}
+              disabled={!newName.trim()}
+              onClick={() => rename.mutate()}
+            >
+              Save
+            </Button>
+          </>
+        }
+      >
+        <Field label="Candidate's name">
+          {(p) => <Input {...p} value={newName} onChange={(e) => setNewName(e.target.value)} />}
+        </Field>
+      </SidePanel>
+    </section>
+  );
+}
+
+function ConstituencyCard({
+  group,
+  parties,
+  editable,
+  onAdd,
+  onRemove,
+  onRename,
+}: {
+  group: ConstituencySetup;
+  parties: ElectionParty[];
+  editable: boolean;
+  onAdd: () => void;
+  onRemove: (c: Contestant) => void;
+  onRename: (c: Contestant) => void;
+}) {
+  const ok = group.problems.length === 0;
+  const logos = Object.fromEntries(parties.map((p) => [p.party_id, p.logo_url]));
+  const missing = parties.filter((p) => !group.contestants.some((c) => c.party_id === p.party_id));
+  return (
+    <Card>
+      <CardHeader
+        title={group.constituencyName}
+        description={`${formatNumber(group.contestants.length)} of ${formatNumber(parties.length)} parties have a contestant`}
         actions={
           <>
-            {!ok ? (
-              <StatusChip
-                status={{ label: "Needs 2 candidates", tone: "amber", icon: "alert-triangle" }}
-              />
-            ) : (
+            {ok ? (
               <StatusChip status={{ label: "Ready", tone: "teal", icon: "check-circle-2" }} />
+            ) : (
+              <StatusChip
+                status={{ label: "Needs attention", tone: "amber", icon: "alert-triangle" }}
+              />
             )}
-            {editable ? (
+            {editable && missing.length > 0 ? (
               <Button
                 size="sm"
                 variant={ok ? "secondary" : "primary"}
                 leading={<Plus className="h-4 w-4" aria-hidden />}
-                onClick={onAddCandidate}
+                onClick={onAdd}
               >
-                Add candidate
+                Add contestant
               </Button>
             ) : null}
           </>
         }
       />
       <div className="p-5 pt-2">
-        {sorted.length === 0 ? (
-          <p className="text-body text-subtle-foreground">
-            No candidates yet. Add them in the order they appear on the ballot paper.
-          </p>
-        ) : (
-          <ul className="divide-y divide-border rounded-md border border-border">
-            {sorted.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-label font-bold tabular-nums">
-                  {c.ballot_order}
+        {group.problems.length > 0 ? (
+          <ul className="mb-3 flex flex-col gap-1">
+            {group.problems.map((p) => (
+              <li key={p} className="flex items-start gap-2 text-body-sm text-signal-amber-text">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                {p}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <ul className="divide-y divide-border rounded-md border border-border">
+          {group.contestants.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <PartyMark abbreviation={c.party_abbreviation} logoUrl={logos[c.party_id]} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-body font-semibold">{c.name}</span>
+                <span className="block text-body-sm text-subtle-foreground">
+                  {c.party_abbreviation}
                 </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-body font-semibold">{c.name}</span>
-                  <span className="block text-body-sm text-subtle-foreground">
-                    {c.party_acronym} · {c.party_name}
-                  </span>
-                </span>
-                {c.is_own_party ? (
-                  <StatusChip status={{ label: "Your candidate", tone: "teal", icon: "star" }} />
-                ) : null}
-                {editable ? (
+              </span>
+              {editable ? (
+                <span className="flex gap-1">
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Rename ${c.name}`}
+                    onClick={() => onRename(c)}
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden />
+                  </Button>
                   <Button
                     size="icon-sm"
                     variant="ghost"
                     aria-label={`Remove ${c.name}`}
-                    onClick={() => setRemoving(c)}
+                    onClick={() => onRemove(c)}
                   >
                     <Trash2 className="h-4 w-4" aria-hidden />
                   </Button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-        {editable ? (
-          <div className="mt-3 flex justify-end">
-            <button
-              type="button"
-              className="text-caption font-semibold text-danger hover:underline"
-              onClick={() => setRemovingContest(true)}
-            >
-              Remove this contest
-            </button>
-          </div>
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        {missing.length > 0 ? (
+          <p className="mt-2 text-caption text-subtle-foreground">
+            No contestant yet: {missing.map((p) => p.abbreviation).join(", ")}. Leave a party out
+            only if it has no candidate here.
+          </p>
         ) : null}
       </div>
-      <ConfirmDialog
-        open={!!removing}
-        onOpenChange={(open) => !open && setRemoving(null)}
-        title={`Remove ${removing?.name ?? "this candidate"}?`}
-        description={`They will no longer appear on the ${contest.title} result sheet.`}
-        confirmLabel="Remove candidate"
-        danger
-        loading={removeCandidate.isPending}
-        onConfirm={() => removing && removeCandidate.mutate(removing)}
-      />
-      <ConfirmDialog
-        open={removingContest}
-        onOpenChange={setRemovingContest}
-        title={`Remove ${contest.title}?`}
-        description="The contest and all its candidates are removed from this election."
-        confirmLabel="Remove contest"
-        danger
-        loading={removeContest.isPending}
-        onConfirm={() => removeContest.mutate()}
-      />
     </Card>
   );
 }
@@ -1012,30 +1320,37 @@ function CreateElectionPanel({
   const queryClient = useQueryClient();
   const toast = useToast();
   const { states, loading } = useStates();
+  const types = useQuery({
+    queryKey: ["election-types"],
+    queryFn: () => ep.geography.electionTypes(),
+    staleTime: 60 * 60_000,
+  });
   const [name, setName] = useState("");
+  const [type, setType] = useState("");
   const [stateId, setStateId] = useState("");
   const [date, setDate] = useState("");
-  const [display, setDisplay] = useState("AS_SENT");
+  const [display, setDisplay] = useState<"REPORTED" | "VERIFIED">("REPORTED");
   const [error, setError] = useState<string[]>([]);
 
   // One state loaded: nothing to choose. Several: the person must say which.
   const effectiveState = stateId || (states.length === 1 ? states[0]!.id : "");
-  const chosen = DISPLAY.find((d) => d.value === display)!;
+  const chosenType = (types.data ?? []).find((t) => t.code === type);
 
   const create = useMutation({
     mutationFn: () =>
       ep.elections.create({
         name: name.trim(),
+        election_type: type,
         state_id: effectiveState,
         election_date: date,
-        count_policy: chosen.policy,
-        review_enabled: chosen.review,
+        count_policy: display,
       }),
     onSuccess: (created) => {
-      toast("Election created. Now add what you are tracking.");
+      toast("Election created. Now choose the contesting parties.");
       void queryClient.invalidateQueries({ queryKey: ["elections"] });
       onCreated(created.id);
       setName("");
+      setType("");
       setDate("");
       setError([]);
       onClose();
@@ -1043,7 +1358,7 @@ function CreateElectionPanel({
     onError: (e) => setError(errorLines(e, "Could not create the election.")),
   });
 
-  const missing = !name.trim() || !date || !effectiveState;
+  const missing = !name.trim() || !date || !effectiveState || !type;
 
   return (
     <SidePanel
@@ -1055,7 +1370,7 @@ function CreateElectionPanel({
         }
       }}
       title="New election"
-      description="Three details now. You add the contests and candidates next, and can change anything until you lock it."
+      description="Four details now. You choose the parties and contestants next, and can change anything until you lock it."
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
@@ -1079,6 +1394,25 @@ function CreateElectionPanel({
             load it.
           </InlineAlert>
         ) : null}
+        <Field
+          label="Type of election"
+          hint={
+            chosenType
+              ? `Contestants are set per ${constituencyKind(chosenType.constituency_kind).toLowerCase()}.`
+              : "The type decides which constituency each polling unit reports for."
+          }
+        >
+          {(p) => (
+            <Select {...p} value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="">Choose a type…</option>
+              {(types.data ?? []).map((t) => (
+                <option key={t.code} value={t.code}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
         <Field label="Election name" hint="For example: Oyo State governorship election 2027">
           {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} />}
         </Field>
@@ -1117,339 +1451,190 @@ function CreateElectionPanel({
   );
 }
 
-function AddContestPanel({
+function AddContestantPanel({
   open,
-  electionId,
-  stateId,
+  election,
+  parties,
+  constituencies,
+  initial,
   onClose,
   onAdded,
 }: {
   open: boolean;
-  electionId: string;
-  stateId: string;
-  onClose: () => void;
-  onAdded: (contest: Contest) => void;
-}) {
-  const toast = useToast();
-  const { lgas } = useElectionLgas();
-  const { states } = useStates();
-  const [office, setOffice] = useState("GOVERNORSHIP");
-  const [title, setTitle] = useState("Governorship");
-  const [titleEdited, setTitleEdited] = useState(false);
-  const [level, setLevel] = useState<"STATE" | "LGA">("STATE");
-  const [lgaIds, setLgaIds] = useState<string[]>([]);
-  const [fields, setFields] = useState<string[]>(["valid", "accredited", "rejected", "total_cast"]);
-  const [error, setError] = useState<string[]>([]);
-
-  const create = useMutation({
-    mutationFn: () =>
-      ep.elections.createContest(electionId, {
-        office: office as never,
-        title: title.trim(),
-        jurisdiction_level: level as never,
-        jurisdiction_ids: level === "STATE" ? [stateId] : lgaIds,
-        sheet_fields: fields as never,
-      }),
-    onSuccess: (contest) => {
-      toast("Contest added. Now add its candidates.");
-      setError([]);
-      onAdded(contest);
-    },
-    onError: (e) => setError(errorLines(e, "Could not add the contest.")),
-  });
-
-  const toggle = (list: string[], value: string) =>
-    list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
-  const state = states.find((s) => s.id === stateId)?.name ?? "the state";
-
-  return (
-    <SidePanel
-      open={open}
-      onOpenChange={(next) => !next && onClose()}
-      title="Add a contest"
-      description="A contest is one race on the ballot, such as the governorship or a Senate seat."
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            loading={create.isPending}
-            disabled={!title.trim() || (level === "LGA" && lgaIds.length === 0)}
-            onClick={() => create.mutate()}
-          >
-            Add contest
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-5">
-        {error.length > 0 ? (
-          <InlineAlert tone="danger" title="Not added">
-            {error.join(" ")}
-          </InlineAlert>
-        ) : null}
-        <Field label="What is the race?">
-          {(p) => (
-            <Select
-              {...p}
-              value={office}
-              onChange={(e) => {
-                setOffice(e.target.value);
-                if (!titleEdited) setTitle(OFFICE_LABEL[e.target.value] ?? "");
-              }}
-            >
-              {OFFICES.map((o) => (
-                <option key={o} value={o}>
-                  {OFFICE_LABEL[o]}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <Field label="Name shown to agents" hint="Agents see this on the result sheet in the app.">
-          {(p) => (
-            <Input
-              {...p}
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                setTitleEdited(true);
-              }}
-            />
-          )}
-        </Field>
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 text-label text-strong-foreground">Where is it held?</legend>
-          {(
-            [
-              ["STATE", `Across all of ${state}`, "Every polling unit in the state takes part."],
-              ["LGA", "Only in some LGAs", "For example a senatorial district or a House seat."],
-            ] as const
-          ).map(([value, label, hint]) => (
-            <label
-              key={value}
-              className={cn(
-                "flex cursor-pointer items-start gap-3 rounded-md border p-3",
-                level === value ? "border-primary bg-primary-soft" : "border-border hover:bg-muted",
-              )}
-            >
-              <input
-                type="radio"
-                name="level"
-                className="mt-1 h-4 w-4 accent-[rgb(var(--primary))]"
-                checked={level === value}
-                onChange={() => setLevel(value)}
-              />
-              <span>
-                <span className="block text-body-sm font-semibold">{label}</span>
-                <span className="block text-caption text-subtle-foreground">{hint}</span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
-        {level === "LGA" ? (
-          <fieldset className="max-h-56 overflow-y-auto rounded-md border border-border p-3">
-            <legend className="px-1 text-label text-strong-foreground">Choose the LGAs</legend>
-            {lgas.map((l) => (
-              <label key={l.id} className="flex min-h-9 items-center gap-3 text-body-sm">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5 accent-[rgb(var(--primary))]"
-                  checked={lgaIds.includes(l.id)}
-                  onChange={() => setLgaIds((cur) => toggle(cur, l.id))}
-                />
-                {l.name}
-              </label>
-            ))}
-          </fieldset>
-        ) : null}
-        <fieldset className="rounded-md border border-border p-3">
-          <legend className="px-1 text-label text-strong-foreground">
-            Numbers agents copy from the result sheet
-          </legend>
-          {SHEET_FIELDS.map(([value, label, hint]) => (
-            <label key={value} className="flex items-start gap-3 py-1.5">
-              <input
-                type="checkbox"
-                className="mt-0.5 h-5 w-5 accent-[rgb(var(--primary))]"
-                checked={fields.includes(value)}
-                disabled={value === "valid"}
-                onChange={() => setFields((cur) => toggle(cur, value))}
-              />
-              <span>
-                <span className="block text-body-sm font-medium">{label}</span>
-                <span className="block text-caption text-subtle-foreground">{hint}</span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      </div>
-    </SidePanel>
-  );
-}
-
-function AddCandidatePanel({
-  contest,
-  existing,
-  onClose,
-  onAdded,
-}: {
-  contest: Contest | null;
-  existing: Candidate[];
+  election: Election;
+  parties: ElectionParty[];
+  constituencies: ConstituencySetup[];
+  initial: Constituency | null;
   onClose: () => void;
   onAdded: () => void;
 }) {
   const toast = useToast();
+  const [constituency, setConstituency] = useState<Constituency | null>(initial);
+  const [search, setSearch] = useState("");
+  const [partyId, setPartyId] = useState("");
   const [name, setName] = useState("");
-  const [party, setParty] = useState("");
-  const [acronym, setAcronym] = useState("");
-  const [orderOverride, setOrderOverride] = useState<string | null>(null);
-  const [own, setOwn] = useState(false);
   const [error, setError] = useState<string[]>([]);
 
-  const suggested = String(Math.max(0, ...existing.map((c) => c.ballot_order)) + 1);
-  const order = orderOverride ?? suggested;
-  const ownTaken = existing.some((c) => c.is_own_party);
+  const options = useQuery({
+    queryKey: ["constituencies", election.constituency_kind, election.state_id, search],
+    enabled: open && !constituency,
+    queryFn: async () =>
+      (
+        await ep.geography.constituencies({
+          kind: election.constituency_kind,
+          state: election.state_id,
+          search: search.trim() || undefined,
+          limit: 25,
+        })
+      ).results,
+  });
+  // A state-wide race has one constituency: nothing to pick.
+  const only = !search && options.data?.length === 1 ? options.data[0]! : null;
+  const chosen = constituency ?? only;
 
-  const reset = () => {
-    setName("");
-    setParty("");
-    setAcronym("");
-    setOrderOverride(null);
-    setOwn(false);
-    setError([]);
-  };
+  const taken = new Set(
+    constituencies
+      .find((g) => g.constituencyId === chosen?.id)
+      ?.contestants.map((c) => c.party_id) ?? [],
+  );
+  const free = parties.filter((p) => !taken.has(p.party_id));
+  const effectiveParty = partyId && free.some((p) => p.party_id === partyId) ? partyId : (free[0]?.party_id ?? "");
 
   const create = useMutation({
     mutationFn: () =>
-      ep.contests.createCandidate(contest!.id, {
+      ep.elections.createContestant(election.id, {
+        constituency_id: chosen!.id,
+        party_id: effectiveParty,
         name: name.trim(),
-        party_name: party.trim(),
-        party_acronym: acronym.trim(),
-        ballot_order: Number(order),
-        is_own_party: own,
       }),
     onSuccess: () => {
-      toast(`${name.trim()} added`);
-      reset();
+      const party = parties.find((p) => p.party_id === effectiveParty);
+      toast(`${name.trim()} (${party?.abbreviation ?? ""}) added`);
+      setName("");
+      setPartyId("");
+      setError([]);
+      if (!constituency && chosen) setConstituency(chosen);
       onAdded();
     },
-    onError: (e) => setError(errorLines(e, "Could not add the candidate.")),
+    onError: (e) => setError(errorLines(e, "Could not add the contestant.")),
   });
 
-  const remaining = Math.max(0, 2 - existing.length);
+  const kind = constituencyKind(election.constituency_kind);
+  const close = () => {
+    setConstituency(null);
+    setSearch("");
+    setName("");
+    setPartyId("");
+    setError([]);
+    onClose();
+  };
 
   return (
     <SidePanel
-      open={!!contest}
-      onOpenChange={(next) => {
-        if (!next) {
-          reset();
-          onClose();
-        }
-      }}
-      title="Add a candidate"
-      description={
-        contest
-          ? `For ${contest.title}. ${
-              remaining > 0
-                ? `You need at least ${remaining} more.`
-                : "You can add more, or close this when you are done."
-            }`
-          : undefined
-      }
+      open={open}
+      onOpenChange={(next) => !next && close()}
+      title="Add contestants"
+      description={`Each contesting party's candidate in one ${kind.toLowerCase()}. Add them one after another; close this when you are done.`}
       footer={
         <>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" onClick={close}>
             Done
           </Button>
           <Button
             loading={create.isPending}
-            disabled={!name.trim() || !party.trim() || !acronym.trim() || !(Number(order) >= 1)}
+            disabled={!chosen || !effectiveParty || !name.trim()}
             onClick={() => create.mutate()}
           >
-            Add candidate
+            Add contestant
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-5">
-        {existing.length > 0 ? (
-          <div className="rounded-md bg-muted p-3 text-body-sm">
-            <p className="font-semibold">Added so far</p>
-            <ul className="mt-1 text-subtle-foreground">
-              {[...existing]
-                .sort((a, b) => a.ballot_order - b.ballot_order)
-                .map((c) => (
-                  <li key={c.id}>
-                    {c.ballot_order}. {c.name} ({c.party_acronym})
-                  </li>
-                ))}
-            </ul>
-          </div>
-        ) : null}
         {error.length > 0 ? (
           <InlineAlert tone="danger" title="Not added">
             {error.join(" ")}
           </InlineAlert>
         ) : null}
-        <Field label="Candidate's name">
-          {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} />}
-        </Field>
-        <Field label="Party">
-          {(p) => <Input {...p} value={party} onChange={(e) => setParty(e.target.value)} />}
-        </Field>
-        <Field label="Party acronym" hint="As printed on the ballot paper, for example APC.">
-          {(p) => (
-            <Input
-              {...p}
-              value={acronym}
-              onChange={(e) => setAcronym(e.target.value.toUpperCase())}
-              maxLength={20}
-            />
-          )}
-        </Field>
-        <Field
-          label="Position on the ballot paper"
-          hint="1 is the top of the ballot paper. Agents see candidates in this order."
-        >
-          {(p) => (
-            <Input
-              {...p}
-              type="number"
-              min={1}
-              max={200}
-              value={order}
-              onChange={(e) => setOrderOverride(e.target.value)}
-              className="max-w-28"
-            />
-          )}
-        </Field>
-        <label
-          className={cn(
-            "flex items-start gap-3 rounded-md border p-3",
-            ownTaken ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-muted",
-          )}
-        >
-          <input
-            type="checkbox"
-            className="mt-0.5 h-5 w-5 accent-[rgb(var(--primary))]"
-            checked={own}
-            disabled={ownTaken}
-            onChange={(e) => setOwn(e.target.checked)}
-          />
-          <span>
-            <span className="block text-body-sm font-semibold">
-              This is our party&apos;s candidate
-            </span>
-            <span className="block text-caption text-subtle-foreground">
-              {ownTaken
-                ? "Another candidate in this contest is already marked as yours."
-                : "The dashboard highlights your candidate and shows how they are doing."}
-            </span>
-          </span>
-        </label>
+        {chosen ? (
+          <div className="flex items-center justify-between gap-3 rounded-md bg-muted p-3">
+            <div>
+              <p className="text-caption text-subtle-foreground">{kind}</p>
+              <p className="text-body font-semibold">{chosen.name}</p>
+            </div>
+            {!only || constituency ? (
+              <Button size="sm" variant="ghost" onClick={() => setConstituency(null)}>
+                Change
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <Field label={`Find the ${kind.toLowerCase()}`}>
+              {(p) => (
+                <Input
+                  {...p}
+                  value={search}
+                  placeholder="Type a name or code"
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              )}
+            </Field>
+            {options.isLoading ? (
+              <Skeleton className="h-24" />
+            ) : options.isError ? (
+              <QueryError error={options.error} onRetry={() => void options.refetch()} />
+            ) : (options.data ?? []).length === 0 ? (
+              <p className="text-body-sm text-subtle-foreground">
+                No {kind.toLowerCase()} matches. If none is listed at all, the constituency mapping
+                for this state has not been loaded yet; ask your platform operator.
+              </p>
+            ) : (
+              <ul className="max-h-64 divide-y divide-border overflow-y-auto rounded-md border border-border">
+                {options.data!.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-body-sm hover:bg-muted"
+                      onClick={() => setConstituency(c)}
+                    >
+                      <span className="font-semibold">{c.name}</span>
+                      <span className="mono text-caption text-subtle-foreground">{c.code}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {chosen ? (
+          free.length === 0 ? (
+            <InlineAlert tone="info" title="Every party has a contestant here">
+              Pick another {kind.toLowerCase()}, or close this panel.
+            </InlineAlert>
+          ) : (
+            <>
+              <Field label="Party">
+                {(p) => (
+                  <Select
+                    {...p}
+                    value={effectiveParty}
+                    onChange={(e) => setPartyId(e.target.value)}
+                  >
+                    {free.map((party) => (
+                      <option key={party.party_id} value={party.party_id}>
+                        {party.abbreviation} · {party.full_name}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Field label="Candidate's name" hint="As it appears on the result sheet.">
+                {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} />}
+              </Field>
+            </>
+          )
+        ) : null}
       </div>
     </SidePanel>
   );
@@ -1457,13 +1642,11 @@ function AddCandidatePanel({
 
 function DeleteElection({
   election,
-  contests,
-  candidates,
+  contestants,
   onDeleted,
 }: {
   election: Election;
-  contests: number;
-  candidates: number;
+  contestants: number;
   onDeleted: () => void;
 }) {
   const toast = useToast();
@@ -1505,11 +1688,9 @@ function DeleteElection({
         open={open}
         onOpenChange={setOpen}
         title={`Delete ${election.name}?`}
-        description={`This removes the election, its ${formatNumber(contests)} ${
-          contests === 1 ? "contest" : "contests"
-        } and ${formatNumber(candidates)} ${
-          candidates === 1 ? "candidate" : "candidates"
-        }, and any agent placements made for it. Agents and polling units are not affected. This cannot be undone. You will be asked for your authenticator code.`}
+        description={`This removes the election, its contesting parties and ${formatNumber(contestants)} ${
+          contestants === 1 ? "contestant" : "contestants"
+        }, and any agent placements made for it. Your party list, agents and polling units are not affected. This cannot be undone. You will be asked for your authenticator code.`}
         confirmLabel="Delete election"
         danger
         loading={remove.isPending}

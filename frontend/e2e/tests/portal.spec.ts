@@ -27,7 +27,8 @@ test.describe("ward officer", () => {
     const nav = page.getByRole("navigation", { name: "Main" });
     await expect(nav.getByRole("link", { name: "War Room" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Team and permissions" })).toHaveCount(0);
-    await expect(nav.getByRole("link", { name: "Elections and candidates" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Elections and contestants" })).toHaveCount(0);
+    await expect(nav.getByRole("link", { name: "Parties" })).toHaveCount(0);
   });
 
   test("never shows a leader without the provisional badge", async ({ page }) => {
@@ -102,7 +103,8 @@ test.describe("party admin", () => {
       "Results",
       "Anomalies",
       "Agents",
-      "Elections and candidates",
+      "Elections and contestants",
+      "Parties",
       "Evidence",
       "Reports",
       "Team and permissions",
@@ -146,9 +148,13 @@ test.describe("party admin", () => {
     await expect(page.getByRole("row").nth(1)).toBeVisible();
     await accessible(page, "agents");
 
-    await page.getByRole("link", { name: "Elections and candidates" }).click();
-    await expect(page.getByRole("heading", { name: "Contests and candidates" })).toBeVisible();
+    await page.getByRole("link", { name: "Elections and contestants" }).click();
+    await expect(page.getByRole("heading", { name: "Contesting parties" })).toBeVisible();
     await accessible(page, "elections");
+
+    await page.getByRole("link", { name: "Parties", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Parties", level: 1 })).toBeVisible();
+    await accessible(page, "parties");
 
     await page.getByRole("link", { name: "Team and permissions" }).click();
     await expect(
@@ -161,38 +167,65 @@ test.describe("party admin", () => {
     await page.close();
   });
 
+  // Two parties made for this run, so reruns never collide with an earlier run's list.
+  const stamp = String(Date.now()).slice(-5);
+  const runParties = [
+    { abbreviation: `A${stamp}`, name: `Alpha Party ${stamp}`, candidate: "Ada Obi" },
+    { abbreviation: `B${stamp}`, name: `Beta Party ${stamp}`, candidate: "Bola Eze" },
+  ];
+
+  test("adds parties to the party list", async () => {
+    const page = await context.newPage();
+    await page.goto("/parties");
+    for (const party of runParties) {
+      await page.getByRole("button", { name: "Add a party" }).first().click();
+      await page.getByLabel("Abbreviation").fill(party.abbreviation);
+      await page.getByLabel("Full name").fill(party.name);
+      await page.getByRole("button", { name: "Add party" }).click();
+      await expect(page.getByText(party.name)).toBeVisible();
+    }
+    await accessible(page, "party list");
+    await page.close();
+  });
+
   test("sets up an election step by step, with the next step always stated", async () => {
     const page = await context.newPage();
     const name = `E2E election ${Date.now()}`;
     await page.goto("/elections");
     await page.getByRole("button", { name: "New election" }).first().click();
 
-    // The state is chosen explicitly, never guessed.
+    // The type decides the constituencies; nothing is guessed.
+    await page.getByLabel("Type of election").selectOption({ label: "Governorship" });
     await page.getByLabel("Election name").fill(name);
-    const option = page.getByLabel("State").locator("option", { hasText: "Test state" });
-    await page.getByLabel("State").selectOption(await option.getAttribute("value"));
     await page.getByLabel("Election day").fill("2027-02-20");
     await page.getByRole("button", { name: "Create and continue" }).click();
-
-    // Straight into the first contest.
-    await expect(page.getByRole("heading", { name: "Add a contest" })).toBeVisible();
-    await page.getByRole("button", { name: "Add contest" }).click();
-
-    // Then its candidates; one is not enough and the page says so.
-    await expect(page.getByRole("heading", { name: "Add a candidate" })).toBeVisible();
-    await page.getByLabel("Candidate's name").fill("Ada Obi");
-    await page.getByLabel("Party", { exact: true }).fill("Alpha Party");
-    await page.getByLabel("Party acronym").fill("ALP");
-    await page.getByRole("button", { name: "Add candidate" }).last().click();
-    await page.getByRole("button", { name: "Done" }).click();
-    await expect(page.getByText("Needs 2 candidates")).toBeVisible();
+    await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Mark as ready" })).toBeDisabled();
 
-    await page.getByRole("button", { name: "Add candidate" }).first().click();
-    await page.getByLabel("Candidate's name").fill("Bola Eze");
-    await page.getByLabel("Party", { exact: true }).fill("Beta Party");
-    await page.getByLabel("Party acronym").fill("BET");
-    await page.getByRole("button", { name: "Add candidate" }).last().click();
+    // Contesting parties, in the order agents will see them.
+    for (const party of runParties) {
+      await page
+        .getByLabel("Add a party")
+        .selectOption({ label: `${party.abbreviation} · ${party.name}` });
+      await page.getByRole("button", { name: "Add", exact: true }).click();
+    }
+    await page.getByRole("button", { name: "Save order" }).click();
+    await expect(page.getByText("Contesting parties saved")).toBeVisible();
+
+    // One contestant is not enough, and the page says so.
+    await page.getByRole("button", { name: "Add contestants" }).first().click();
+    await expect(page.getByRole("heading", { name: "Add contestants" })).toBeVisible();
+    await page.getByLabel("Candidate's name").fill(runParties[0]!.candidate);
+    await page.getByRole("button", { name: "Add contestant" }).last().click();
+    await expect(page.getByText(`${runParties[0]!.candidate} (${runParties[0]!.abbreviation}) added`)).toBeVisible();
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(page.getByText(/has one contestant/).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Mark as ready" })).toBeDisabled();
+
+    await page.getByRole("button", { name: "Add contestant" }).first().click();
+    await page.getByLabel("Candidate's name").fill(runParties[1]!.candidate);
+    await page.getByRole("button", { name: "Add contestant" }).last().click();
+    await expect(page.getByText(`${runParties[1]!.candidate} (${runParties[1]!.abbreviation}) added`)).toBeVisible();
     await page.getByRole("button", { name: "Done" }).click();
 
     await expect(page.getByRole("button", { name: "Mark as ready" })).toBeEnabled();
@@ -207,9 +240,11 @@ test.describe("party admin", () => {
     await page.goto("/agents");
     await expect(page.getByText(/Assigning for E2E election/)).toBeVisible();
 
+    // Never the demo agent: the phone-width tests sign in as them.
     const row = page
       .getByRole("row")
       .filter({ hasText: "Not assigned" })
+      .filter({ hasNotText: "Kemi Adebayo" })
       .filter({ has: page.getByRole("button", { name: "Assign", exact: true }) })
       .last();
     const agent = (await row.getByRole("cell").first().innerText()).trim();
@@ -280,6 +315,14 @@ test.describe("party admin", () => {
     }
     await expect(page.getByText(`${name} was deleted`)).toBeVisible();
     await expect(picker.locator("option", { hasText: name })).toHaveCount(0);
+
+    // With the election gone, the run's parties can leave the list too.
+    await page.goto("/parties");
+    for (const party of runParties) {
+      await page.getByRole("button", { name: `Remove ${party.abbreviation}` }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Remove party" }).click();
+      await expect(page.getByText(party.name)).toHaveCount(0);
+    }
     await page.close();
   });
 

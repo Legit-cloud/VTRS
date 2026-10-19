@@ -9,6 +9,7 @@ import {
   Settings,
   Users,
   UsersRound,
+  Vote,
   type LucideIcon,
 } from "lucide-react";
 
@@ -28,10 +29,11 @@ export const NAV: NavItem[] = [
   { href: "/agents", label: "Agents", icon: UsersRound, permission: "assignments.manage" },
   {
     href: "/elections",
-    label: "Elections and candidates",
+    label: "Elections and contestants",
     icon: BookOpenCheck,
     permission: "elections.configure",
   },
+  { href: "/parties", label: "Parties", icon: Vote, permission: "candidates.manage" },
   { href: "/evidence", label: "Evidence", icon: FileSearch, permission: "evidence.view" },
   { href: "/reports", label: "Reports", icon: FileDown, permission: "reports.export" },
   { href: "/team", label: "Team and permissions", icon: Users, permission: "users.manage" },

@@ -3,7 +3,9 @@ import type { SheetField } from "./submission";
 export type TotalsInput = Partial<Record<SheetField, number | null>>;
 
 export interface Check {
-  id: "candidates_vs_valid" | "valid_plus_rejected_vs_cast" | "cast_vs_accredited";
+  id: "votes_plus_rejected_vs_cast" | "cast_vs_accredited" | "cast_not_reconciled";
+  /** A blocking check stops the send; the server refuses the same numbers. */
+  blocking: boolean;
   ok: boolean;
   /** Numbers involved, for the sentence shown to the agent. */
   left: number;
@@ -11,35 +13,48 @@ export interface Check {
 }
 
 /**
- * The same arithmetic the server applies (`apps/anomalies/domain/inline.py`), so an agent
- * hears about a mismatch before sending, while the sheet is still in their hands.
+ * The same rules the server applies (`apps/results/domain/sheet.py` and the inline anomaly
+ * rule), so an agent hears about a problem before sending, while the sheet is in their hands.
+ *
+ * - party votes + rejected must not exceed total cast (refused by the server)
+ * - total cast must not exceed accredited (refused by the server)
+ * - party votes + rejected below total cast is accepted but flagged for a coordinator
  */
-export function checkTotals(candidateVotes: readonly number[], totals: TotalsInput): Check[] {
+export function checkTotals(partyVotes: readonly number[], totals: TotalsInput): Check[] {
   const checks: Check[] = [];
-  const sum = candidateVotes.reduce((a, b) => a + b, 0);
-  const valid = totals.valid;
-  if (valid != null) {
-    checks.push({ id: "candidates_vs_valid", ok: sum === valid, left: sum, right: valid });
-  }
-  if (valid != null && totals.rejected != null && totals.total_cast != null) {
-    const left = valid + totals.rejected;
+  const sum = partyVotes.reduce((a, b) => a + b, 0);
+  const { rejected, total_cast: cast, accredited } = totals;
+  if (rejected != null && cast != null) {
+    const left = sum + rejected;
     checks.push({
-      id: "valid_plus_rejected_vs_cast",
-      ok: left === totals.total_cast,
+      id: "votes_plus_rejected_vs_cast",
+      blocking: true,
+      ok: left <= cast,
       left,
-      right: totals.total_cast,
+      right: cast,
     });
-  }
-  if (totals.accredited != null) {
-    const cast = totals.total_cast ?? valid;
-    if (cast != null) {
+    if (left <= cast) {
       checks.push({
-        id: "cast_vs_accredited",
-        ok: cast <= totals.accredited,
-        left: cast,
-        right: totals.accredited,
+        id: "cast_not_reconciled",
+        blocking: false,
+        ok: left === cast,
+        left,
+        right: cast,
       });
     }
   }
+  if (cast != null && accredited != null) {
+    checks.push({
+      id: "cast_vs_accredited",
+      blocking: true,
+      ok: cast <= accredited,
+      left: cast,
+      right: accredited,
+    });
+  }
   return checks;
 }
+
+/** The first problem that stops a send, or null when the numbers can go. */
+export const blockingProblem = (checks: readonly Check[]): Check | null =>
+  checks.find((c) => c.blocking && !c.ok) ?? null;

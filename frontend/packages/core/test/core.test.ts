@@ -4,7 +4,8 @@ import {
   ApiClient,
   ApiError,
   buildQuery,
-  buildSubmissionItem,
+  blockingProblem,
+  buildSubmission,
   canonicalJson,
   checkTotals,
   cursorFrom,
@@ -33,67 +34,73 @@ describe("canonical JSON matches the server byte for byte", () => {
   });
 });
 
-describe("submission item", () => {
+describe("submission", () => {
   const draft = {
     versionId: "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c01",
-    contestId: "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c02",
+    electionId: "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c02",
     pollingUnitId: "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c03",
     configVersion: 3,
     parentVersionId: null,
-    totals: { accredited: 520, valid: 498, rejected: 12, total_cast: 510 },
+    totals: { accredited: 520, rejected: 12, total_cast: 510 },
     votes: [
       { candidateId: "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c04", votes: 301 },
       { candidateId: "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c05", votes: 197 },
     ],
     capturedAt: new Date("2026-10-12T14:05:09.123Z"),
     gps: { lat: 7.3776, lng: 3.947, accuracyM: 12.5 },
-    deviceId: "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c06",
-    appVersion: "1.0.0",
-    evidence: [
-      {
-        evidence_id: "0198a2b4-7c3e-7a10-8c11-4d2f6a9b1c07",
-        kind: "EC8A" as const,
-        size: 348120,
-        mime: "image/jpeg" as const,
-        sha256: "a".repeat(64),
-      },
-    ],
   };
 
   it("reproduces the server's hash for the same content", () => {
-    const item = buildSubmissionItem(draft, ["accredited", "valid", "rejected", "total_cast"]);
+    const item = buildSubmission(draft);
     expect(item.payload_hash).toBe(fixtures.submission.hash);
   });
 
-  it("only sends the fields the contest asks for", () => {
-    const item = buildSubmissionItem(draft, ["valid"]);
-    expect(item.totals).toEqual({ valid: 498 });
+  it("sends the three totals and no valid votes", () => {
+    const item = buildSubmission(draft);
+    expect(item.totals).toEqual({ accredited: 520, total_cast: 510, rejected: 12 });
   });
 
-  it("refuses a missing required field", () => {
-    expect(() => buildSubmissionItem({ ...draft, totals: {} }, ["valid"])).toThrow();
+  it("allows zero but refuses a blank party", () => {
+    const zero = buildSubmission({
+      ...draft,
+      votes: [{ ...draft.votes[0]!, votes: 0 }, draft.votes[1]!],
+    });
+    expect((zero.votes as Array<{ votes: number }>)[0]!.votes).toBe(0);
+    expect(() =>
+      buildSubmission({ ...draft, votes: [{ ...draft.votes[0]!, votes: null }, draft.votes[1]!] }),
+    ).toThrow(/0 included/);
+  });
+
+  it("refuses a missing total", () => {
+    expect(() => buildSubmission({ ...draft, totals: { accredited: 1, rejected: 0 } })).toThrow();
   });
 });
 
 describe("arithmetic", () => {
   it("passes a sheet that adds up", () => {
-    const checks = checkTotals([301, 197], {
-      valid: 498,
-      rejected: 12,
-      total_cast: 510,
-      accredited: 520,
-    });
+    const checks = checkTotals([301, 197], { rejected: 12, total_cast: 510, accredited: 520 });
     expect(checks.every((c) => c.ok)).toBe(true);
+    expect(blockingProblem(checks)).toBeNull();
   });
 
-  it("reports both numbers when candidates and valid disagree", () => {
-    const [first] = checkTotals([300, 115], { valid: 412 });
-    expect(first).toMatchObject({ id: "candidates_vs_valid", ok: false, left: 415, right: 412 });
+  it("blocks party votes plus rejected above total cast", () => {
+    const checks = checkTotals([300, 115], { rejected: 5, total_cast: 412 });
+    expect(blockingProblem(checks)).toMatchObject({
+      id: "votes_plus_rejected_vs_cast",
+      left: 420,
+      right: 412,
+    });
   });
 
-  it("flags more cast than accredited", () => {
-    const checks = checkTotals([10], { valid: 10, accredited: 8 });
-    expect(checks.find((c) => c.id === "cast_vs_accredited")?.ok).toBe(false);
+  it("blocks more cast than accredited", () => {
+    const checks = checkTotals([10], { rejected: 0, total_cast: 10, accredited: 8 });
+    expect(blockingProblem(checks)?.id).toBe("cast_vs_accredited");
+  });
+
+  it("warns, without blocking, when the totals fall short of total cast", () => {
+    const checks = checkTotals([100], { rejected: 0, total_cast: 110, accredited: 200 });
+    expect(blockingProblem(checks)).toBeNull();
+    expect(checks.find((c) => c.id === "cast_not_reconciled")?.ok).toBe(false);
   });
 });
 
@@ -204,6 +211,19 @@ describe("api client", () => {
     expect(key).toMatch(/^[0-9a-f-]{36}$/);
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).fieldErrors()).toEqual({ email: "Enter a valid email address." });
+  });
+
+  it("returns accepted error statuses as replies", async () => {
+    const client = new ApiClient({
+      baseUrl: "",
+      getAccessToken: () => "t",
+      fetchImpl: async () => json(400, { status: "FAILED", code: "missing_party" }),
+    });
+    const reply = await client.request<{ code: string }>("POST", "/x", {
+      body: {},
+      acceptStatuses: [400],
+    });
+    expect([reply.status, reply.data.code]).toEqual([400, "missing_party"]);
   });
 
   it("maps a dead network to a status-0 error", async () => {
