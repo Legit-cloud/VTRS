@@ -1,8 +1,9 @@
 # VTRS threat model
 
 Scope: the backend described in the README (API, WebSocket feed, workers, PostgreSQL, object
-storage, provider integrations). The web portal and the mobile app are clients of it and are
-assessed separately; this document says what the backend assumes of them.
+storage, provider integrations). The web app (one app for every role; agents use it in their
+phone's browser) is a client of it and is assessed separately; this document says what the
+backend assumes of it.
 
 This is a working document for PB-11. It names what is protected, who might attack it, what the
 code does about each threat today, and what is still open. Every "control" below points at
@@ -25,7 +26,7 @@ code or a test, so it can be checked rather than believed.
 | Actor | Capability | Typical goal |
 | --- | --- | --- |
 | Outsider on the internet | Anonymous requests, scripts, botnets | Take it down; harvest SMS (pumping); read results |
-| Hostile or compromised agent | A valid agent account and device at one polling unit | Inject or alter a result; claim another unit; reuse a photo |
+| Hostile or compromised agent | A valid agent account at one polling unit | Inject or alter a result; claim another unit; reuse a photo |
 | Rogue officer or admin | Legitimate access to part or all of one organization | Read another area; erase a trail; export data out |
 | Rival party's user | A valid account in *another* organization | Cross a tenant boundary |
 | Insider with database or storage access | Operator credentials | Edit a figure or a photo without trace |
@@ -35,11 +36,12 @@ code or a test, so it can be checked rather than believed.
 
 1. Internet to edge (TLS, rate limiting, WAF: the edge is infrastructure, see section 6).
 2. Edge to API/WebSocket. Everything beyond this line is authenticated or explicitly `public`.
-3. Device to API. The device is *untrusted*: its clock, GPS and totals are inputs, never facts.
+3. Browser to API. The agent's phone is *untrusted*: its clock, GPS and totals are inputs,
+   never facts.
 4. API to workers over the outbox (events are facts the API wrote; workers re-derive state).
 5. Application to PostgreSQL as `vtrs_app`, which has no UPDATE or DELETE on immutable tables.
 6. Application to object storage with presigned, short-lived, checksum-pinned URLs.
-7. Application to providers (SMS, push, challenge, scanner) over HTTPS through one seam.
+7. Application to providers (SMS, challenge, scanner) over HTTPS through one seam.
 
 ## 4. Threats and controls (STRIDE)
 
@@ -60,10 +62,10 @@ code or a test, so it can be checked rather than believed.
 
 | Threat | Control | Evidence |
 | --- | --- | --- |
-| Editing or deleting a submitted result | A result version is immutable (trigger plus grants); only its review `state` may change, and that is ledgered. Corrections are new versions | `apps/results/migrations/0002_integrity.py`, `tests/results/test_sync.py` |
+| Editing or deleting a submitted result | A result version is immutable (trigger plus grants); only its review `state` may change, and that is ledgered. Corrections are new versions | `apps/results/migrations/0002_integrity.py`, `tests/results/test_submission.py` |
 | Replay or duplicate submissions | Client-generated version id is the idempotency key; same id with a different hash is a 409 and an audit entry | `tests/results/test_concurrency.py` (100 parallel replays, one version) |
-| Altered payload in transit or at rest | Device-signed `payload_hash` verified on receipt and stored | `apps/results/domain/versions.py` |
-| Swapped or corrupted photo | Presigned PUT pins the SHA-256, so the store rejects corruption; the server re-hashes after upload; packs re-hash again and exclude mismatches | `tests/results/test_evidence.py`, `tests/reports/test_pack.py` |
+| Altered payload in transit or at rest | TLS in transit; the client's `payload_hash` (SHA-256 of the canonical submission) is recomputed on receipt and stored, so a replay with different numbers is refused | `apps/results/domain/versions.py` |
+| Swapped or corrupted sheet | Presigned PUT pins the SHA-256, so the store rejects corruption; the server re-hashes after upload; packs re-hash again and exclude mismatches | `tests/results/test_evidence.py`, `tests/reports/test_pack.py` |
 | Rewriting custody or audit history | Per-file hash chain; audit events sealed into Merkle batches that chain to the previous root; both tables append-only by trigger and grants | `verify_custody`, `verify_audit_chain` |
 | Rollup figures drifting from the truth | Rollups are derived data, recomputed from head versions; `verify_rollups` compares against an independent calculation; reconciliation freezes an immutable snapshot with a digest | `tests/aggregation` |
 | Malicious spreadsheet content | Formula-like text neutralized in every exported cell | `tests/reports/test_formats.py` |
@@ -95,7 +97,7 @@ code or a test, so it can be checked rather than believed.
 
 | Threat | Control |
 | --- | --- |
-| Request floods | Throttles by scope (login, OTP, refresh, submit per device), body size limit (413), batch cap of 10 items, pagination caps |
+| Request floods | Throttles by scope (login, OTP, refresh, submit per agent), body size limit (413), one result per submission, pagination caps |
 | Expensive queries | Keyset pagination only; windowed audit queries (31 days); statement and lock timeouts at the database |
 | Long-running exports | Background jobs, three per person, pack limits, retention purge |
 | Worker starvation or backlog | Outbox relay and sweeps as safety nets; health endpoint exposes backlog age; rollup refresh is coalesced so a burst costs a few refreshes, not one per result |
@@ -119,7 +121,7 @@ code or a test, so it can be checked rather than believed.
 | Same sheet photographed for two units | Duplicate-evidence flag from exact and perceptual hashes |
 | Totals that do not add up, or exceed accredited or registered | Inline arithmetic and over-voting flags |
 | Implausible turnout or vote share | Robust outlier flags against neighbouring units |
-| Backdated or future-dated device clock | Clock-ahead and before-polls flags; server time is authoritative |
+| Backdated or future-dated phone clock | Clock-ahead and before-polls flags; server time is authoritative |
 | Two agents, two stories | Duplicate-source flag; both versions kept; the reviewer decides |
 | Retrying until it "sticks" | Idempotent by version id; a changed payload under the same id is refused |
 | Photo that is not an image, or is malware | Magic-byte check, bounded decode, scanner; quarantined and flagged |
@@ -132,8 +134,10 @@ code or a test, so it can be checked rather than believed.
   pepper and provider credentials from a secrets vault. Production settings refuse to start
   without them or with the development stand-ins. KMS or HSM-backed key custody is a
   deployment decision.
-- **Devices.** The mobile app is untrusted. Device attestation verdicts are stored and raise
-  flags, but blocking on them is a policy decision that has not been made.
+- **Agent phones.** Agents use their own phone's browser (open decision #7): there is no device
+  binding or attestation, so a stolen session works from any browser until it expires or is
+  revoked. Sessions are short, refresh tokens rotate, and deactivating an agent ends every
+  session and assignment at once.
 - **Biometrics.** Face verification (FR-6.1.3) is not implemented and stays behind PB-08 and
   SEC-09.
 - **Data residency.** No residency claim is made until PB-12 selects the region (DG-06).
@@ -149,5 +153,5 @@ code or a test, so it can be checked rather than believed.
 3. Stand up the secrets vault and key rotation procedure; rehearse it (runbook section 9).
 4. Anchor sealed audit roots outside the database (object lock or a second system).
 5. Confirm provider choices (PB-07) and run each adapter against the real service.
-6. Decide the device-attestation policy.
+6. Confirm that agents' own phones without device binding are acceptable (PB-06).
 7. Legal review of retention, export and biometric decisions (PB-08, PB-09).

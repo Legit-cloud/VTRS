@@ -1,7 +1,10 @@
 # VTRS backend
 
 Vote Tracking & Recording Solution: the Django backend for the Oyo State pilot. It serves
-the public website, the party portal and the offline-first agent app.
+the public website and one role-based web app (`frontend/`): party leadership, coordinators
+and polling unit agents all use the same app, agents in their phone's browser. What a person
+sees and can do depends only on their role and assigned area. There is no native mobile app
+and no offline capture.
 
 VTRS is a party-side monitoring and recording system. Any leading position it shows is
 provisional and based on captured party data. It is never an official declaration.
@@ -21,7 +24,7 @@ cp .env.example .env
 make venv          # Python 3.12 virtualenv with dev dependencies
 make up            # start the stack
 make migrate       # migrations run as vtrs_migrator; the app connects as vtrs_app
-make seed          # synthetic Oyo-shaped master data: 33 LGAs, 351 wards, 6,390 PUs
+make seed          # synthetic Oyo-shaped master data, election types, constituencies, bucket
 make check         # ruff, import-linter, pytest
 ```
 
@@ -36,8 +39,15 @@ $env:DATABASE_URL = "postgres://vtrs_migrator:vtrs_migrator_dev@localhost:5432/v
 Remove-Item Env:DATABASE_URL
 .\.venv\Scripts\python manage.py generate_synthetic_geography --out var\synthetic_oyo.csv
 .\.venv\Scripts\python manage.py import_master_data var\synthetic_oyo.csv --report var\import_report.json
+.\.venv\Scripts\python manage.py load_election_types
+.\.venv\Scripts\python manage.py import_constituencies --derive
+.\.venv\Scripts\python manage.py ensure_evidence_bucket
 .\.venv\Scripts\python -m pytest
 ```
+
+`ensure_evidence_bucket` also lets the web app's own origins (`VTRS_CORS_ALLOWED_ORIGINS`;
+`http://localhost:3000` in development) PUT result sheets straight to the bucket, which is how
+browsers upload them. A production bucket needs the same rule for the real web origin.
 
 Tests need PostgreSQL. Triggers, partitioning, `SKIP LOCKED` and advisory locks are all
 exercised for real. Tests connect through `TEST_DATABASE_URL`, which defaults to the Compose
@@ -86,7 +96,8 @@ table and fails on any view that does neither.
   need a fresh second factor and are audited against the organization concerned.
 - **Agents and officers** are only ever invited (`POST /api/v1/invitations`). The invitee
   accepts with the token from the SMS or email link, an OTP sent to the invited contact, and
-  a password. Agents also register their device.
+  a password. Agents open the link on their phone and use the same web app as everyone else;
+  there is no device registration.
 - **Tokens:** access tokens are 10-minute EdDSA JWTs. Refresh tokens are opaque, rotated on
   every use, and a reused one revokes the whole session. Role and scope are re-read from the
   database on every request, so changes apply immediately.
@@ -103,36 +114,74 @@ Production must provide these from the secrets vault: `VTRS_JWT_PRIVATE_KEY` (Ed
 and `VTRS_BOT_CHALLENGE_PROVIDER`. Production settings refuse to start with the fake SMS
 provider or with the bot challenge disabled.
 
-## Elections and deployment
+## Elections, parties and assignments
 
-- **Lifecycle:** `DRAFT ⇄ CONFIGURED → LOCKED → LIVE → CLOSED`. Contests and candidates can
-  change only before `LOCKED`. Locking needs a fresh second factor and records a SHA-256
-  fingerprint of the whole configuration (`config_hash`). Results capture opens at `LIVE`.
-- **Contests:** a contest covers a set of states, LGAs or wards, so a senatorial district is
-  just the list of its LGAs. Each contest says which result-sheet totals it captures.
-- **Config changes:** every change bumps the election's `config_version`, which agents sync
-  against. Edits need the `ETag` from the last read in `If-Match`; a stale edit gets 412.
+- **Election types** are configuration, not code: `data/election_types.json`, loaded with
+  `python manage.py load_election_types`. Each type names the constituency kind its races are
+  held in (governorship: the state; senatorial: senatorial districts; and so on).
+- **Constituencies** are reference data. STATE, LGA and WARD constituencies are derived from
+  the geography (`import_constituencies --derive`); senatorial districts and federal and
+  state constituencies come from the approved delimitation as a CSV (`kind, code, name,
+  state_code, lga_code, ward_code`; a blank ward means the whole LGA) through
+  `import_constituencies <file.csv> [--dry-run] [--report out.json]`. A polling unit resolves
+  to exactly one constituency per kind.
+- **Party master list** (`/api/v1/parties`, admins only): full name, abbreviation as printed on
+  the sheet, an optional logo (presigned upload, checked before it is used) and at most one
+  party marked as the organization's own. Results reference parties by id; agents never type
+  a party or candidate name.
+- **An election** has a type, a state and a date. The admin picks the contesting parties and
+  their fixed display order (`PUT /elections/{id}/parties`), then each party's contestant per
+  constituency (`POST /elections/{id}/contestants`). One party has at most one contestant per
+  constituency; the contest for a constituency is created with its first contestant.
+- **Lifecycle:** `DRAFT ⇄ CONFIGURED → LOCKED → LIVE → CLOSED → RECONCILED`. Parties and
+  contestants can change only before `LOCKED`; to become ready an election needs at least two
+  contesting parties and every constituency with contestants needs two. Locking needs a fresh
+  second factor and records a SHA-256 fingerprint of the whole configuration (`config_hash`).
+  Results capture opens at `LIVE`. Edits need the `ETag` from the last read in `If-Match`; a
+  stale edit gets 412.
+- **Configuration issues:** an agent who cannot find a party or candidate on the form reports
+  "party missing" or "contestant missing" (`POST /elections/{id}/config-issues`). It is a task
+  for an admin (`GET /elections/{id}/config-issues`, `POST /config-issues/{id}/resolve`); it
+  never creates a party or contestant.
 - **Assignments:** an agent can only be deployed to a polling unit that is inside the
   election's state and among the agent's authorized units. `VTRS_MAX_AGENTS_PER_POLLING_UNIT`
   (default 1) caps how many agents can cover one polling unit.
-- **Agent view:** `GET /api/v1/me/assignments` returns each assigned polling unit with its
-  ballot (only the contests that cover it, candidates in ballot order). It also says whether
-  capture is open.
+
+## Result capture in the browser
+
+1. `GET /api/v1/me/assignments`: the agent's elections and polling units, each with its current
+   result, completion and review state.
+2. `GET /elections/{id}/polling-units/{pu}/form`: the configured parties for the unit's
+   constituency in display order (abbreviation, name, logo, candidate), the totals to record,
+   the config version and the current version, if any.
+3. `POST /api/v1/submissions`: one unit's numbers. The browser makes the version id when the
+   form opens and keeps it with the draft, so a retry or double tap is a replay
+   (`replayed: true`), never a second result. Every configured party must be present, zero
+   allowed and blank refused; party votes plus rejected may not exceed total cast, nor total
+   cast accredited. Suspicious but valid numbers are accepted and flagged.
+4. `POST /evidence/uploads`, a presigned PUT of the sheet (photo compressed in the browser, or a
+   PDF) straight to storage, then `POST /evidence/{id}/complete` (SHA-256 checked). The result
+   is **complete** only once a sheet is attached.
+5. Corrections are new versions with `parent_version_id`; nothing is overwritten.
 
 ## Results, review and dashboards
 
 - **Counting rule:** a polling unit's result is its *head version*: the highest version that
   has not been rejected. Corrections are new versions; nothing is edited or deleted.
 - **Two measures, always kept:** *Reported* counts every counting head (submitted, flagged or
-  approved). *Verified* counts only heads a reviewer has approved. The election's
-  `count_policy` picks the default, and every dashboard call accepts `?measure=reported|verified`.
-- **Review** (off unless the election sets `review_enabled`): `POST /api/v1/results/{id}/review`
-  approves or rejects the version that currently counts. A rejection needs a reason, keeps the
-  original record, and the head falls back to the previous version; the agent sees the reason
-  in `GET /sync/status` and resubmits as a new version. Approving a flagged result needs
-  `acknowledge_flags`. Decisions live in an append-only ledger and the audit log.
+  verified). *Verified* counts only heads a coordinator has verified against the sheet. The
+  election's `count_policy` picks the default, and every dashboard call accepts
+  `?measure=reported|verified`.
+- **Verification** is always available: every result is unverified until an LGA or ward
+  coordinator (or an admin) checks it against its uploaded sheet with
+  `POST /api/v1/results/{id}/review`. A result without a sheet cannot be verified
+  (`evidence_required`), and nobody verifies their own submission. A rejection needs a reason,
+  keeps the original record, and the head falls back to the previous version; the agent sees
+  the reason with their assignment and sends a corrected version. Verifying a flagged result
+  needs `acknowledge_flags`. Decisions live in an append-only ledger and the audit log.
   `GET /elections/{id}/review-queue` lists what is waiting inside the caller's scope.
-- **Rollups:** Ward, LGA and State figures are stored (`rollup`, `rollup_vote`) and recomputed
+- **Rollups:** Ward, LGA and State figures are stored per contest (`rollup`, `rollup_vote` per
+  contestant) and recomputed
   by a worker after every accepted version or review decision. Recomputing is idempotent, so a
   repeated or delayed event cannot leave a wrong figure behind. Polling-unit figures are read
   straight from the head version. Operators can repair or check them:
@@ -142,11 +191,15 @@ provider or with the bot challenge disabled.
   python manage.py verify_rollups  [--election ID]     # non-zero exit on any difference
   ```
 - **Reads** (`dashboard.view`, narrowed to the caller's geography): `GET
-  /elections/{id}/dashboard` (War Room), `GET /contests/{id}/results?level=lga|ward|pu&parent_id=`
-  (drill-down and LGA scorecards), `GET /contests/{id}/coverage-timeline`, and `GET
-  /contests/{id}/polling-units/{id}/history` (every version with reviews, flags and evidence).
-  A scoped officer's top level is their own area; they never see the state total.
-  Every figure is provisional, and responses say so.
+  /elections/{id}/dashboard` (War Room: every contesting party side by side, X of Y polling
+  units reported and verified, and the leader status), `GET
+  /elections/{id}/results?level=lga|ward|pu&parent_id=` (drill-down with each party's votes and
+  the leader per row), `GET /elections/{id}/coverage-timeline`, and `GET
+  /elections/{id}/polling-units/{id}/history` (every version with reviews, flags and evidence).
+  Election-level and per-party figures are sums of the contest rollups at read time. A tie is
+  reported as `TIED` and a lead at or below `VTRS_NARROW_MARGIN_PCT` (default 5%) of the
+  counted votes as `NARROW`, never as a plain leader. A scoped coordinator's top level is their
+  own area; they never see the state total. Every figure is provisional, and responses say so.
 - **Live updates:** connect a WebSocket to `/ws/v1/dashboard`, send
   `{"type": "auth", "token": "<access token>", "election_id": "<uuid>"}` as the first message,
   and receive `rollup.updated` notices (ids and a revision, never figures) for the areas in
@@ -155,14 +208,14 @@ provider or with the bot challenge disabled.
 - **Reconciliation:** `GET /elections/{id}/reconciliation` shows what is outstanding, and
   `POST /elections/{id}/reconcile` (fresh second factor) rebuilds the rollups from head
   versions, proves them against a second pass, stores an immutable snapshot with its SHA-256,
-  and moves the election to `RECONCILED`. With review on, every counting result must have been
-  decided first. After that, results cannot change.
+  and moves the election to `RECONCILED`. Unverified results do not block it: the snapshot
+  keeps the reported and verified figures side by side. After that, results cannot change.
 
 ## Anomalies, alerts and notifications
 
 A finding never removes a result from the count. It raises a **flag**, sends the result to
 review, and tells the right people. Cheap arithmetic rules run inside the submit; the rest run
-on a worker (`anomaly` queue) as soon as the result or its photo is stored.
+on a worker (`anomaly` queue) as soon as the result or its sheet is stored.
 
 | Rule | Severity | Meaning |
 | --- | --- | --- |
@@ -171,12 +224,12 @@ on a worker (`anomaly` queue) as soon as the result or its photo is stored.
 | `GPS_OUT_OF_GEOFENCE` | MEDIUM, HIGH beyond 2 km | Fix is more than 300 m (plus its own accuracy) from the unit |
 | `GPS_MISSING`, `GPS_LOW_ACCURACY` | MEDIUM, INFO | No fix, or one worse than 100 m |
 | `CAPTURED_BEFORE_POLLS_OPEN`, `CAPTURED_BEFORE_POLLS_CLOSE` | HIGH | A result sheet cannot exist before voting ends |
-| `DEVICE_CLOCK_AHEAD` | MEDIUM | Device time is more than 5 minutes ahead of the server |
+| `DEVICE_CLOCK_AHEAD` | MEDIUM | The phone's clock is more than 5 minutes ahead of the server |
 | `TURNOUT_OUTLIER`, `VOTE_SHARE_OUTLIER` | MEDIUM, HIGH at 90% turnout | Modified z-score above 3.5 against the ward (or LGA) |
-| `HIGH_REJECTED_RATE`, `UNANIMOUS_RESULT` | MEDIUM | More than 10% rejected; every valid vote to one candidate |
-| `DUPLICATE_EVIDENCE` | HIGH | Photo matches another unit's (identical hash, or 64-bit dHash within 4 bits) |
+| `HIGH_REJECTED_RATE`, `UNANIMOUS_RESULT` | MEDIUM | More than 10% rejected; every valid vote to one party |
+| `DUPLICATE_EVIDENCE` | HIGH | Sheet matches another unit's (identical hash, or for photos a 64-bit dHash within 4 bits) |
 | `EXIF_TIME_MISMATCH`, `EXIF_GPS_MISMATCH` | MEDIUM | Photo metadata disagrees with the declared time or place |
-| `MISSING_EVIDENCE`, `EVIDENCE_QUARANTINED` | MEDIUM, HIGH | No photo after 30 minutes; photo failed verification |
+| `MISSING_EVIDENCE`, `EVIDENCE_QUARANTINED` | MEDIUM, HIGH | No sheet after 30 minutes; sheet failed verification |
 
 Thresholds are the fields of `Thresholds` in `apps/anomalies/domain/contextual.py`; override
 any of them with `VTRS_ANOMALY_THRESHOLDS = {"geofence_m": 500.0}`.
@@ -199,12 +252,12 @@ audit entry, and visibility follows the caller's geography.
 
 **Notifications** (`/api/v1/me/notifications`): each message is an in-app record with one
 delivery row per channel (PENDING, SENT, DELIVERED, FAILED, SKIPPED), retried up to three
-times. Agents get a push (and an inbox entry) when a result is rejected, with the reviewer's
-reason; they register a token with `PUT /api/v1/me/push-token`. Providers are adapters
-(`VTRS_SMS_PROVIDER`, `VTRS_PUSH_PROVIDER`, `VTRS_WHATSAPP_PROVIDER`); production refuses the
-fakes, and WhatsApp stays off until `VTRS_FEATURE_WHATSAPP_ALERTS` is enabled.
+times. Agents get an inbox entry when a result is rejected, with the reviewer's reason (native
+push went with the mobile app). Providers are adapters (`VTRS_SMS_PROVIDER`,
+`VTRS_WHATSAPP_PROVIDER`); production refuses the fakes, and WhatsApp stays off until
+`VTRS_FEATURE_WHATSAPP_ALERTS` is enabled.
 
-Beat schedules the escalation sweep (every minute), the missing-photo sweep (every five
+Beat schedules the escalation sweep (every minute), the missing-sheet sweep (every five
 minutes) and delivery retries (every minute). Run workers on the `anomaly`,
 `notifications` and `reports` queues as well.
 
@@ -216,10 +269,10 @@ a worker (`reports` queue) builds the file as the requester, and `POST
 
 | Kind | Formats | Needs |
 | --- | --- | --- |
-| `RESULTS` (per contest; level `pu`, `ward` or `lga`; measure `reported` or `verified`) | CSV, XLSX | `reports.export` |
+| `RESULTS` (per election, by party and contestant id; level `pu`, `ward` or `lga`; measure `reported` or `verified`) | CSV, XLSX | `reports.export` |
 | `FLAGS` (the anomaly register) | CSV, XLSX | `reports.export`, `anomalies.view` |
 | `AUDIT` (a window of at most 31 days) | CSV | `reports.export`, `audit.view` |
-| `EVIDENCE_PACK` (photos, manifest, custody, verifier) | ZIP | `evidence.export` |
+| `EVIDENCE_PACK` (result sheets, manifest, custody, verifier) | ZIP | `evidence.export` |
 
 Every export needs a fresh second factor, to request and again to download, and is limited
 to three running jobs per person. The file is built with the requester's own role, scope and
@@ -227,13 +280,13 @@ grants, so it can only hold what they could see on screen. Text a spreadsheet wo
 formula is neutralized. Results files are tagged `PROVISIONAL` and say so inside. Files are
 purged after 72 hours; the job record and its audit entries stay.
 
-An **evidence pack** holds the original photos, `manifest.json` (SHA-256 and the hash-chained
+An **evidence pack** holds the original sheets (photos and PDFs), `manifest.json` (SHA-256 and the hash-chained
 custody events for each file), `results.csv`, and `verify.py`, a standard-library script that
 recomputes every hash and chain offline and prints the manifest's digest (also recorded on the
-job as `manifest_sha256`). Only VERIFIED photos go in; one whose stored bytes no longer match
-its hash is left out and listed. Exporting is itself a custody event on each photo. A pack
+job as `manifest_sha256`). Only VERIFIED files go in; one whose stored bytes no longer match
+its hash is left out and listed. Exporting is itself a custody event on each file. A pack
 proves integrity and custody; it does not claim legal admissibility. Selections beyond 2,000
-photos or 1 GiB must be narrowed (by contest, LGA, ward or polling unit).
+files or 1 GiB must be narrowed (by contest, LGA, ward or polling unit).
 
 **Administration** (admin by default):
 
@@ -243,8 +296,8 @@ photos or 1 GiB must be narrowed (by contest, LGA, ward or polling unit).
   sealing backlog, and the organization's stuck uploads, failed deliveries and exports, and
   unacknowledged critical flags.
 - `GET /api/v1/elections/{id}/analytics`: onboarding and activation, assignment completion,
-  submission completion, offline share and sync delay, evidence success, and anomaly rates,
-  inside the caller's scope.
+  submission completion (results with their sheet attached), receipt delay, evidence success
+  and anomaly rates, inside the caller's scope.
 - `GET /api/v1/admin/data-quality`: gaps in the polling-unit directory.
 - `GET|PUT|DELETE /api/v1/admin/alert-policy`: the organization's override of the escalation
   matrix (who is told, on which channels, and the acknowledgement window). Changes need a fresh
@@ -261,8 +314,8 @@ RECONCILED.
 
 - **Providers (PB-07).** Select by dotted path: `VTRS_SMS_PROVIDER` and
   `VTRS_WHATSAPP_PROVIDER` (`TwilioSmsProvider`, `TwilioWhatsAppProvider`; delivery receipts
-  arrive on `POST /api/v1/webhooks/twilio/status`, verified by signature), `VTRS_PUSH_PROVIDER`
-  (`FcmPushProvider`, HTTP v1 with a service account), `VTRS_BOT_CHALLENGE_PROVIDER`
+  arrive on `POST /api/v1/webhooks/twilio/status`, verified by signature),
+  `VTRS_BOT_CHALLENGE_PROVIDER`
   (`turnstile`, `hcaptcha` or `recaptcha`, fail-closed) and `VTRS_MALWARE_SCANNER`
   (`ClamAvScanner`, clamd over TCP; a scan that cannot finish is an error, never "clean").
   Every outbound call goes through one HTTP seam (https only, timeouts, no redirects).
@@ -281,7 +334,8 @@ RECONCILED.
 
 ## API contract
 
-`docs/openapi.yaml` is the contract web and mobile build against, and a test keeps it in
+`docs/openapi.yaml` is the contract the web app builds against (its TypeScript types are
+generated from it with `npm run gen:api` in `frontend/`), and a test keeps it in
 sync with the code. After an intended API change, regenerate it and review the diff:
 
 ```sh

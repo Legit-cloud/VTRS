@@ -30,10 +30,12 @@ Required in production (the process refuses to start otherwise): `DJANGO_SECRET_
 `REDIS_CACHE_URL`, `CELERY_BROKER_URL`, `REDIS_CHANNELS_URL`, `VTRS_JWT_PRIVATE_KEY`,
 `VTRS_FIELD_ENCRYPTION_KEYS`, `VTRS_BLIND_INDEX_KEY`, `VTRS_OTP_PEPPER`.
 
-Providers: `VTRS_SMS_PROVIDER`, `VTRS_PUSH_PROVIDER`, `VTRS_WHATSAPP_PROVIDER`,
+Providers: `VTRS_SMS_PROVIDER`, `VTRS_WHATSAPP_PROVIDER`,
 `VTRS_BOT_CHALLENGE_PROVIDER` and `VTRS_BOT_CHALLENGE_SECRET`, `VTRS_MALWARE_SCANNER` and
-`VTRS_CLAMD_HOST`, plus the vendor credentials (`VTRS_TWILIO_*`, `VTRS_FCM_SERVICE_ACCOUNT_JSON`).
-`VTRS_PUBLIC_BASE_URL` and `VTRS_CORS_ALLOWED_ORIGINS` (exact `https://` origins of the portal).
+`VTRS_CLAMD_HOST`, plus the vendor credentials (`VTRS_TWILIO_*`).
+`VTRS_PUBLIC_BASE_URL` and `VTRS_CORS_ALLOWED_ORIGINS` (exact `https://` origins of the web
+app). The evidence bucket needs a CORS rule allowing PUT from those same origins, because
+browsers upload result sheets straight to it (`ensure_evidence_bucket` writes it).
 
 Production settings refuse the development stand-ins, `*` origins and incomplete provider
 configuration, so a bad deployment fails at start, not at 6 pm.
@@ -117,7 +119,8 @@ python manage.py rebuild_rollups --election <id>  # repair, then verify again
 | Photos quarantined in bulk | Scanner down (fails closed) or a genuinely bad batch | Check `VTRS_CLAMD_HOST`; quarantined files stay recoverable under `quarantine/` |
 | SMS not arriving | Provider outage or sender not approved | Deliveries retry three times; failures show per message; switch provider by changing `VTRS_SMS_PROVIDER` |
 | OTP endpoints returning 503 | Bot-challenge provider unreachable (fails closed) | Restore reachability; do **not** set the provider to `disabled` in production |
-| An agent cannot submit | Wrong device, unassigned unit, election not LIVE | The refusal code says which; reassign through `/assignments` |
+| An agent cannot submit | Unassigned unit, election not LIVE, no form for the unit's constituency | The refusal code says which; reassign through `/assignments`, or add the contestants |
+| An agent's sheet will not upload | Bucket CORS missing the web origin, or storage unreachable | Check the browser console for a CORS refusal; re-run `ensure_evidence_bucket` with the right `VTRS_CORS_ALLOWED_ORIGINS` |
 | A wrong result was submitted | Agent or officer error | Never edit data. The agent resubmits (new version) or the reviewer rejects with a reason |
 
 If you suspect tampering: stop writing nothing, run `verify_audit_chain` and

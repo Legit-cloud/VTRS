@@ -13,12 +13,12 @@ have).
 | ID | Criterion | Status | Evidence |
 | --- | --- | --- | --- |
 | AC-01 | Register an organization and verify by OTP | Met | `tests/accounts/test_registration_and_mfa.py` |
-| AC-02 | Configure an election and candidate list | Met | `tests/elections/test_configuration.py` |
+| AC-02 | Configure an election, its contesting parties and contestants | Met | `tests/elections/test_configuration.py`, browser suite |
 | AC-03 | Invite and assign agents to polling units | Met | `tests/accounts/test_invitations.py`, `tests/assignments` |
 | AC-04 | An agent sees only authorized assignments | Met | `tests/authz/test_matrix.py` |
-| AC-05 | Capture a complete result and evidence offline | Backend met | Offline queue is the app's; the server contract (batches, idempotency) is `tests/results/test_sync.py` |
-| AC-06 | App records GPS and timestamp | Backend met | Server stores and checks them: `tests/anomalies/test_pipeline.py` |
-| AC-07 | Offline submissions sync automatically | Backend met | Replay and retry safety: `tests/results/test_concurrency.py` |
+| AC-05 | Capture a complete result: the numbers, then the result sheet | Met | `tests/results/test_submission.py`; browser suite (phone width: numbers, sheet compressed and uploaded, complete) |
+| AC-06 | GPS and timestamp recorded at submission | Met | The browser asks for location once, when sending; the server stores and checks it: `tests/anomalies/test_pipeline.py` |
+| AC-07 | Failed submissions and uploads retry automatically | Met | Backoff with the same version id; replay safety: `tests/results/test_concurrency.py`, portal `test/capture.test.ts` |
 | AC-08 | Duplicate retries create no duplicate submissions | Met | 100 parallel replays, one version |
 | AC-09 | Results aggregate correctly to ward, LGA, state | Met | `tests/aggregation/test_rollups.py`, `verify_rollups` |
 | AC-10 | Expected versus reported units are accurate | Met | `tests/aggregation/test_dashboard.py` |
@@ -32,8 +32,8 @@ have).
 
 | ID | Item | Status |
 | --- | --- | --- |
-| DD-01 | All agreed MVP requirements implemented and tested | Backend met; portal and mobile app are separate deliverables |
-| DD-02 | Offline capture and sync pass end-to-end tests | Server side met; needs the mobile app for the device half |
+| DD-01 | All agreed MVP requirements implemented and tested | Met in the backend and the one web app (October 2026 change: no mobile app) |
+| DD-02 | Capture and retry pass end-to-end tests | Met: browser suite against the real API; 100 parallel replays make one version |
 | DD-03 | Role and geographic permissions pass authorization tests | Met |
 | DD-04 | Evidence integrity and access controls pass security testing | Met in code and tests; independent penetration test is **Open** |
 | DD-05 | Aggregation reconciles against known datasets | Met (`verify_rollups`, reconciliation snapshot, simulation) |
@@ -51,9 +51,9 @@ have).
 | PB-02 | Organization identity and ownership | Open | Business |
 | PB-03 | Approved master dataset | Interim directories loaded; INEC export still needed | Supplied community directories are bundled in `data/master/` and import through `convert_directory` then `import_master_data --no-expectations`: Oyo (33 LGAs, 351 wards, 4,731 of about 6,390 units), Ogun (20 / 236 / 3,184) Ekiti (16 / 177 / 2,191), Lagos (20 / 245 / 8,322) and Osun (30 / 332 / 2,984). They are names only: no INEC codes (provisional `DIR-<state>-…` codes are positional), no coordinates, no voter counts, and they omit units added in 2022. GPS and expected-versus-reported figures are therefore partial until the INEC export replaces them |
 | PB-04 | Candidate and election configuration rules | Met (rules enforced; lock fingerprints the configuration) | Confirmation |
-| PB-05 | Result-sheet fields and validation | Met as configurable per contest | Confirm the final field set |
+| PB-05 | Result-sheet fields and validation | Every configured party, plus accredited, total cast and rejected; valid is the sum of the parties. The two arithmetic limits reject (open decision #12) | Confirm the field set, and reject versus flag for the limits |
 | PB-06 | Agent deployment model | Decided: up to three agents per polling unit | None |
-| PB-07 | OTP, SMS, email providers | Adapters built (Twilio SMS and WhatsApp, FCM push, Turnstile or hCaptcha or reCAPTCHA, ClamAV) and tested against their protocols | Pick vendors, supply credentials, run each against the real service once |
+| PB-07 | OTP, SMS, email providers | Adapters built (Twilio SMS and WhatsApp, Turnstile or hCaptcha or reCAPTCHA, ClamAV) and tested against their protocols | Pick vendors, supply credentials, run each against the real service once |
 | PB-08 | Biometric / face verification | Not implemented (feature flag off) | Legal and privacy decision |
 | PB-09 | Evidence retention, access and export policy | Defaults implemented and documented (README, `VTRS_RETENTION_YEARS`) | Legal sign-off |
 | PB-10 | Anomaly rules and escalation matrix | Industry-standard defaults implemented, all tunable (`VTRS_ANOMALY_THRESHOLDS`, `VTRS_ESCALATION_MATRIX`, per-organization override) | Confirm thresholds and the officer chain |
@@ -68,7 +68,7 @@ workers on one developer laptop. The figures below are a floor, not a promise.
 
 Environment: one developer laptop (8 logical cores), PostgreSQL and Redis in containers, one
 worker process with eight threads, the load generator and the workers on the same machine.
-Each request carries one result; offline batches of up to ten are supported but were not part of these runs.
+Each request carries one result.
 
 | Scenario | Submit rate | Request latency (p50 / p95 / p99) | Dashboard latency (p50 / p95) | Workers caught up |
 | --- | --- | --- | --- | --- |
@@ -127,7 +127,7 @@ those on the production stack (runbook section 7).
 
 1. Decide hosting and region (PB-12); stand up staging and production.
 2. Provide the INEC master data (PB-03) and import it in place of the interim directory.
-3. Choose the SMS, push, WhatsApp, challenge and scanner vendors (PB-07); run each adapter once
+3. Choose the SMS, WhatsApp, challenge and scanner vendors (PB-07); run each adapter once
    against the real service.
 4. Repeat the load simulation on staging hardware with prefork workers; record the numbers here.
 5. Independent penetration test; resolve critical and high findings.
