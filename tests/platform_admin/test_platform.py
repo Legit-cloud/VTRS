@@ -268,7 +268,7 @@ def test_master_data_summary_and_search(client_as, operator):
 def test_messaging_stats_and_a_test_send_to_the_operators_own_address(client_as, operator, inbox):
     client = client_as(operator)
     stats = client.get(reverse("platform-messaging")).json()
-    assert {c["channel"] for c in stats["channels"]} >= {"SMS", "EMAIL", "PUSH"}
+    assert {c["channel"] for c in stats["channels"]} == {"SMS", "EMAIL", "WHATSAPP", "IN_APP"}
 
     sent = client.post(
         reverse("platform-messaging-test"), {"channel": "EMAIL"}, format="json", **KEY

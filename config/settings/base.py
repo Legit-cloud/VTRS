@@ -86,7 +86,6 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "apps.core.middleware.ApiBoundaryMiddleware",
     "apps.core.middleware.RequestContextMiddleware",
-    "apps.core.middleware.MinimumAppVersionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -267,8 +266,10 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "ElectionStatusEnum": "apps.elections.domain.rules.ElectionStatus",
         "UserStatusEnum": "apps.accounts.models.UserStatus",
-        # Devices and assignments share the ACTIVE/REVOKED choice set.
         "ActiveRevokedStatusEnum": "apps.assignments.models.AssignmentStatus",
+        "ConfigIssueKindEnum": "apps.elections.domain.rules.IssueKind",
+        "LogoMimeEnum": ["image/jpeg", "image/png", "image/webp"],
+        "EvidenceMimeEnum": ["application/pdf", "image/jpeg", "image/png", "image/webp"],
     },
 }
 # The schema endpoint is off unless enabled (never on the public production hostname).
@@ -293,7 +294,6 @@ VTRS_JWT_PUBLIC_KEYS: dict[str, str] = json.loads(env("VTRS_JWT_PUBLIC_KEYS", "{
 VTRS_JWT_ISSUER = "vtrs"
 VTRS_JWT_AUDIENCE = "vtrs-api"
 VTRS_ACCESS_TOKEN_SECONDS = 600
-VTRS_MOBILE_SESSION_DAYS = 7
 VTRS_WEB_SESSION_HOURS = 12
 # Mandatory second factor for admins and exporters. Only development settings turn this off.
 VTRS_ENFORCE_MFA = True
@@ -319,8 +319,6 @@ VTRS_TWILIO_SMS_FROM = env("VTRS_TWILIO_SMS_FROM", "")
 VTRS_TWILIO_MESSAGING_SERVICE_SID = env("VTRS_TWILIO_MESSAGING_SERVICE_SID", "")
 VTRS_TWILIO_WHATSAPP_FROM = env("VTRS_TWILIO_WHATSAPP_FROM", "")
 
-# Firebase Cloud Messaging: the service account JSON, as the secrets vault holds it.
-VTRS_FCM_SERVICE_ACCOUNT_JSON = env("VTRS_FCM_SERVICE_ACCOUNT_JSON", "")
 
 # {"kid": "<base64 32-byte key>"}; the active key encrypts, all keys decrypt.
 VTRS_FIELD_ENCRYPTION_KEYS: dict[str, str] = json.loads(env("VTRS_FIELD_ENCRYPTION_KEYS"))
@@ -331,8 +329,10 @@ VTRS_INVITATION_TTL_HOURS = 72
 # PB-06 (decided): up to three agents may cover one polling unit per election. A second
 # agent's submission for the same unit is flagged DUPLICATE_SOURCE for review (M3/M5).
 VTRS_MAX_AGENTS_PER_POLLING_UNIT = int(env("VTRS_MAX_AGENTS_PER_POLLING_UNIT", "3"))
-VTRS_INVITATION_LINK = env("VTRS_INVITATION_LINK", "vtrs://invite?token={token}")
-VTRS_MIN_APP_VERSION = env("VTRS_MIN_APP_VERSION", "1.0.0")
+# The web app's invitation page; the SMS or email carries this link.
+VTRS_INVITATION_LINK = env(
+    "VTRS_INVITATION_LINK", "http://localhost:3000/accept-invite?token={token}"
+)
 
 # Evidence storage (spec section 12): "s3" (RustFS locally, any S3-compatible store) or "local".
 VTRS_EVIDENCE_STORAGE = env("VTRS_EVIDENCE_STORAGE", "s3")
@@ -365,7 +365,7 @@ VTRS_CLAMD_PORT = int(env("VTRS_CLAMD_PORT", "3310"))
 VTRS_CLAMD_TIMEOUT_SECONDS = float(env("VTRS_CLAMD_TIMEOUT_SECONDS", "20"))
 
 VTRS_THROTTLE_RATES = {
-    "submit_device": "60/min",
+    "submit_agent": "60/min",
     "login_ip": "5/min",
     "login_account": "5/min",
     "otp_ip": "10/min",
@@ -378,8 +378,10 @@ VTRS_THROTTLE_RATES = {
 # Feature flags for open decisions (section 22). All off by default.
 VTRS_FEATURE_FACE_VERIFICATION = False  # FR-6.1.3, PB-08, SEC-09
 VTRS_FEATURE_WHATSAPP_ALERTS = False  # FR-6.12.3
+# Open decision #14: a lead at or below this share of the counted party votes is shown as a
+# narrow margin, not as a plain lead (FR-6.8.4).
+VTRS_NARROW_MARGIN_PCT = float(env("VTRS_NARROW_MARGIN_PCT", "5.0"))
 
-VTRS_PUSH_PROVIDER = env("VTRS_PUSH_PROVIDER", "apps.notifications.providers.FakePushProvider")
 VTRS_WHATSAPP_PROVIDER = env(
     "VTRS_WHATSAPP_PROVIDER", "apps.notifications.providers.FakeWhatsAppProvider"
 )

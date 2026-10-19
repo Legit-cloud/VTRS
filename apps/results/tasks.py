@@ -50,6 +50,6 @@ def notify_review_decision(event_id: str, topic: str, payload: dict[str, Any]) -
                 "version_id": str(review.result_version_id),
                 "polling_unit_id": str(review.polling_unit_id),
             },
-            channels=["PUSH"] if rejected else [],
+            channels=[],
         )
         return len(created)

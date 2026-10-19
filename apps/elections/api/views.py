@@ -1,4 +1,4 @@
-"""Election configuration endpoints (spec section 9, Admin group)."""
+"""Party, election and contestant configuration endpoints (spec section 9, Admin group)."""
 
 from typing import Any, ClassVar
 from uuid import UUID
@@ -31,6 +31,101 @@ def _valid(serializer_class: type, request: Request) -> dict[str, Any]:
     serializer = serializer_class(data=request.data)
     serializer.is_valid(raise_exception=True)
     return serializer.validated_data
+
+
+# --- Parties ---------------------------------------------------------------------------------
+
+
+class PartyListView(APIView):
+    """The organization's party master list (FR-6.3.4). Only admins change it."""
+
+    required_permissions: ClassVar[dict[str, str]] = {
+        "GET": AUTHENTICATED,
+        "POST": Perm.CANDIDATES_MANAGE,
+    }
+
+    @extend_schema(responses={200: s.PartySerializer(many=True)})
+    def get(self, request: Request) -> Response:
+        parties = selectors.parties_for(request.actor)  # type: ignore[attr-defined]
+        return Response(s.PartySerializer(parties, many=True).data)
+
+    @extend_schema(
+        request=s.PartyCreateSerializer,
+        responses={201: s.PartySerializer},
+        parameters=[IDEMPOTENCY_KEY],
+    )
+    def post(self, request: Request) -> Response:
+        data = _valid(s.PartyCreateSerializer, request)
+        actor = request.actor  # type: ignore[attr-defined]
+
+        def operation() -> tuple[int, dict]:
+            return 201, dict(s.PartySerializer(services.create_party(actor, **data)).data)
+
+        return idempotent_response(request, "parties.create", operation)
+
+
+class PartyDetailView(APIView):
+    required_permissions: ClassVar[dict[str, str]] = {
+        "GET": AUTHENTICATED,
+        "PATCH": Perm.CANDIDATES_MANAGE,
+        "DELETE": Perm.CANDIDATES_MANAGE,
+    }
+
+    @extend_schema(responses={200: s.PartySerializer})
+    def get(self, request: Request, party_id: UUID) -> Response:
+        party = selectors.party_for(request.actor, party_id)  # type: ignore[attr-defined]
+        return with_etag(Response(s.PartySerializer(party).data), party.row_version)
+
+    @extend_schema(
+        request=s.PartyUpdateSerializer, responses={200: s.PartySerializer}, parameters=[IF_MATCH]
+    )
+    def patch(self, request: Request, party_id: UUID) -> Response:
+        actor = request.actor  # type: ignore[attr-defined]
+        party = selectors.party_for(actor, party_id)
+        changes = _valid(s.PartyUpdateSerializer, request)
+        updated = services.update_party(
+            actor, party, expected_version=if_match_version(request), changes=changes
+        )
+        return with_etag(Response(s.PartySerializer(updated).data), updated.row_version)
+
+    @extend_schema(responses={204: None})
+    def delete(self, request: Request, party_id: UUID) -> Response:
+        actor = request.actor  # type: ignore[attr-defined]
+        services.delete_party(actor, selectors.party_for(actor, party_id))
+        return Response(status=204)
+
+
+class PartyLogoView(APIView):
+    """Request a presigned upload for a logo (POST) or remove the logo (DELETE)."""
+
+    required_permission = Perm.CANDIDATES_MANAGE
+
+    @extend_schema(request=s.LogoUploadRequestSerializer, responses={200: s.LogoUploadSerializer})
+    def post(self, request: Request, party_id: UUID) -> Response:
+        actor = request.actor  # type: ignore[attr-defined]
+        party = selectors.party_for(actor, party_id)
+        data = _valid(s.LogoUploadRequestSerializer, request)
+        return Response(services.request_logo_upload(actor, party, **data))
+
+    @extend_schema(responses={200: s.PartySerializer})
+    def delete(self, request: Request, party_id: UUID) -> Response:
+        actor = request.actor  # type: ignore[attr-defined]
+        party = services.remove_logo(actor, selectors.party_for(actor, party_id))
+        return Response(s.PartySerializer(party).data)
+
+
+class PartyLogoCompleteView(APIView):
+    required_permission = Perm.CANDIDATES_MANAGE
+
+    @extend_schema(request=s.LogoUploadCompleteSerializer, responses={200: s.PartySerializer})
+    def post(self, request: Request, party_id: UUID) -> Response:
+        actor = request.actor  # type: ignore[attr-defined]
+        party = selectors.party_for(actor, party_id)
+        data = _valid(s.LogoUploadCompleteSerializer, request)
+        return Response(s.PartySerializer(services.complete_logo_upload(actor, party, **data)).data)
+
+
+# --- Elections --------------------------------------------------------------------------------
 
 
 class ElectionPagination(KeysetPagination):
@@ -100,7 +195,7 @@ class ElectionDetailView(APIView):
 
 
 class ElectionLockView(APIView):
-    """Freeze contests and candidates (FR-6.3.3). Needs a fresh second factor."""
+    """Freeze the parties and contestants (FR-6.3.3). Needs a fresh second factor."""
 
     required_permission = Perm.ELECTIONS_CONFIGURE
 
@@ -124,129 +219,125 @@ class ElectionTransitionView(APIView):
         return with_etag(Response(s.ElectionSerializer(moved).data), moved.row_version)
 
 
-class ContestListView(APIView):
+class ElectionPartiesView(APIView):
+    """The contesting parties in their fixed order. PUT replaces the whole ordered list."""
+
     required_permissions: ClassVar[dict[str, str]] = {
         "GET": AUTHENTICATED,
-        "POST": Perm.ELECTIONS_CONFIGURE,
+        "PUT": Perm.ELECTIONS_CONFIGURE,
     }
 
-    @extend_schema(responses={200: s.ContestSerializer(many=True)})
+    def _body(self, actor: Any, election: Election) -> list[dict[str, Any]]:
+        rows = selectors.election_parties(actor, election)
+        return [
+            dict(s.ElectionPartySerializer(s.ElectionPartySerializer.row(r)).data) for r in rows
+        ]
+
+    @extend_schema(responses={200: s.ElectionPartySerializer(many=True)})
     def get(self, request: Request, election_id: UUID) -> Response:
         actor = request.actor  # type: ignore[attr-defined]
-        election = selectors.election_for(actor, election_id)
-        return Response(
-            s.ContestSerializer(selectors.contests_for(actor, election), many=True).data
-        )
+        return Response(self._body(actor, selectors.election_for(actor, election_id)))
 
     @extend_schema(
-        request=s.ContestCreateSerializer,
-        responses={201: s.ContestSerializer},
-        parameters=[IDEMPOTENCY_KEY],
+        request=s.ElectionPartiesUpdateSerializer,
+        responses={200: s.ElectionPartySerializer(many=True)},
     )
-    def post(self, request: Request, election_id: UUID) -> Response:
+    def put(self, request: Request, election_id: UUID) -> Response:
         actor = request.actor  # type: ignore[attr-defined]
         election = selectors.election_for(actor, election_id)
-        data = _valid(s.ContestCreateSerializer, request)
-
-        def operation() -> tuple[int, dict]:
-            contest = services.create_contest(actor, election, **data)
-            return 201, dict(s.ContestSerializer(contest).data)
-
-        return idempotent_response(request, "contests.create", operation)
+        data = _valid(s.ElectionPartiesUpdateSerializer, request)
+        services.set_election_parties(actor, election, data["party_ids"])
+        return Response(self._body(actor, election))
 
 
-class ContestDetailView(APIView):
-    required_permissions: ClassVar[dict[str, str]] = {
-        "GET": AUTHENTICATED,
-        "PATCH": Perm.ELECTIONS_CONFIGURE,
-        "DELETE": Perm.ELECTIONS_CONFIGURE,
-    }
-
-    @extend_schema(responses={200: s.ContestSerializer})
-    def get(self, request: Request, contest_id: UUID) -> Response:
-        contest = selectors.contest_for(request.actor, contest_id)  # type: ignore[attr-defined]
-        return with_etag(Response(s.ContestSerializer(contest).data), contest.row_version)
-
-    @extend_schema(
-        request=s.ContestUpdateSerializer,
-        responses={200: s.ContestSerializer},
-        parameters=[IF_MATCH],
-    )
-    def patch(self, request: Request, contest_id: UUID) -> Response:
-        actor = request.actor  # type: ignore[attr-defined]
-        contest = selectors.contest_for(actor, contest_id)
-        changes = _valid(s.ContestUpdateSerializer, request)
-        updated = services.update_contest(
-            actor, contest, expected_version=if_match_version(request), changes=changes
-        )
-        return with_etag(Response(s.ContestSerializer(updated).data), updated.row_version)
-
-    @extend_schema(responses={204: None})
-    def delete(self, request: Request, contest_id: UUID) -> Response:
-        actor = request.actor  # type: ignore[attr-defined]
-        services.delete_contest(actor, selectors.contest_for(actor, contest_id))
-        return Response(status=204)
+# --- Contestants -----------------------------------------------------------------------------
 
 
-class CandidateListView(APIView):
+class ContestantListView(StrictQueryParamsMixin, APIView):
     required_permissions: ClassVar[dict[str, str]] = {
         "GET": AUTHENTICATED,
         "POST": Perm.CANDIDATES_MANAGE,
     }
-
-    @extend_schema(responses={200: s.CandidateSerializer(many=True)})
-    def get(self, request: Request, contest_id: UUID) -> Response:
-        actor = request.actor  # type: ignore[attr-defined]
-        contest = selectors.contest_for(actor, contest_id)
-        return Response(
-            s.CandidateSerializer(selectors.candidates_for(actor, contest), many=True).data
-        )
+    allowed_query_params = frozenset({"constituency_id"})
 
     @extend_schema(
-        request=s.CandidateCreateSerializer,
-        responses={201: s.CandidateSerializer},
+        parameters=[OpenApiParameter("constituency_id", UUID)],
+        responses={200: s.ContestantSerializer(many=True)},
+    )
+    def get(self, request: Request, election_id: UUID) -> Response:
+        election = selectors.election_for(self.actor, election_id)
+        rows = selectors.contestants_for(
+            self.actor, election, constituency_id=self.uuid_param("constituency_id")
+        )
+        return Response(s.ContestantSerializer(rows, many=True).data)
+
+    @extend_schema(
+        request=s.ContestantCreateSerializer,
+        responses={201: s.ContestantSerializer},
         parameters=[IDEMPOTENCY_KEY],
     )
-    def post(self, request: Request, contest_id: UUID) -> Response:
-        actor = request.actor  # type: ignore[attr-defined]
-        contest = selectors.contest_for(actor, contest_id)
-        data = _valid(s.CandidateCreateSerializer, request)
+    def post(self, request: Request, election_id: UUID) -> Response:
+        election = selectors.election_for(self.actor, election_id)
+        data = _valid(s.ContestantCreateSerializer, request)
 
         def operation() -> tuple[int, dict]:
-            candidate = services.create_candidate(actor, contest, **data)
-            return 201, dict(s.CandidateSerializer(candidate).data)
+            contestant = services.create_contestant(self.actor, election, **data)
+            return 201, dict(s.ContestantSerializer(contestant).data)
 
-        return idempotent_response(request, "candidates.create", operation)
+        return idempotent_response(request, "contestants.create", operation)
 
 
-class CandidateDetailView(APIView):
+class ContestantDetailView(APIView):
     required_permissions: ClassVar[dict[str, str]] = {
         "GET": AUTHENTICATED,
         "PATCH": Perm.CANDIDATES_MANAGE,
         "DELETE": Perm.CANDIDATES_MANAGE,
     }
 
-    @extend_schema(responses={200: s.CandidateSerializer})
+    @extend_schema(responses={200: s.ContestantSerializer})
     def get(self, request: Request, candidate_id: UUID) -> Response:
         candidate = selectors.candidate_for(request.actor, candidate_id)  # type: ignore[attr-defined]
-        return with_etag(Response(s.CandidateSerializer(candidate).data), candidate.row_version)
+        return with_etag(Response(s.ContestantSerializer(candidate).data), candidate.row_version)
 
     @extend_schema(
-        request=s.CandidateUpdateSerializer,
-        responses={200: s.CandidateSerializer},
+        request=s.ContestantUpdateSerializer,
+        responses={200: s.ContestantSerializer},
         parameters=[IF_MATCH],
     )
     def patch(self, request: Request, candidate_id: UUID) -> Response:
         actor = request.actor  # type: ignore[attr-defined]
         candidate = selectors.candidate_for(actor, candidate_id)
-        changes = _valid(s.CandidateUpdateSerializer, request)
-        updated = services.update_candidate(
-            actor, candidate, expected_version=if_match_version(request), changes=changes
+        data = _valid(s.ContestantUpdateSerializer, request)
+        updated = services.update_contestant(
+            actor, candidate, expected_version=if_match_version(request), name=data["name"]
         )
-        return with_etag(Response(s.CandidateSerializer(updated).data), updated.row_version)
+        return with_etag(Response(s.ContestantSerializer(updated).data), updated.row_version)
 
     @extend_schema(responses={204: None})
     def delete(self, request: Request, candidate_id: UUID) -> Response:
         actor = request.actor  # type: ignore[attr-defined]
-        services.delete_candidate(actor, selectors.candidate_for(actor, candidate_id))
+        services.delete_contestant(actor, selectors.candidate_for(actor, candidate_id))
         return Response(status=204)
+
+
+# --- Configuration issues --------------------------------------------------------------------
+
+
+class ConfigIssueResolveView(APIView):
+    required_permission = Perm.ELECTIONS_CONFIGURE
+
+    @extend_schema(
+        request=s.ConfigIssueResolveSerializer,
+        responses={200: s.ConfigIssueSerializer},
+        parameters=[IDEMPOTENCY_KEY],
+    )
+    def post(self, request: Request, issue_id: UUID) -> Response:
+        actor = request.actor  # type: ignore[attr-defined]
+        issue = selectors.issue_for(actor, issue_id)
+        data = _valid(s.ConfigIssueResolveSerializer, request)
+
+        def operation() -> tuple[int, dict]:
+            resolved = services.resolve_issue(actor, issue, note=data["note"])
+            return 200, dict(s.ConfigIssueSerializer(resolved).data)
+
+        return idempotent_response(request, f"config_issues.resolve.{issue_id}", operation)

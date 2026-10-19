@@ -20,6 +20,9 @@ seed:
 	mkdir -p var
 	$(PY) manage.py generate_synthetic_geography --out var/synthetic_oyo.csv
 	$(PY) manage.py import_master_data var/synthetic_oyo.csv --report var/import_report.json
+	$(PY) manage.py load_election_types
+	$(PY) manage.py import_constituencies --derive
+	$(PY) manage.py ensure_evidence_bucket
 
 test:
 	$(PY) -m pytest

@@ -75,5 +75,5 @@ def export_filename(kind: ExportKind, label: str, at: datetime, fmt: ExportForma
 
 
 def columns_for_candidates(base: Sequence[str], acronyms: Sequence[str]) -> list[str]:
-    """Result columns with one `votes_<party>` column per candidate, in ballot order."""
+    """Result columns with one `votes_<party>` column per contesting party, in ballot order."""
     return [*base, *(f"votes_{slug(a, 20)}" for a in acronyms)]

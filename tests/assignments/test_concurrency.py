@@ -13,10 +13,10 @@ from apps.core.crypto import blind_index
 from apps.core.domain.actor import Actor, Scope, ScopeKind
 from apps.core.domain.permissions import Role
 from apps.elections.models import Election
-from apps.geography.domain.synthetic import synthetic_master_data
 from apps.geography.models import PollingUnit, State
-from apps.geography.services import import_master_data
 from apps.organizations.models import Organization
+
+from ..factories import election_type, load_reference_data
 
 
 def _agent(org, pu, n):
@@ -38,7 +38,7 @@ def _agent(org, pu, n):
 @pytest.mark.django_db(transaction=True)
 def test_cap_of_three_holds_under_concurrent_requests():
     with transaction.atomic():
-        import_master_data(synthetic_master_data(lgas=1, wards=1, polling_units=1))
+        load_reference_data(lgas=1, wards=1, polling_units=1, seed=1)
     pu = PollingUnit.objects.get()
     org = Organization.objects.create(name="Race Party", status="ACTIVE")
     admin = User.objects.create_user(
@@ -50,6 +50,7 @@ def test_cap_of_three_holds_under_concurrent_requests():
     election = Election.objects.create(
         organization=org,
         name="Race",
+        election_type=election_type(),
         state=State.objects.get(),
         election_date="2027-03-11",
         status="LOCKED",

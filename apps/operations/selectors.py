@@ -14,7 +14,7 @@ from uuid import UUID
 from celery import current_app
 from django.core.cache import cache
 from django.db import connection
-from django.db.models import Count, Min
+from django.db.models import Count, F, Min
 from django.utils import timezone
 
 from apps.accounts.models import Invitation
@@ -33,11 +33,11 @@ from apps.evidence.storage import get_storage
 from apps.geography.models import Lga, PollingUnit
 from apps.notifications.models import Delivery
 from apps.reports.models import ExportJob
+from apps.results.domain.versions import ATTACHED_EVIDENCE
 from apps.results.models import ResultVersion
 
 OK, DEGRADED, DOWN = "ok", "degraded", "down"
 _RANK = {OK: 0, DEGRADED: 1, DOWN: 2}
-OFFLINE_AFTER = timedelta(minutes=5)
 
 
 def _timed(fn: Any) -> tuple[str, float, str]:
@@ -158,7 +158,8 @@ def _rate(part: int, whole: int) -> float | None:
 
 
 def analytics(actor: Actor, election_id: UUID) -> dict[str, Any]:
-    """Onboarding, capture and sync performance, and integrity, inside the caller's scope."""
+    """Onboarding, capture and submission performance, and integrity, inside the caller's
+    scope."""
     authorize(actor, Perm.DASHBOARD_VIEW)
     election = elections.election_for(actor, election_id)
     versions = ResultVersion.objects.for_actor(actor).filter(contest__election_id=election.id)
@@ -204,18 +205,22 @@ def analytics(actor: Actor, election_id: UUID) -> dict[str, Any]:
         "corrections": versions.filter(version_no__gt=1).count(),
     }
 
+    # How long a result took from the agent's phone to the server, and how many results have
+    # their sheet attached (a submission is complete only with it).
     delays = [
-        (r - c).total_seconds()
+        max(0.0, (r - c).total_seconds())
         for c, r in first.values_list("device_captured_at", "server_received_at")
     ]
-    offline = [d for d in delays if d > OFFLINE_AFTER.total_seconds()]
-    metrics["sync"] = {
+    heads = versions.filter(pu_result__head_version_id=F("id"))
+    complete = heads.filter(evidence__status__in=list(ATTACHED_EVIDENCE)).distinct().count()
+    head_count = heads.count()
+    metrics["submission"] = {
         "submissions": len(delays),
-        "offline_pct": _rate(len(offline), len(delays)),
-        "average_sync_delay_seconds": round(statistics.fmean(offline), 1) if offline else None,
-        "median_sync_delay_seconds": round(statistics.median(offline), 1) if offline else None,
-        "p90_sync_delay_seconds": (
-            round(statistics.quantiles(offline, n=10)[-1], 1) if len(offline) >= 10 else None
+        "complete": complete,
+        "complete_pct": _rate(complete, head_count),
+        "median_receipt_delay_seconds": round(statistics.median(delays), 1) if delays else None,
+        "p90_receipt_delay_seconds": (
+            round(statistics.quantiles(delays, n=10)[-1], 1) if len(delays) >= 10 else None
         ),
     }
 

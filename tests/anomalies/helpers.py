@@ -77,13 +77,17 @@ def reencode(data: bytes, quality: int) -> bytes:
 
 
 def submit_with_photo(field: Any, pu: Any, photo: bytes, votes=(120, 80), **overrides: Any) -> dict:
-    """Submit a result with a photo manifest, upload the bytes and confirm (the worker verifies)."""
+    """Submit the numbers, then attach the photo as the browser does: request the upload, put the
+    bytes and confirm (the worker verifies)."""
+    outcome = field.submit(pu, votes, **overrides)
     entry = manifest_entry(photo)
-    outcome = field.submit(pu, votes, evidence=[entry], **overrides)
+    client = field.agents[pu.id].client
+    upload = {**entry, "version_id": outcome["version_id"]}
+    assert client.post("/api/v1/evidence/uploads", upload, format="json").status_code == 200
     with system_context():
         key = EvidenceFile.objects.get(id=entry["evidence_id"]).object_key
     get_storage().write(key, photo, mime="image/jpeg")
-    response = field.agents[pu.id].client.post(f"/api/v1/evidence/{entry['evidence_id']}/complete")
+    response = client.post(f"/api/v1/evidence/{entry['evidence_id']}/complete")
     assert response.status_code == 200, response.content
     outcome["evidence_id"] = entry["evidence_id"]
     return outcome

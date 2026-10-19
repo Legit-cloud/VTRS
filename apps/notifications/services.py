@@ -20,8 +20,7 @@ from django.utils import timezone
 from django.utils.module_loading import import_string
 from rest_framework.exceptions import ValidationError
 
-from apps.accounts import selectors as accounts
-from apps.accounts.models import Device, DeviceStatus, User
+from apps.accounts.models import User
 from apps.audit import services as audit
 from apps.core import rls
 from apps.core import services as core
@@ -38,7 +37,7 @@ logger = logging.getLogger("vtrs.notifications")
 MAX_ATTEMPTS = 3
 RETRY_AFTER = timedelta(minutes=2)
 
-IN_APP, PUSH, SMS, EMAIL, WHATSAPP = "IN_APP", "PUSH", "SMS", "EMAIL", "WHATSAPP"
+IN_APP, SMS, EMAIL, WHATSAPP = "IN_APP", "SMS", "EMAIL", "WHATSAPP"
 
 _OTP_PURPOSE_TEXT = {
     "REGISTRATION": "verify your VTRS registration",
@@ -134,18 +133,6 @@ def _send(delivery: Delivery, user: User, notification: Notification) -> tuple[s
     """(status, provider_message_id or reason) for one channel. Raises on provider failure."""
     channel = delivery.channel
     text = f"{notification.title}: {notification.body}"
-    if channel == PUSH:
-        device = (
-            Device.objects.filter(user=user, status=DeviceStatus.ACTIVE)
-            .exclude(push_token="")
-            .first()
-        )
-        if device is None:
-            return DeliveryStatus.SKIPPED, "no_push_token"
-        provider = import_string(settings.VTRS_PUSH_PROVIDER)()
-        data = {k: str(v) for k, v in notification.data.items()}
-        message_id = provider.send(device.push_token, notification.title, notification.body, data)
-        return DeliveryStatus.SENT, str(message_id)
     if channel == SMS:
         if not user.phone:
             return DeliveryStatus.SKIPPED, "no_phone"
@@ -269,22 +256,6 @@ def mark_read(actor: Actor, notification_id: UUID) -> Notification | None:
 
 def mark_all_read(actor: Actor) -> int:
     return selectors.own_notifications(actor, unread=True).update(read_at=timezone.now())
-
-
-def register_push_token(actor: Actor, token: str) -> None:
-    """Store the push token on the device this session was opened on."""
-    authorize(actor, Perm.RESULTS_SUBMIT)
-    device = accounts.session_device(actor)
-    if device is None:
-        raise ValidationError({"token": ["This session is not tied to a registered device."]})
-    with transaction.atomic():
-        Device.objects.filter(id=device.id).update(push_token=token)
-        audit.record(
-            action="device.push_token_registered",
-            object_type="device",
-            object_id=device.id,
-            actor=actor,
-        )
 
 
 def send_test_message(actor: Actor, channel: str) -> dict[str, str]:

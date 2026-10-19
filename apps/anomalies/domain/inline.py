@@ -24,7 +24,7 @@ class RuleCode(StrEnum):
     DUPLICATE_SOURCE = "DUPLICATE_SOURCE"  # FR-6.9.1
     VERSION_FORK = "VERSION_FORK"  # FR-6.9.1
     UNASSIGNED_PU_ATTEMPT = "UNASSIGNED_PU_ATTEMPT"  # FR-6.9.4
-    LATE_SUBMISSION = "LATE_SUBMISSION"  # captured offline, synced after polls closed
+    LATE_SUBMISSION = "LATE_SUBMISSION"  # submitted after the election closed
     CONFIG_VERSION_MISMATCH = "CONFIG_VERSION_MISMATCH"
     # Contextual rules (FR-6.9.3 - FR-6.9.5)
     GPS_MISSING = "GPS_MISSING"
@@ -93,29 +93,26 @@ class Totals:
 
 
 def arithmetic(totals: Totals, votes: Mapping[Any, int]) -> list[Finding]:
-    findings = []
-    candidate_sum = sum(votes.values())
-    if candidate_sum != totals.valid:
-        findings.append(
+    """The sheet's totals should reconcile: party votes + rejected = total votes cast.
+
+    More than total cast is refused when the result is submitted. Less is accepted but flagged
+    (FR-6.9.6): votes the sheet counts that are not recorded against any party."""
+    party_votes = sum(votes.values())
+    if totals.rejected is None or totals.total_cast is None:
+        return []
+    if party_votes + totals.rejected < totals.total_cast:
+        return [
             Finding(
                 RuleCode.ARITHMETIC_VARIANCE,
-                {"check": "candidate_votes_vs_valid", "sum": candidate_sum, "valid": totals.valid},
+                {
+                    "check": "party_votes_plus_rejected_vs_total_cast",
+                    "party_votes": party_votes,
+                    "rejected": totals.rejected,
+                    "total_cast": totals.total_cast,
+                },
             )
-        )
-    if totals.rejected is not None and totals.total_cast is not None:
-        if totals.valid + totals.rejected != totals.total_cast:
-            findings.append(
-                Finding(
-                    RuleCode.ARITHMETIC_VARIANCE,
-                    {
-                        "check": "valid_plus_rejected_vs_total_cast",
-                        "valid": totals.valid,
-                        "rejected": totals.rejected,
-                        "total_cast": totals.total_cast,
-                    },
-                )
-            )
-    return findings
+        ]
+    return []
 
 
 def over_voting(totals: Totals, registered_voters: int | None) -> list[Finding]:

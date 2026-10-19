@@ -20,6 +20,8 @@ class UploadRequestSerializer(EvidenceManifestSerializer):
 class EvidenceStateSerializer(serializers.Serializer):
     evidence_id = serializers.UUIDField()
     status = serializers.CharField()
+    # The submission this file belongs to: COMPLETE once a sheet is uploaded.
+    completion = serializers.CharField()
 
 
 class DownloadUrlSerializer(serializers.Serializer):
@@ -28,7 +30,8 @@ class DownloadUrlSerializer(serializers.Serializer):
 
 
 class UploadRequestView(APIView):
-    """Request a presigned upload for a photo of your own submission (or a fresh URL)."""
+    """Request a presigned upload for the result sheet of your own submission (a photo or a
+    PDF), or a fresh URL for one already requested."""
 
     required_permission = Perm.RESULTS_SUBMIT
 
@@ -51,7 +54,14 @@ class UploadCompleteView(APIView):
     def post(self, request: Request, evidence_id: UUID) -> Response:
         actor = request.actor  # type: ignore[attr-defined]
         evidence = services.complete_upload(actor, selectors.own_upload(actor, evidence_id))
-        return Response({"evidence_id": str(evidence.id), "status": evidence.status})
+        version = results.own_version(actor, evidence.result_version_id)
+        return Response(
+            {
+                "evidence_id": str(evidence.id),
+                "status": evidence.status,
+                "completion": results.completion(version) if version else "NUMBERS_SUBMITTED",
+            }
+        )
 
 
 class DownloadUrlView(APIView):

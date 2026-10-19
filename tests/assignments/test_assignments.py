@@ -1,5 +1,5 @@
 """AC-03: admins deploy agents to polling units. AC-04 / FR-6.2.5: the agent sees only their
-own assignments, with the ballot for each, before capture."""
+own assignments, and the result form for each, before capture."""
 
 import pytest
 
@@ -8,10 +8,10 @@ from apps.audit.models import AuditEvent
 from apps.core.domain.actor import Actor, Scope, ScopeKind
 from apps.core.domain.permissions import Role
 from apps.core.rls import set_tenant, system_context
-from apps.elections.models import Candidate, Contest, Election
-from apps.geography.domain.synthetic import synthetic_master_data
-from apps.geography.models import Lga, PollingUnit, State, Ward
-from apps.geography.services import import_master_data
+from apps.elections.models import Election
+from apps.geography.models import Constituency, Lga, PollingUnit, State, Ward
+
+from ..factories import election_type, load_reference_data, make_ballot, make_parties
 
 pytestmark = pytest.mark.django_db
 KEY = iter(range(1, 10_000))
@@ -19,7 +19,7 @@ KEY = iter(range(1, 10_000))
 
 @pytest.fixture
 def geo():
-    import_master_data(synthetic_master_data(lgas=2, wards=4, polling_units=8))
+    load_reference_data(lgas=2, wards=4, polling_units=8, seed=8)
     lga_a, lga_b = Lga.objects.order_by("inec_code")
     return {
         "state": State.objects.get(),
@@ -42,38 +42,25 @@ def client(admin, client_as):
 
 
 def _election(org, geo, status="LOCKED"):
-    """A governorship (whole state) plus an assembly seat covering LGA A only."""
+    """An LGA chairmanship: one race per LGA, each with its own candidates."""
     with system_context():
         election = Election.objects.create(
             organization=org,
             name=f"Election {next(KEY)}",
+            election_type=election_type("LGA_CHAIRMANSHIP"),
             state=geo["state"],
             election_date="2027-03-11",
             status=status,
             created_by_id=org.id,
         )
-        for title, level, ids in (
-            ("Governor", "STATE", [geo["state"].id]),
-            ("Assembly A", "LGA", [geo["lga_a"].id]),
-        ):
-            contest = Contest.objects.create(
-                organization=org,
-                election=election,
-                office="OTHER",
-                title=title,
-                jurisdiction_level=level,
-                jurisdiction_ids=ids,
-            )
-            for order, acronym in ((2, "BBB"), (1, "AAA")):
-                Candidate.objects.create(
-                    organization=org,
-                    contest=contest,
-                    name=f"{title} {acronym}",
-                    party_name=acronym,
-                    party_acronym=acronym,
-                    ballot_order=order,
-                    config_version=1,
-                )
+    parties = make_parties(org, (f"B{next(KEY)}", f"A{next(KEY)}"))
+    for lga in (geo["lga_a"], geo["lga_b"]):
+        make_ballot(
+            org,
+            election,
+            constituency=Constituency.objects.get(kind="LGA", code=lga.inec_code),
+            parties=parties,
+        )
     return election
 
 
@@ -109,11 +96,19 @@ def test_deploy_and_agent_view(admin, client, client_as, make_member, geo):
     in_a = by_pu[geo["pu_a"].inec_code]
     assert in_a["election"]["status"] == "LOCKED"
     assert in_a["election"]["capture_open"] is False
-    # PU in LGA A gets both contests; PU in LGA B only the governorship.
-    assert sorted(c["title"] for c in in_a["contests"]) == ["Assembly A", "Governor"]
-    assert [c["title"] for c in by_pu[geo["pu_b"].inec_code]["contests"]] == ["Governor"]
-    # Candidates come in ballot order.
-    assert [k["ballot_order"] for k in in_a["contests"][0]["candidates"]] == [1, 2]
+    assert in_a["result"] is None
+    # Each unit's form lists its own constituency's contestants, in the election's party order.
+    agent_client = client_as(agent)
+    forms = {
+        code: agent_client.get(
+            f"/api/v1/elections/{election.id}/polling-units/{row['polling_unit']['id']}/form"
+        ).json()
+        for code, row in by_pu.items()
+    }
+    form_a = forms[geo["pu_a"].inec_code]
+    assert form_a["constituency"]["name"] == geo["lga_a"].name
+    assert [p["ballot_order"] for p in form_a["parties"]] == [1, 2]
+    assert forms[geo["pu_b"].inec_code]["constituency"]["name"] == geo["lga_b"].name
 
 
 def test_agents_see_only_their_own_assignments(admin, client, client_as, make_member, geo):

@@ -21,7 +21,7 @@ class AnalyticsSerializer(serializers.Serializer):
     invitations = serializers.DictField(required=False)
     assignment = serializers.DictField()
     capture = serializers.DictField()
-    sync = serializers.DictField()
+    submission = serializers.DictField()
     evidence = serializers.DictField()
     integrity = serializers.DictField()
 
@@ -45,7 +45,8 @@ class SystemHealthView(APIView):
 
 
 class AnalyticsView(APIView):
-    """Onboarding, capture, sync and integrity metrics for one election, inside your scope."""
+    """Onboarding, capture, submission and integrity metrics for one election, inside your
+    scope."""
 
     required_permission = Perm.DASHBOARD_VIEW
 

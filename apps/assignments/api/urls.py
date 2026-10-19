@@ -9,5 +9,4 @@ urlpatterns = [
         views.AssignmentRevokeView.as_view(),
         name="assignment-revoke",
     ),
-    path("me/assignments", views.MyAssignmentsView.as_view(), name="my-assignments"),
 ]

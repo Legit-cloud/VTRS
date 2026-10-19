@@ -38,6 +38,22 @@ REJECTABLE_STATES = APPROVABLE_STATES | {VersionState.APPROVED}
 VERIFIED_STATES = frozenset({VersionState.APPROVED})
 
 
+class Completion(StrEnum):
+    """Whether the result sheet is attached (FR-6.5.3). Separate from the review state."""
+
+    NUMBERS_SUBMITTED = "NUMBERS_SUBMITTED"  # numbers received, sheet not yet uploaded
+    COMPLETE = "COMPLETE"  # a sheet is uploaded (or already verified)
+
+
+# Evidence statuses that count as "the sheet is attached". Quarantined files do not.
+ATTACHED_EVIDENCE = frozenset({"UPLOADED", "VERIFIED"})
+
+
+def completion_of(evidence_statuses: Iterable[str]) -> Completion:
+    attached = any(status in ATTACHED_EVIDENCE for status in evidence_statuses)
+    return Completion.COMPLETE if attached else Completion.NUMBERS_SUBMITTED
+
+
 def decided_state(current: str, decision: ReviewDecision) -> VersionState | None:
     """The state a review decision moves a version to, or None if it is not allowed."""
     state = VersionState(current)
@@ -66,8 +82,8 @@ def select_head(versions: Iterable[tuple[int, str, UUID]]) -> UUID | None:
 
 
 def submission_hash(item: Mapping[str, Any]) -> str:
-    """The payload hash the device sends: SHA-256 (hex) of the submission item, without its
+    """The payload hash the client sends: SHA-256 (hex) of the submission item, without its
     `payload_hash` field, as canonical JSON (keys sorted, no whitespace, UTF-8). Hashing the
-    item exactly as sent keeps the device and server in agreement on number and date formats.
+    item exactly as sent keeps the client and server in agreement on number and date formats.
     """
     return payload_hash({k: v for k, v in item.items() if k != "payload_hash"})

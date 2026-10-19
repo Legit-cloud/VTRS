@@ -14,7 +14,6 @@ from rest_framework.views import APIView
 
 from apps.core.api.views import StrictQueryParamsMixin
 from apps.core.authz import AUTHENTICATED
-from apps.core.domain.permissions import Perm
 from apps.core.pagination import KeysetPagination
 from apps.notifications import selectors, services
 from apps.notifications.providers import twilio_signature
@@ -101,19 +100,6 @@ class MarkAllReadView(APIView):
     @extend_schema(request=None, responses={200: s.MarkedSerializer})
     def post(self, request: Request) -> Response:
         return Response({"marked": services.mark_all_read(request.actor)})  # type: ignore[attr-defined]
-
-
-class PushTokenView(APIView):
-    """The mobile app registers its push token for the device the session was opened on."""
-
-    required_permission = Perm.RESULTS_SUBMIT
-
-    @extend_schema(request=s.PushTokenSerializer, responses={204: None})
-    def put(self, request: Request) -> Response:
-        data = s.PushTokenSerializer(data=request.data)
-        data.is_valid(raise_exception=True)
-        services.register_push_token(request.actor, data.validated_data["token"])  # type: ignore[attr-defined]
-        return Response(status=204)
 
 
 class TwilioStatusWebhookView(APIView):

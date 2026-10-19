@@ -29,6 +29,8 @@ def _reconcile(client, field):
 
 
 def _decide(field, outcome, decision="APPROVED", **body):
+    if decision == "APPROVED":
+        field.attach_sheet(outcome)
     return field.admin_client().post(
         f"/api/v1/results/{outcome['version_id']}/review",
         {"decision": decision, **body},
@@ -56,7 +58,6 @@ def test_reconciling_needs_a_fresh_second_factor(field_):
         user=field_.admin.user,
         membership=field_.admin.membership,
         client="WEB",
-        device=None,
         mfa_at=timezone.now() - timedelta(hours=1),
         ip=None,
     )
@@ -72,31 +73,30 @@ def test_readiness_reports_what_is_missing(reviewed_field):
     _close(f)
     url = f"/api/v1/elections/{f.election.id}/reconciliation"
     body = f.admin_client().get(url).json()
-    assert body["undecided_results"] == 2
-    assert body["can_reconcile"] is False
+    assert body["unverified_results"] == 2
+    assert body["can_reconcile"] is True
     assert body["rollup_differences"] == []
     _decide(f, pending)
-    assert f.admin_client().get(url).json()["undecided_results"] == 1
+    assert f.admin_client().get(url).json()["unverified_results"] == 1
 
 
-def test_undecided_results_block_reconciliation_when_review_is_on(reviewed_field):
+def test_unverified_results_do_not_block_reconciliation(reviewed_field):
+    """The snapshot keeps the reported and the verified figures side by side."""
     f = reviewed_field
     f.submit(f.pus[0])
     _close(f)
     response = _reconcile(f.admin_client(), f)
-    assert (response.status_code, response.json()["code"]) == (409, "reconciliation_blocked")
-    assert "1 counting result" in response.json()["detail"]
-    with system_context():
-        assert Election.objects.get(id=f.election.id).status == "CLOSED"
-        assert ReconciliationSnapshot.objects.count() == 0
+    assert response.status_code == 200, response.content
+    assert (response.json()["reported_pus"], response.json()["verified_pus"]) == (1, 0)
 
 
 def test_reconciling_freezes_results_and_stores_a_snapshot(reviewed_field):
     f = reviewed_field
     first = f.submit(f.pus[0], (90, 60))
     second = f.submit(f.pus[1], (100, 120))
-    _decide(f, first)
-    _decide(f, second)
+    for outcome in (first, second):
+        decided = _decide(f, outcome)
+        assert decided.status_code == 200, decided.content
     _close(f)
 
     response = _reconcile(f.admin_client(), f)
@@ -118,10 +118,8 @@ def test_reconciling_freezes_results_and_stores_a_snapshot(reviewed_field):
         assert AuditEvent.objects.filter(action="election.reconciled").exists()
 
     # Nothing can change any more.
-    late = f.agents[f.pus[2].id].client.post(
-        "/api/v1/sync/submissions", {"items": [f.item(f.pus[2])]}, format="json"
-    )
-    assert late.json()["items"][0]["code"] == "capture_not_open"
+    late = f.agents[f.pus[2].id].client.post("/api/v1/submissions", f.item(f.pus[2]), format="json")
+    assert late.json()["code"] == "capture_not_open"
     reject = _decide(f, first, "REJECTED", reason="Too late")
     assert (reject.status_code, reject.json()["code"]) == (409, "results_frozen")
     again = _reconcile(f.admin_client(), f)

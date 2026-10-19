@@ -1,9 +1,11 @@
 """Evidence pipeline (spec section 12; FR-6.10.x, AC-12).
 
-1. Stubs come from the submission manifest (or POST /evidence/uploads) with a presigned PUT.
-2. The device uploads straight to object storage; the store checks the SHA-256.
-3. The device confirms; a worker verifies (checksum, magic bytes, bounded decode, malware
-   scan) and either records VERIFIED with derivatives and metadata, or QUARANTINES the object.
+1. After the numbers are in, the agent's browser asks for an upload (POST /evidence/uploads)
+   and gets a presigned PUT for the result sheet: a photo (compressed in the browser) or a PDF.
+2. The browser uploads straight to object storage; the store checks the SHA-256.
+3. The browser confirms; the submission is now complete. A worker verifies (checksum, magic
+   bytes, bounded image decode, malware scan) and either records VERIFIED, with derivatives
+   and metadata for photos, or QUARANTINES the object.
 Every step appends a hash-chained custody event for the file.
 """
 
@@ -31,6 +33,7 @@ from .domain.rules import (
     ALLOWED_TYPES,
     GENESIS_HASH,
     MAX_BYTES,
+    PDF,
     EvidenceStatus,
     custody_hash,
     object_key,
@@ -118,7 +121,7 @@ def _validate_declared(mime: str, size: int) -> None:
     if mime not in ALLOWED_TYPES:
         raise ValidationError({"mime": [f"Allowed types: {sorted(ALLOWED_TYPES)}"]})
     if not 0 < size <= MAX_BYTES:
-        raise ValidationError({"size": [f"Images must be 1 byte to {MAX_BYTES} bytes."]})
+        raise ValidationError({"size": [f"Files must be 1 byte to {MAX_BYTES} bytes."]})
 
 
 def _stub(
@@ -186,7 +189,8 @@ def upload_instructions(evidence: EvidenceFile) -> dict[str, Any]:
 
 
 def request_upload(actor: Actor, version: Any, item: Mapping[str, Any]) -> dict[str, Any]:
-    """POST /evidence/uploads: an extra photo, or a fresh URL after the first one expired."""
+    """POST /evidence/uploads: the result sheet for a submission, an extra page, or a fresh URL
+    after the first one expired."""
     authorize(actor, Perm.RESULTS_SUBMIT)
     with transaction.atomic():
         evidence = _stub(version, actor.user_id, item, version.pu_result.election_id)
@@ -194,12 +198,12 @@ def request_upload(actor: Actor, version: Any, item: Mapping[str, Any]) -> dict[
 
 
 def complete_upload(actor: Actor, evidence: EvidenceFile) -> EvidenceFile:
-    """The device says the PUT succeeded. Idempotent: later calls return the current state."""
+    """The browser says the PUT succeeded. Idempotent: later calls return the current state."""
     authorize(actor, Perm.RESULTS_SUBMIT)
     with transaction.atomic():
         evidence = EvidenceFile.objects.select_for_update().get(id=evidence.id)
         if evidence.status == EvidenceStatus.PENDING_UPLOAD:
-            _mark_uploaded(evidence, actor_id=actor.user_id, via="device_confirmation")
+            _mark_uploaded(evidence, actor_id=actor.user_id, via="client_confirmation")
     return evidence
 
 
@@ -225,10 +229,10 @@ def _problems(evidence: EvidenceFile, data: bytes) -> tuple[list[str], str]:
     if len(data) != evidence.size:
         problems.append(f"size {len(data)} differs from declared {evidence.size}")
     if digest != evidence.sha256_client:
-        problems.append("sha256 differs from the device's")
+        problems.append("sha256 differs from the one declared")
     sniffed = sniff_mime(data[:16])
     if sniffed != evidence.mime:
-        problems.append(f"content is {sniffed or 'not an allowed image'}, declared {evidence.mime}")
+        problems.append(f"content is {sniffed or 'not an allowed type'}, declared {evidence.mime}")
     scanner = import_string(settings.VTRS_MALWARE_SCANNER)()
     if threat := scanner.scan(data):
         problems.append(f"malware: {threat}")
@@ -245,13 +249,14 @@ def verify(evidence_id: UUID) -> EvidenceFile | None:
         data = storage.read(evidence.object_key)
         problems, digest = _problems(evidence, data)
         derived = None
-        if not problems:
+        is_pdf = evidence.mime == PDF
+        if not problems and not is_pdf:
             try:
                 derived = processing.derive(data)
             except processing.ImageRejected as exc:
                 problems.append(str(exc))
         evidence.sha256_server = digest
-        if problems or derived is None:
+        if problems or (derived is None and not is_pdf):
             quarantine_key = f"quarantine/{evidence.object_key}"
             storage.move(evidence.object_key, quarantine_key)
             evidence.status = EvidenceStatus.QUARANTINED
@@ -266,20 +271,22 @@ def verify(evidence_id: UUID) -> EvidenceFile | None:
                 {"organization_id": evidence.organization_id, "evidence_id": evidence.id},
             )
             return evidence
-        thumb_key = f"derived/{evidence.object_key}.thumb.jpg"
-        preview_key = f"derived/{evidence.object_key}.preview.jpg"
-        storage.write(thumb_key, derived.thumbnail, mime="image/jpeg")
-        storage.write(preview_key, derived.preview, mime="image/jpeg")
         evidence.status = EvidenceStatus.VERIFIED
         evidence.verified_at = timezone.now()
-        evidence.metadata = {
-            **evidence.metadata,
-            **derived.metadata,
-            "width": derived.width,
-            "height": derived.height,
-            "thumbnail_key": thumb_key,
-            "preview_key": preview_key,
-        }
+        if derived is not None:
+            # PDFs are kept as uploaded: no derivatives, no EXIF, no perceptual hash.
+            thumb_key = f"derived/{evidence.object_key}.thumb.jpg"
+            preview_key = f"derived/{evidence.object_key}.preview.jpg"
+            storage.write(thumb_key, derived.thumbnail, mime="image/jpeg")
+            storage.write(preview_key, derived.preview, mime="image/jpeg")
+            evidence.metadata = {
+                **evidence.metadata,
+                **derived.metadata,
+                "width": derived.width,
+                "height": derived.height,
+                "thumbnail_key": thumb_key,
+                "preview_key": preview_key,
+            }
         evidence.save(update_fields=["status", "verified_at", "metadata", "sha256_server"])
         append_custody(evidence, "verified", details={"sha256_server": digest})
         core.emit(
@@ -291,7 +298,7 @@ def verify(evidence_id: UUID) -> EvidenceFile | None:
 
 def reconcile_pending_uploads(older_than: timedelta = timedelta(minutes=10)) -> int:
     """Backup path: a stub still PENDING_UPLOAD whose object exists was uploaded but never
-    confirmed (app killed, network dropped). Treat the object's presence as the confirmation."""
+    confirmed (tab closed, network dropped). Treat the object's presence as the confirmation."""
     storage = get_storage()
     completed = 0
     with transaction.atomic(), system_context():

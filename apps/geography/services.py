@@ -9,8 +9,17 @@ from django.db import models, transaction
 from apps.audit import services as audit
 from apps.core.domain.actor import Actor
 
+from .domain.constituencies import ConstituencyReport, parse_constituencies, parse_election_types
 from .domain.master_data import Expectations, PollingUnitRow, ValidationReport, parse_and_validate
-from .models import Lga, PollingUnit, State, Ward
+from .models import (
+    Constituency,
+    ElectionType,
+    Lga,
+    PollingUnit,
+    PollingUnitConstituency,
+    State,
+    Ward,
+)
 
 
 @dataclass
@@ -151,4 +160,194 @@ def preview_master_data(
             raise _Discard
     except _Discard:
         pass
+    return outcome
+
+
+# --- Election types and constituencies (FR-6.3.6, FR-6.4.5) ----------------------------------
+
+
+def load_election_types(
+    entries: Iterable[Mapping[str, Any]], *, actor: Actor | None = None
+) -> dict[str, int]:
+    """Upsert the configured election types. Types missing from the file are deactivated, never
+    deleted: elections may reference them."""
+    rows = parse_election_types(entries)
+    with transaction.atomic():
+        existing = {t.code: t for t in ElectionType.objects.all()}
+        created = updated = 0
+        for row in rows:
+            fields = {
+                "name": row.name,
+                "constituency_kind": row.constituency_kind,
+                "sort_order": row.sort_order,
+                "is_active": True,
+            }
+            current = existing.get(row.code)
+            if current is None:
+                ElectionType.objects.create(code=row.code, **fields)
+                created += 1
+            elif any(getattr(current, k) != v for k, v in fields.items()):
+                ElectionType.objects.filter(id=current.id).update(**fields)
+                updated += 1
+        deactivated = (
+            ElectionType.objects.exclude(code__in=[r.code for r in rows])
+            .filter(is_active=True)
+            .update(is_active=False)
+        )
+        changes = {"created": created, "updated": updated, "deactivated": deactivated}
+        audit.record(
+            action="geography.election_types_loaded",
+            object_type="election_type",
+            object_id="all",
+            actor=actor,
+            diff=changes,
+        )
+    return changes
+
+
+def _map_units(kind: str, units: Mapping[Any, Any]) -> int:
+    """Point each polling unit (id -> constituency id) at its constituency for one kind."""
+    existing = dict(
+        PollingUnitConstituency.objects.filter(
+            kind=kind, polling_unit_id__in=list(units)
+        ).values_list("polling_unit_id", "constituency_id")
+    )
+    stale = [pu for pu, c in units.items() if pu in existing and existing[pu] != c]
+    PollingUnitConstituency.objects.filter(kind=kind, polling_unit_id__in=stale).delete()
+    fresh = [
+        PollingUnitConstituency(polling_unit_id=pu, kind=kind, constituency_id=c)
+        for pu, c in units.items()
+        if existing.get(pu) != c
+    ]
+    PollingUnitConstituency.objects.bulk_create(fresh, batch_size=2000)
+    return len(fresh)
+
+
+def _upsert_constituencies(kind: str, wanted: Mapping[str, tuple[str, Any]]) -> dict[str, Any]:
+    """code -> (name, state id); returns code -> constituency id."""
+    existing = {c.code: c for c in Constituency.objects.filter(kind=kind, code__in=list(wanted))}
+    for code, (name, state_id) in wanted.items():
+        current = existing.get(code)
+        if current is None:
+            existing[code] = Constituency.objects.create(
+                kind=kind, code=code, name=name, state_id=state_id
+            )
+        elif (current.name, current.state_id) != (name, state_id):
+            Constituency.objects.filter(id=current.id).update(name=name, state_id=state_id)
+    return {code: c.id for code, c in existing.items()}
+
+
+def derive_constituencies(*, actor: Actor | None = None) -> dict[str, int]:
+    """One STATE, LGA and WARD constituency per state, LGA and ward, with every unit mapped.
+    Idempotent; run again after a master-data import."""
+    mapped: dict[str, int] = {}
+    with transaction.atomic():
+        states = list(State.objects.all())
+        lgas = list(Lga.objects.all())
+        wards = list(Ward.objects.all())
+        levels: list[tuple[str, dict[str, tuple[str, Any]], dict[Any, str], str]] = [
+            (
+                "STATE",
+                {s.inec_code: (s.name, s.id) for s in states},
+                {s.id: s.inec_code for s in states},
+                "state_id",
+            ),
+            (
+                "LGA",
+                {a.inec_code: (a.name, a.state_id) for a in lgas},
+                {a.id: a.inec_code for a in lgas},
+                "lga_id",
+            ),
+            (
+                "WARD",
+                {w.inec_code: (w.name, w.state_id) for w in wards},
+                {w.id: w.inec_code for w in wards},
+                "ward_id",
+            ),
+        ]
+        for kind, wanted, codes, unit_field in levels:
+            ids = _upsert_constituencies(kind, wanted)
+            units = {
+                pu: ids[codes[area]]
+                for pu, area in PollingUnit.objects.values_list("id", unit_field).iterator()
+            }
+            mapped[kind] = _map_units(kind, units)
+        audit.record(
+            action="geography.constituencies_derived",
+            object_type="constituency",
+            object_id="derived",
+            actor=actor,
+            diff={"mapped": mapped},
+        )
+    return mapped
+
+
+@dataclass
+class ConstituencyImport:
+    report: ConstituencyReport
+    applied: bool = False
+    mapped: dict[str, int] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"applied": self.applied, "mapped": self.mapped, **self.report.as_dict()}
+
+
+def import_constituencies(
+    records: Iterable[Mapping[str, str]], *, actor: Actor | None = None, dry_run: bool = False
+) -> ConstituencyImport:
+    """Validate a delimitation file and, if clean, upsert it in one audited transaction.
+
+    Every polling unit of the LGAs and wards named is mapped; units of the same states left
+    without a constituency of an imported kind are reported as warnings."""
+    report = parse_constituencies(
+        records,
+        lga_states=dict(Lga.objects.values_list("inec_code", "state__inec_code")),
+        ward_lgas=dict(Ward.objects.values_list("inec_code", "lga__inec_code")),
+    )
+    outcome = ConstituencyImport(report=report)
+    if not report.ok:
+        return outcome
+
+    lga_ids = dict(Lga.objects.values_list("inec_code", "id"))
+    ward_ids = dict(Ward.objects.values_list("inec_code", "id"))
+    state_ids = dict(State.objects.values_list("inec_code", "id"))
+    kinds = sorted({r.kind for r in report.rows})
+    states = {state_ids[r.state_code] for r in report.rows}
+    for kind in kinds:
+        whole = {lga_ids[r.lga_code] for r in report.rows if r.kind == kind and not r.ward_code}
+        split = {ward_ids[r.ward_code] for r in report.rows if r.kind == kind and r.ward_code}
+        missed = (
+            PollingUnit.objects.filter(state_id__in=states)
+            .exclude(lga_id__in=whole)
+            .exclude(ward_id__in=split)
+            .count()
+        )
+        if missed:
+            report.warnings.append(f"{missed} polling units have no {kind} constituency")
+    if dry_run:
+        return outcome
+
+    with transaction.atomic():
+        for kind in kinds:
+            rows = [r for r in report.rows if r.kind == kind]
+            ids = _upsert_constituencies(
+                kind, {r.code: (r.name, state_ids[r.state_code]) for r in rows}
+            )
+            units: dict[Any, Any] = {}
+            for row in rows:
+                if row.ward_code:
+                    area = PollingUnit.objects.filter(ward_id=ward_ids[row.ward_code])
+                else:
+                    area = PollingUnit.objects.filter(lga_id=lga_ids[row.lga_code])
+                for pu in area.values_list("id", flat=True):
+                    units[pu] = ids[row.code]
+            outcome.mapped[kind] = _map_units(kind, units)
+        outcome.applied = True
+        audit.record(
+            action="geography.constituencies_imported",
+            object_type="constituency",
+            object_id=",".join(kinds)[:64],
+            actor=actor,
+            diff={"summary": report.as_dict()["constituencies"], "mapped": outcome.mapped},
+        )
     return outcome

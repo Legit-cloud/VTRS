@@ -2,15 +2,14 @@ import pytest
 
 from apps.core.ids import uuid7
 from apps.elections.domain.rules import (
-    CandidateSpec,
+    ContestantSpec,
     ContestSpec,
     ElectionStatus,
-    JurisdictionLevel,
+    PartySpec,
     can_transition,
     configuration_problems,
-    covers,
     fingerprint,
-    sheet_field_problems,
+    normalize_abbreviation,
 )
 
 S = ElectionStatus
@@ -39,56 +38,53 @@ def test_lifecycle(current, target, allowed):
     assert can_transition(current, target) is allowed
 
 
-def _candidate(order, own=False):
-    return CandidateSpec(uuid7(), f"C{order}", f"P{order}", order, own)
+def _parties(n=2):
+    return [PartySpec(uuid7(), f"P{i}", i) for i in range(1, n + 1)]
 
 
-def _contest(candidates, ids=None, sheet=("accredited", "valid", "rejected", "total_cast")):
+def _contest(parties, name="Oyo"):
     return ContestSpec(
         id=uuid7(),
-        office="GOVERNORSHIP",
-        title="Governor",
-        jurisdiction_level="STATE",
-        jurisdiction_ids=tuple(ids if ids is not None else [uuid7()]),
-        sheet_fields=tuple(sheet),
-        candidates=tuple(candidates),
+        constituency_id=uuid7(),
+        constituency_name=name,
+        contestants=tuple(
+            ContestantSpec(uuid7(), f"C{p.ballot_order}", p.party_id) for p in parties
+        ),
     )
 
 
 def test_configuration_problems():
-    assert configuration_problems([]) == ["the election has no contests"]
-    assert configuration_problems([_contest([_candidate(1), _candidate(2)])]) == []
-    problems = configuration_problems(
-        [_contest([_candidate(1, own=True), _candidate(2, own=True)], ids=[], sheet=("rejected",))]
-    )
-    assert any("no jurisdiction" in p for p in problems)
-    assert any("more than one candidate as the party's own" in p for p in problems)
-    assert any("must include ['valid']" in p for p in problems)
+    parties = _parties()
+    assert configuration_problems(parties, [_contest(parties)]) == []
+    assert "no constituency has contestants yet" in configuration_problems(parties, [])
     assert any(
-        "at least two candidates" in p for p in configuration_problems([_contest([_candidate(1)])])
+        "at least two contesting parties" in p
+        for p in configuration_problems(parties[:1], [_contest(parties[:1])])
     )
+    lonely = configuration_problems(parties, [_contest(parties[:1], "Lonely")])
+    assert any("'Lonely' needs contestants from at least two parties" in p for p in lonely)
+    stray = _contest([*parties, PartySpec(uuid7(), "XX", 9)], "Stray")
+    assert any("party not contesting" in p for p in configuration_problems(parties, [stray]))
 
 
-def test_sheet_fields():
-    assert sheet_field_problems(["valid"]) == []
-    assert sheet_field_problems(["valid", "valid"]) == ["result fields repeat"]
-    assert "unknown result field 'turnout'" in sheet_field_problems(["valid", "turnout"])
-
-
-def test_coverage_by_level():
-    state, lga, ward = uuid7(), uuid7(), uuid7()
-    where = {"state_id": state, "lga_id": lga, "ward_id": ward}
-    assert covers(JurisdictionLevel.STATE, [state], **where)
-    assert covers(JurisdictionLevel.LGA, [uuid7(), lga], **where)  # e.g. a senatorial district
-    assert covers(JurisdictionLevel.WARD, [ward], **where)
-    assert not covers(JurisdictionLevel.LGA, [uuid7()], **where)
-    assert not covers(JurisdictionLevel.WARD, [lga], **where)
+def test_abbreviations_are_normalized():
+    assert normalize_abbreviation(" apc ") == "APC"
 
 
 def test_fingerprint_is_order_independent_and_change_sensitive():
     election = uuid7()
-    a = _contest([_candidate(1), _candidate(2)])
-    b = _contest([_candidate(1), _candidate(2)])
-    assert fingerprint(election, [a, b]) == fingerprint(election, [b, a])
-    renamed = ContestSpec(**{**a.__dict__, "title": "Governor (changed)"})
-    assert fingerprint(election, [renamed, b]) != fingerprint(election, [a, b])
+    parties = _parties()
+    a, b = _contest(parties, "A"), _contest(parties, "B")
+    assert fingerprint(election, parties, [a, b]) == fingerprint(election, parties, [b, a])
+    renamed = ContestSpec(
+        a.id,
+        a.constituency_id,
+        a.constituency_name,
+        (
+            ContestantSpec(a.contestants[0].id, "Changed", a.contestants[0].party_id),
+            *a.contestants[1:],
+        ),
+    )
+    assert fingerprint(election, parties, [renamed, b]) != fingerprint(election, parties, [a, b])
+    reordered = [PartySpec(p.party_id, p.abbreviation, 3 - p.ballot_order) for p in parties]
+    assert fingerprint(election, reordered, [a, b]) != fingerprint(election, parties, [a, b])

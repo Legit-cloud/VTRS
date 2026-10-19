@@ -31,7 +31,6 @@ def good_token(member):
         user=member.user,
         membership=member.membership,
         client="WEB",
-        device=None,
         mfa_at=timezone.now(),
         ip=None,
     )

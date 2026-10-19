@@ -8,10 +8,7 @@ import struct
 import threading
 import urllib.parse
 
-import jwt
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
 from django.core.exceptions import ImproperlyConfigured
 from rest_framework.exceptions import ValidationError
 
@@ -19,9 +16,7 @@ from apps.accounts import bot_challenge
 from apps.core import http
 from apps.core.http import HttpError, HttpResponse
 from apps.evidence.scanning import EICAR, ClamAvScanner, ScanUnavailable
-from apps.notifications import providers
 from apps.notifications.providers import (
-    FcmPushProvider,
     ProviderError,
     TwilioSmsProvider,
     TwilioWhatsAppProvider,
@@ -125,93 +120,6 @@ def test_the_signature_matches_twilios_published_example():
         "To": "+18005551212",
     }
     assert twilio_signature(url, params, "12345") == "0/KCTR6DLpKmkAf8muzZqo1nDgQ="
-
-
-# --- Firebase Cloud Messaging --------------------------------------------------------------------
-
-
-@pytest.fixture
-def fcm_account(settings):
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    pem = key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    ).decode()
-    settings.VTRS_FCM_SERVICE_ACCOUNT_JSON = json.dumps(
-        {
-            "project_id": "vtrs-test",
-            "client_email": "push@vtrs-test.iam.gserviceaccount.com",
-            "private_key": pem,
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }
-    )
-    providers._token_cache.clear()
-    return key.public_key()
-
-
-def test_fcm_exchanges_a_signed_assertion_and_sends(fcm_account, monkeypatch):
-    rec = Recorder(
-        _json(200, access_token="ya29.token", expires_in=3600),
-        _json(200, name="projects/vtrs-test/messages/0:123"),
-    )
-    monkeypatch.setattr(http, "post", rec)
-    message_id = FcmPushProvider().send("device-token-abc", "Title", "Body", {"version_id": "v1"})
-    assert message_id.endswith("0:123")
-
-    exchange, send = rec.calls
-    assertion = exchange["form"]["assertion"]
-    claims = jwt.decode(
-        assertion,
-        fcm_account,
-        algorithms=["RS256"],
-        audience="https://oauth2.googleapis.com/token",
-    )
-    assert claims["iss"] == "push@vtrs-test.iam.gserviceaccount.com"
-    assert "firebase.messaging" in claims["scope"]
-
-    assert send["url"] == "https://fcm.googleapis.com/v1/projects/vtrs-test/messages:send"
-    assert send["headers"]["Authorization"] == "Bearer ya29.token"
-    message = send["json_body"]["message"]
-    assert message["token"] == "device-token-abc"
-    assert message["notification"] == {"title": "Title", "body": "Body"}
-    assert message["data"] == {"version_id": "v1"}
-
-
-def test_the_access_token_is_reused(fcm_account, monkeypatch):
-    rec = Recorder(
-        _json(200, access_token="ya29.once", expires_in=3600),
-        _json(200, name="a"),
-        _json(200, name="b"),
-    )
-    monkeypatch.setattr(http, "post", rec)
-    provider = FcmPushProvider()
-    provider.send("t1", "x", "y", {})
-    provider.send("t2", "x", "y", {})
-    assert [c["url"].split("/")[2] for c in rec.calls] == [
-        "oauth2.googleapis.com",
-        "fcm.googleapis.com",
-        "fcm.googleapis.com",
-    ]
-
-
-def test_fcm_reports_a_dead_token(fcm_account, monkeypatch):
-    rec = Recorder(
-        _json(200, access_token="ya29.t", expires_in=3600),
-        _json(404, error={"status": "NOT_FOUND", "message": "Requested entity was not found."}),
-    )
-    monkeypatch.setattr(http, "post", rec)
-    with pytest.raises(ProviderError, match="NOT_FOUND"):
-        FcmPushProvider().send("dead-token", "x", "y", {})
-
-
-def test_fcm_without_an_account_fails_loudly(settings):
-    settings.VTRS_FCM_SERVICE_ACCOUNT_JSON = ""
-    with pytest.raises(ProviderError):
-        FcmPushProvider()
-    settings.VTRS_FCM_SERVICE_ACCOUNT_JSON = "{not json"
-    with pytest.raises(ProviderError):
-        FcmPushProvider()
 
 
 # --- Bot challenge ----------------------------------------------------------------------------

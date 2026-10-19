@@ -35,7 +35,7 @@ from apps.results.models import ResultVersion, VoteLine
 
 from . import realtime
 from .domain.tally import RollupLevel
-from .errors import ReconciliationBlocked, RollupsDrifted
+from .errors import RollupsDrifted
 from .models import ReconciliationSnapshot, Rollup, RollupDirty, RollupVote
 
 logger = logging.getLogger("vtrs.aggregation")
@@ -65,9 +65,13 @@ def _lock_contest(contest_id: UUID, *, wait: bool = True) -> bool:
     return True if wait else bool(row and row[0])
 
 
+def _units(contest: Contest) -> QuerySet[PollingUnit]:
+    """The polling units that vote in this contest: those mapped to its constituency."""
+    return PollingUnit.objects.filter(constituencies__constituency_id=contest.constituency_id)
+
+
 def _covered_wards(contest: Contest) -> QuerySet[Ward]:
-    field = {"STATE": "state_id", "LGA": "lga_id", "WARD": "id"}[contest.jurisdiction_level]
-    return Ward.objects.filter(**{f"{field}__in": contest.jurisdiction_ids})
+    return Ward.objects.filter(id__in=_units(contest).values("ward_id"))
 
 
 def _heads(contest_id: UUID) -> QuerySet[ResultVersion]:
@@ -165,8 +169,10 @@ def _store(
 def _compute_ward(contest: Contest, ward: Ward, candidate_ids: list[UUID], now: Any) -> Rollup:
     heads = _heads(contest.id).filter(ward_id=ward.id)
     figures: dict[str, int] = heads.aggregate(**_head_aggregates())
-    units = PollingUnit.objects.filter(ward_id=ward.id).aggregate(
-        n=Count("id"), registered=Coalesce(Sum("registered_voters"), 0)
+    units = (
+        _units(contest)
+        .filter(ward_id=ward.id)
+        .aggregate(n=Count("id"), registered=Coalesce(Sum("registered_voters"), 0))
     )
     figures["expected_pus"] = units["n"]
     figures["registered_voters"] = units["registered"]
@@ -284,7 +290,8 @@ def _rebuild(contest: Contest, candidate_ids: list[UUID]) -> int:
             per_ward[row["ward_id"]].update({k: v for k, v in row.items() if k != "ward_id"})
     unit_rows = cast(
         Iterable[dict[str, Any]],
-        PollingUnit.objects.filter(ward_id__in=ward_ids)
+        _units(contest)
+        .filter(ward_id__in=ward_ids)
         .values("ward_id")
         .annotate(n=Count("id"), registered=Coalesce(Sum("registered_voters"), 0)),
     )
@@ -605,7 +612,7 @@ def verify_contest(contest: Contest) -> list[str]:
             per_ward[head["ward_id"]].update({k: v for k, v in head.items() if k != "ward_id"})
     unit_rows = cast(
         Iterable[dict[str, Any]],
-        PollingUnit.objects.filter(ward_id__in=wards).values("ward_id").annotate(n=Count("id")),
+        _units(contest).filter(ward_id__in=wards).values("ward_id").annotate(n=Count("id")),
     )
     for unit in unit_rows:
         per_ward[unit["ward_id"]]["expected_pus"] = unit["n"]
@@ -669,22 +676,19 @@ def readiness(actor: Actor, election: Election) -> dict[str, Any]:
     """What stands between a closed election and RECONCILED."""
     authorize(actor, Perm.ELECTIONS_CONFIGURE)
     contests = list(Contest.objects.filter(election=election))
-    undecided = 0
+    unverified = 0
     drift: list[str] = []
     for contest in contests:
-        if election.review_enabled:
-            undecided += (
-                _heads(contest.id).filter(state__in=["SUBMITTED", "REQUIRES_REVIEW"]).count()
-            )
+        # Shown, not blocking: the snapshot keeps the reported and verified figures side by side.
+        unverified += _heads(contest.id).filter(state__in=["SUBMITTED", "REQUIRES_REVIEW"]).count()
         drift.extend(verify_contest(contest))
     snapshot = ReconciliationSnapshot.objects.filter(election=election).first()
     return {
         "election_id": election.id,
         "status": election.status,
-        "review_enabled": election.review_enabled,
-        "undecided_results": undecided,
+        "unverified_results": unverified,
         "rollup_differences": drift,
-        "can_reconcile": election.status == "CLOSED" and undecided == 0,
+        "can_reconcile": election.status == "CLOSED",
         "reconciled_at": snapshot.reconciled_at if snapshot else None,
         "snapshot_sha256": snapshot.sha256 if snapshot else None,
     }
@@ -728,21 +732,12 @@ def _snapshot_rows(election: Election) -> list[dict[str, Any]]:
 def reconcile(actor: Actor, election: Election) -> ReconciliationSnapshot:
     """Freeze the rollups of a closed election. Called inside the transition's transaction.
 
-    Refuses while review is on and any counting result is undecided. Rebuilds from head
-    versions first, so the snapshot is the calculation and not whatever the workers had
-    reached, then proves the rebuild agrees with a second independent pass.
+    Rebuilds from head versions first, so the snapshot is the calculation and not whatever
+    the workers had reached, then proves the rebuild agrees with a second independent pass.
+    Unverified results do not block it: the snapshot keeps both measures.
     """
     authorize(actor, Perm.ELECTIONS_CONFIGURE)
     contests = list(Contest.objects.filter(election=election))
-    if election.review_enabled:
-        undecided = sum(
-            _heads(c.id).filter(state__in=["SUBMITTED", "REQUIRES_REVIEW"]).count()
-            for c in contests
-        )
-        if undecided:
-            raise ReconciliationBlocked(
-                f"{undecided} counting result(s) still need a review decision."
-            )
     rebuild_election(election)
     differences = [p for contest in contests for p in verify_contest(contest)]
     if differences:
@@ -791,14 +786,6 @@ def rebuild_election_by_id(*, organization_id: UUID, election_id: UUID) -> int:
         rebuild_contest(organization_id=organization_id, contest_id=contest_id)
         for contest_id in contest_ids
     )
-
-
-def ensure_rows_for_contest(actor: Actor, contest_id: UUID) -> Contest:
-    """Authorize a dashboard read of a contest and make sure its rollup rows exist."""
-    authorize(actor, Perm.DASHBOARD_VIEW)
-    contest = elections.contest_for(actor, contest_id)
-    ensure_contest_rows(contest)
-    return contest
 
 
 def ensure_rows_for_election(actor: Actor, election: Election) -> None:

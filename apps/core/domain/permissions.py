@@ -1,4 +1,9 @@
-"""Role -> permission map (spec section 8). Scope is resolved separately, from memberships."""
+"""Role -> permission map (spec section 8.1). Scope is resolved separately, from memberships.
+
+One web app serves every role; what a user can see and do depends only on these permissions
+and their assigned scope. Coordinators (LGA_OFFICER, WARD_OFFICER) review and verify results
+and see the uploaded sheets for their own area.
+"""
 
 from collections.abc import Iterable, Mapping
 from enum import StrEnum
@@ -36,20 +41,25 @@ class Perm(StrEnum):
 
 ROLE_PERMISSIONS: Mapping[Role, frozenset[Perm]] = {
     Role.PARTY_ADMIN: frozenset(Perm) - {Perm.RESULTS_SUBMIT, Perm.PLATFORM_MANAGE},
+    # LGA coordinator.
     Role.LGA_OFFICER: frozenset(
         {
             Perm.RESULTS_VIEW,
+            Perm.RESULTS_REVIEW,
             Perm.ANOMALIES_VIEW,
             Perm.ANOMALIES_RESOLVE,
+            Perm.EVIDENCE_VIEW,
             Perm.DASHBOARD_VIEW,
             Perm.GEOGRAPHY_VIEW,
         }
     ),
+    # Ward coordinator.
     Role.WARD_OFFICER: frozenset(
         {
             Perm.RESULTS_VIEW,
             Perm.RESULTS_REVIEW,
             Perm.ANOMALIES_VIEW,
+            Perm.EVIDENCE_VIEW,
             Perm.DASHBOARD_VIEW,
             Perm.GEOGRAPHY_VIEW,
         }
@@ -70,10 +80,8 @@ ROLE_PERMISSIONS: Mapping[Role, frozenset[Perm]] = {
 # Permissions an admin may grant explicitly on top of a role ("Optional" / "Granted explicitly").
 GRANTABLE_PERMISSIONS: Mapping[Role, frozenset[Perm]] = {
     Role.PARTY_ADMIN: frozenset(),
-    Role.LGA_OFFICER: frozenset(
-        {Perm.RESULTS_REVIEW, Perm.EVIDENCE_VIEW, Perm.EVIDENCE_EXPORT, Perm.REPORTS_EXPORT}
-    ),
-    Role.WARD_OFFICER: frozenset({Perm.EVIDENCE_VIEW}),
+    Role.LGA_OFFICER: frozenset({Perm.EVIDENCE_EXPORT, Perm.REPORTS_EXPORT}),
+    Role.WARD_OFFICER: frozenset(),
     Role.PU_AGENT: frozenset(),
     Role.PLATFORM_ADMIN: frozenset(),
 }

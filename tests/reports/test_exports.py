@@ -56,7 +56,6 @@ def _results_body(f, **extra):
         "kind": "RESULTS",
         "format": "CSV",
         "election_id": str(f.election.id),
-        "contest_id": str(f.contest.id),
         **extra,
     }
 
@@ -103,12 +102,7 @@ def test_the_verified_measure_counts_only_approved_results(reviewed_field, stora
     f = reviewed_field
     approved = f.submit(f.pus[0], (60, 40))
     f.submit(f.pus[1], (10, 10))
-    f.admin_client().post(
-        f"/api/v1/results/{approved['version_id']}/review",
-        {"decision": "APPROVED"},
-        format="json",
-        HTTP_IDEMPOTENCY_KEY=str(uuid7()),
-    )
+    assert f.verify(approved).status_code == 200
     job = _job(_post(f.admin_client(), _results_body(f, measure="verified")).json()["id"])
     rows = _csv_rows(storage, job)
     assert sum(int(r["votes_AAA"]) for r in rows) == 60
@@ -120,7 +114,7 @@ def test_xlsx_carries_the_notice(busy, storage):
     book = load_workbook(io.BytesIO(_read(storage, job)))
     assert book.sheetnames == ["Results", "About"]
     about = dict(book["About"].iter_rows(min_row=2, values_only=True))
-    assert "not an official declaration" in about["notice"].lower()
+    assert "not the official inec count" in about["notice"].lower()
     assert about["rows"] == 8
     assert book["Results"].max_row == 9  # header plus eight units
 
@@ -168,7 +162,6 @@ def test_a_stale_second_factor_is_refused(busy):
         user=f.admin.user,
         membership=f.admin.membership,
         client="WEB",
-        device=None,
         mfa_at=timezone.now() - timedelta(hours=2),
         ip=None,
     )
@@ -211,7 +204,7 @@ def test_people_cannot_run_many_exports_at_once(busy, settings):
         {"format": "ZIP"},  # not a results format
         {"level": "galaxy"},
         {"measure": "maybe"},
-        {"contest_id": None},
+        {"election_id": None},
     ],
 )
 def test_invalid_requests_are_refused(busy, mutate):
@@ -221,9 +214,9 @@ def test_invalid_requests_are_refused(busy, mutate):
     assert _post(f.admin_client(), body).status_code == 400
 
 
-def test_a_contest_from_another_election_is_refused(busy):
+def test_an_election_from_another_organization_is_refused(busy):
     f = busy
-    body = _results_body(f, contest_id=str(uuid7()))
+    body = {**_results_body(f), "election_id": str(uuid7())}
     assert _post(f.admin_client(), body).status_code in {400, 404}
 
 
@@ -251,7 +244,6 @@ def test_downloads_need_a_fresh_second_factor_and_a_live_file(busy, storage):
         user=f.admin.user,
         membership=f.admin.membership,
         client="WEB",
-        device=None,
         mfa_at=timezone.now() - timedelta(hours=2),
         ip=None,
     )

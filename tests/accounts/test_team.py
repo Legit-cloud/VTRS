@@ -5,7 +5,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from apps.accounts.models import Device, User, UserStatus
+from apps.accounts.models import User, UserStatus
 from apps.accounts.services.sessions import start_session
 from apps.audit.models import AuditEvent
 from apps.core.domain.permissions import Role
@@ -82,7 +82,7 @@ def test_role_change_needs_step_up_and_applies_at_once(
     body = {
         "role": "LGA_OFFICER",
         "scope_ids": [str(lga.id)],
-        "granted_permissions": ["evidence.view"],
+        "granted_permissions": ["evidence.export"],
     }
 
     # A session whose second factor is older than the step-up window is refused.
@@ -90,7 +90,6 @@ def test_role_change_needs_step_up_and_applies_at_once(
         user=admin.user,
         membership=admin.membership,
         client="WEB",
-        device=None,
         mfa_at=timezone.now() - timedelta(minutes=30),
         ip=None,
     )
@@ -117,7 +116,7 @@ def test_role_change_needs_step_up_and_applies_at_once(
     me = officer_client.get("/api/v1/me").json()
     assert me["role"] == "LGA_OFFICER"
     assert me["scope"] == {"type": "LGA", "ids": [str(lga.id)]}
-    assert "evidence.view" in me["permissions"]
+    assert "evidence.export" in me["permissions"]
     assert User.objects.get(id=officer.user.id).scope_version == 2
 
     event = AuditEvent.objects.get(action="user.membership_changed")
@@ -135,36 +134,6 @@ def test_the_last_admin_cannot_be_demoted(geography, make_member, client_as):
         HTTP_IDEMPOTENCY_KEY="m-1",
     )
     assert response.json()["code"] == "last_admin"
-
-
-def test_device_revocation_ends_its_sessions(make_member, client_as):
-    admin = make_member()
-    agent = make_member(Role.PU_AGENT, organization=admin.organization)
-    device = Device.objects.create(user=agent.user, platform="IOS", app_version="1.0.0")
-    session = start_session(
-        user=agent.user,
-        membership=agent.membership,
-        client="MOBILE",
-        device=device,
-        mfa_at=None,
-        ip=None,
-    )
-    agent_client = client_as(agent)
-    agent_client.credentials(HTTP_AUTHORIZATION=f"Bearer {session.access_token}")
-    assert agent_client.get("/api/v1/me").status_code == 200
-
-    response = _post(
-        client_as(admin), f"/api/v1/users/{agent.user.id}/devices/{device.id}/revoke", "r-1"
-    )
-    assert response.json()["status"] == "REVOKED"
-    assert agent_client.get("/api/v1/me").json()["code"] == "token_revoked"
-
-    unknown = _post(
-        client_as(admin),
-        f"/api/v1/users/{agent.user.id}/devices/0190a6a0-0000-7000-8000-000000000000/revoke",
-        "r-2",
-    )
-    assert unknown.status_code == 404
 
 
 def test_idempotency_key_reuse_with_a_different_body(geography, make_member, client_as):

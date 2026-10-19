@@ -10,13 +10,14 @@ a ward in another LGA, and another organization. Expected outcome:
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from django.urls import URLPattern, URLResolver, get_resolver, reverse
 from django.utils import timezone
 
-from apps.accounts.models import Device, Invitation
+from apps.accounts.models import Invitation
 from apps.anomalies.models import AnomalyFlag
 from apps.assignments.models import AgentAssignment
 from apps.core.api.permissions import required_permission_for
@@ -25,15 +26,22 @@ from apps.core.domain.actor import ScopeKind
 from apps.core.domain.permissions import Perm, Role, effective_permissions
 from apps.core.ids import uuid7
 from apps.core.rls import system_context
-from apps.elections.models import Candidate, Contest, Election
+from apps.elections.models import (
+    Candidate,
+    ConfigIssue,
+    Contest,
+    Election,
+    ElectionParty,
+    Party,
+)
 from apps.evidence.models import EvidenceFile
-from apps.geography.domain.synthetic import synthetic_master_data
-from apps.geography.models import Lga, PollingUnit, State, Ward
-from apps.geography.services import import_master_data
+from apps.geography.models import Constituency, ElectionType, Lga, PollingUnit, State, Ward
 from apps.notifications.models import Notification
 from apps.organizations.models import Organization
 from apps.reports.models import ExportJob
 from apps.results.models import PuResult, ResultVersion
+
+from ..factories import load_reference_data
 
 pytestmark = pytest.mark.django_db
 
@@ -59,7 +67,7 @@ class World:
 
 @pytest.fixture
 def world(make_org, make_member) -> World:
-    import_master_data(synthetic_master_data(lgas=2, wards=4, polling_units=8, seed=3))
+    load_reference_data(lgas=2, wards=4, polling_units=8, seed=3)
     lga_a, lga_b = Lga.objects.order_by("inec_code")
     a1, a2 = Ward.objects.filter(lga=lga_a).order_by("inec_code")
     b1 = Ward.objects.filter(lga=lga_b).order_by("inec_code").first()
@@ -108,42 +116,88 @@ def _invitation(w: World, relation: str):
         )
 
 
-def _device(w: World, relation: str):
-    agent = w.make_member(
-        Role.PU_AGENT, scope_ids=[w.pu(relation).id], organization=w.org_for(relation)
-    )
-    return Device.objects.create(user=agent.user, platform="ANDROID", app_version="1.0.0")
+def _party(w: World, relation: str) -> Party:
+    with system_context():
+        return Party.objects.create(
+            organization=w.org_for(relation),
+            full_name="Some Party",
+            abbreviation=f"P{uuid7().hex[-10:]}",
+        )
 
 
 def _election(w: World, relation: str, status: str = "DRAFT") -> Election:
+    """An election with two contesting parties and their contestants in the state, plus a third
+    contesting party that has no contestant yet."""
+    org = w.org_for(relation)
     with system_context():
         election = Election.objects.create(
-            organization=w.org_for(relation),
+            organization=org,
             name=f"Election {uuid7().hex[-12:]}",
+            election_type=ElectionType.objects.get(code="GOVERNORSHIP"),
             state=w.state,
             election_date="2027-03-01",
             status=status,
             created_by_id=uuid7(),
         )
         contest = Contest.objects.create(
+            organization=org,
+            election=election,
+            constituency=Constituency.objects.get(kind="STATE", state=w.state),
+        )
+        for order in (1, 2, 3):
+            party = _party(w, relation)
+            ElectionParty.objects.create(
+                organization=org, election=election, party=party, ballot_order=order
+            )
+            if order < 3:
+                Candidate.objects.create(
+                    organization=org,
+                    contest=contest,
+                    party=party,
+                    name=f"Candidate {order}",
+                    config_version=1,
+                )
+    return election
+
+
+def _contest_parties(election: Election) -> list[str]:
+    with system_context():
+        return [
+            str(p)
+            for p in ElectionParty.objects.filter(election=election)
+            .order_by("ballot_order")
+            .values_list("party_id", flat=True)
+        ]
+
+
+def _new_contestant_body(t: Election, w: World) -> dict:
+    return {
+        "constituency_id": str(Constituency.objects.get(kind="STATE", state=w.state).id),
+        "party_id": _contest_parties(t)[2],
+        "name": "Third candidate",
+    }
+
+
+def _form(w: World, relation: str) -> SimpleNamespace:
+    election = _election(w, relation, status="LIVE")
+    return SimpleNamespace(election_id=election.id, polling_unit_id=w.pu(relation).id)
+
+
+def _issue(w: World, relation: str) -> ConfigIssue:
+    pu = w.pu(relation)
+    reporter = w.make_member(Role.PU_AGENT, scope_ids=[pu.id], organization=w.org_for(relation))
+    election = _election(w, relation, status="LIVE")
+    with system_context():
+        return ConfigIssue.objects.create(
             organization=w.org_for(relation),
             election=election,
-            office="GOVERNORSHIP",
-            title="Governor",
-            jurisdiction_level="STATE",
-            jurisdiction_ids=[w.state.id],
+            polling_unit=pu,
+            ward=pu.ward,
+            lga=pu.lga,
+            kind="PARTY_MISSING",
+            note="Not on the form",
+            raised_by=reporter.user,
         )
-        for order, acronym in ((1, "AAA"), (2, "BBB")):
-            Candidate.objects.create(
-                organization=w.org_for(relation),
-                contest=contest,
-                name=f"Candidate {acronym}",
-                party_name=f"Party {acronym}",
-                party_acronym=acronym,
-                ballot_order=order,
-                config_version=1,
-            )
-    return election
 
 
 def _configured_election(w: World, relation: str) -> Election:
@@ -159,7 +213,7 @@ def _contest(w: World, relation: str) -> Contest:
 def _candidate(w: World, relation: str) -> Candidate:
     contest = _contest(w, relation)
     with system_context():
-        return Candidate.objects.filter(contest=contest).order_by("ballot_order").first()
+        return Candidate.objects.filter(contest=contest).order_by("name").first()
 
 
 def _assignment(w: World, relation: str) -> AgentAssignment:
@@ -222,7 +276,6 @@ def _evidence(w: World, relation: str) -> EvidenceFile:
             device_captured_at=timezone.now(),
             server_received_at=timezone.now(),
             submitted_by=uploader.user,
-            app_version="1.0.0",
             config_version=1,
             payload_hash="0" * 64,
             state="SUBMITTED",
@@ -250,13 +303,13 @@ def _closed_election(w: World, relation: str) -> Election:
 
 
 def _result_version(w: World, relation: str) -> ResultVersion:
-    """The counting version of a polling unit in the relation, in an election with review on."""
+    """The counting version of a polling unit in the relation, with its sheet uploaded so a
+    coordinator can verify it."""
     pu = w.pu(relation)
     org = w.org_for(relation)
     submitter = w.make_member(Role.PU_AGENT, scope_ids=[pu.id], organization=org)
     election = _election(w, relation, status="LIVE")
     with system_context():
-        Election.objects.filter(id=election.id).update(review_enabled=True)
         contest = election.contests.get()
         pu_result = PuResult.objects.create(
             organization=org,
@@ -282,12 +335,27 @@ def _result_version(w: World, relation: str) -> ResultVersion:
             device_captured_at=timezone.now(),
             server_received_at=timezone.now(),
             submitted_by=submitter.user,
-            app_version="1.0.0",
             config_version=1,
             payload_hash="0" * 64,
             state="SUBMITTED",
         )
         PuResult.objects.filter(id=pu_result.id).update(head_version=version)
+        evidence_id = uuid7()
+        EvidenceFile.objects.create(
+            id=evidence_id,
+            organization=org,
+            result_version=version,
+            polling_unit=pu,
+            ward=pu.ward,
+            lga=pu.lga,
+            uploaded_by=submitter.user,
+            kind="EC8A",
+            object_key=f"org/{org.id}/{evidence_id}.jpg",
+            size=10,
+            mime="image/jpeg",
+            sha256_client="0" * 64,
+            status="UPLOADED",
+        )
         return version
 
 
@@ -368,10 +436,15 @@ def _never(role: Role, relation: str) -> bool:
 
 
 def _review_visible(role: Role, relation: str) -> bool:
-    """Admins review anywhere in the organization; ward officers only in their own ward."""
-    if role is Role.PARTY_ADMIN:
-        return relation != "other_org"
-    return role is Role.WARD_OFFICER and relation == "in_scope"
+    """Admins verify anywhere in the organization; coordinators only in their own area."""
+    if role is Role.PU_AGENT:
+        return False
+    return _oversight_visible(role, relation)
+
+
+def _sheet_visible(role: Role, relation: str) -> bool:
+    """Coordinators see the sheets of their own area; agents only their own uploads."""
+    return role is not Role.PU_AGENT and _oversight_visible(role, relation)
 
 
 def _oversight_visible(role: Role, relation: str) -> bool:
@@ -403,8 +476,8 @@ class Endpoint:
 
 _user = {"kwargs": lambda t: {"user_id": t.user.id}}
 _election_kw = {"kwargs": lambda t: {"election_id": t.id}}
-_contest_kw = {"kwargs": lambda t: {"contest_id": t.id}}
 _candidate_kw = {"kwargs": lambda t: {"candidate_id": t.id}}
+_party_kw = {"kwargs": lambda t: {"party_id": t.id}}
 _flag_kw = {"kwargs": lambda t: {"flag_id": t.id}}
 
 ENDPOINTS = [
@@ -437,13 +510,6 @@ ENDPOINTS = [
         **_user,
     ),
     Endpoint(
-        "user-device-revoke",
-        "post",
-        Perm.USERS_MANAGE,
-        _device,
-        kwargs=lambda t: {"user_id": t.user_id, "device_id": t.id},
-    ),
-    Endpoint(
         "invitation-revoke",
         "post",
         Perm.USERS_MANAGE,
@@ -454,6 +520,47 @@ ENDPOINTS = [
     Endpoint("geography-lgas", "get", Perm.GEOGRAPHY_VIEW),
     Endpoint("geography-wards", "get", Perm.GEOGRAPHY_VIEW),
     Endpoint("geography-polling-units", "get", Perm.GEOGRAPHY_VIEW),
+    Endpoint("geography-election-types", "get", Perm.GEOGRAPHY_VIEW),
+    Endpoint("geography-constituencies", "get", Perm.GEOGRAPHY_VIEW, query={"kind": "STATE"}),
+    # parties (the master list)
+    Endpoint("parties", "get", AUTHENTICATED),
+    Endpoint(
+        "parties",
+        "post",
+        Perm.CANDIDATES_MANAGE,
+        body=lambda t, w: {"full_name": "New Party", "abbreviation": f"N{uuid7().hex[-8:]}"},
+        ok=201,
+    ),
+    Endpoint("party-detail", "get", AUTHENTICATED, _party, **_party_kw),
+    Endpoint(
+        "party-detail",
+        "patch",
+        Perm.CANDIDATES_MANAGE,
+        _party,
+        body=lambda t, w: {"full_name": "Renamed Party"},
+        headers=_if_match,
+        **_party_kw,
+    ),
+    Endpoint("party-detail", "delete", Perm.CANDIDATES_MANAGE, _party, ok=204, **_party_kw),
+    Endpoint(
+        "party-logo",
+        "post",
+        Perm.CANDIDATES_MANAGE,
+        _party,
+        body=lambda t, w: {"mime": "image/png", "size": 100, "sha256": "0" * 64},
+        **_party_kw,
+    ),
+    Endpoint("party-logo", "delete", Perm.CANDIDATES_MANAGE, _party, **_party_kw),
+    # Nothing was uploaded, so a permitted caller in scope reaches the check and is refused.
+    Endpoint(
+        "party-logo-complete",
+        "post",
+        Perm.CANDIDATES_MANAGE,
+        _party,
+        body=lambda t, w: {"mime": "image/png", "sha256": "0" * 64},
+        ok=400,
+        **_party_kw,
+    ),
     # elections
     Endpoint("elections", "get", AUTHENTICATED),
     Endpoint(
@@ -462,6 +569,7 @@ ENDPOINTS = [
         Perm.ELECTIONS_CONFIGURE,
         body=lambda t, w: {
             "name": f"New {uuid7().hex[-12:]}",
+            "election_type": "GOVERNORSHIP",
             "state_id": str(w.state.id),
             "election_date": "2027-03-01",
         },
@@ -491,50 +599,28 @@ ENDPOINTS = [
     Endpoint(
         "election-lock", "post", Perm.ELECTIONS_CONFIGURE, _configured_election, **_election_kw
     ),
-    Endpoint("election-contests", "get", AUTHENTICATED, _election, **_election_kw),
+    Endpoint("election-parties", "get", AUTHENTICATED, _election, **_election_kw),
     Endpoint(
-        "election-contests",
-        "post",
+        "election-parties",
+        "put",
         Perm.ELECTIONS_CONFIGURE,
         _election,
-        body=lambda t, w: {
-            "office": "STATE_ASSEMBLY",
-            "title": "Assembly",
-            "jurisdiction_level": "LGA",
-            "jurisdiction_ids": [str(w.lga_a.id)],
-        },
+        body=lambda t, w: {"party_ids": list(reversed(_contest_parties(t)))},
+        **_election_kw,
+    ),
+    Endpoint("election-contestants", "get", AUTHENTICATED, _election, **_election_kw),
+    Endpoint(
+        "election-contestants",
+        "post",
+        Perm.CANDIDATES_MANAGE,
+        _election,
+        body=_new_contestant_body,
         ok=201,
         **_election_kw,
     ),
-    Endpoint("contest-detail", "get", AUTHENTICATED, _contest, **_contest_kw),
+    Endpoint("contestant-detail", "get", AUTHENTICATED, _candidate, **_candidate_kw),
     Endpoint(
-        "contest-detail",
-        "patch",
-        Perm.ELECTIONS_CONFIGURE,
-        _contest,
-        body=lambda t, w: {"title": "Governor (renamed)"},
-        headers=_if_match,
-        **_contest_kw,
-    ),
-    Endpoint("contest-detail", "delete", Perm.ELECTIONS_CONFIGURE, _contest, ok=204, **_contest_kw),
-    Endpoint("contest-candidates", "get", AUTHENTICATED, _contest, **_contest_kw),
-    Endpoint(
-        "contest-candidates",
-        "post",
-        Perm.CANDIDATES_MANAGE,
-        _contest,
-        body=lambda t, w: {
-            "name": "Third",
-            "party_name": "Party C",
-            "party_acronym": "CCC",
-            "ballot_order": 3,
-        },
-        ok=201,
-        **_contest_kw,
-    ),
-    Endpoint("candidate-detail", "get", AUTHENTICATED, _candidate, **_candidate_kw),
-    Endpoint(
-        "candidate-detail",
+        "contestant-detail",
         "patch",
         Perm.CANDIDATES_MANAGE,
         _candidate,
@@ -543,7 +629,30 @@ ENDPOINTS = [
         **_candidate_kw,
     ),
     Endpoint(
-        "candidate-detail", "delete", Perm.CANDIDATES_MANAGE, _candidate, ok=204, **_candidate_kw
+        "contestant-detail", "delete", Perm.CANDIDATES_MANAGE, _candidate, ok=204, **_candidate_kw
+    ),
+    # configuration issues ("party missing", "contestant missing")
+    Endpoint("election-config-issues", "get", Perm.ELECTIONS_CONFIGURE, _election, **_election_kw),
+    Endpoint(
+        "election-config-issues",
+        "post",
+        Perm.RESULTS_SUBMIT,
+        _election,
+        body=lambda t, w: {
+            "polling_unit_id": str(w.pu("in_scope").id),
+            "kind": "PARTY_MISSING",
+            "note": "Not on the form",
+        },
+        visible=_never,  # only for a unit the agent is assigned to in that election
+        **_election_kw,
+    ),
+    Endpoint(
+        "config-issue-resolve",
+        "post",
+        Perm.ELECTIONS_CONFIGURE,
+        _issue,
+        body=lambda t, w: {"note": "Added before lock"},
+        kwargs=lambda t: {"issue_id": t.id},
     ),
     # assignments
     Endpoint("assignments", "get", Perm.ASSIGNMENTS_MANAGE),
@@ -557,8 +666,24 @@ ENDPOINTS = [
     ),
     Endpoint("my-assignments", "get", Perm.RESULTS_SUBMIT),
     # results and evidence
-    Endpoint("sync-submissions", "post", Perm.RESULTS_SUBMIT, body=lambda t, w: {"items": [{}]}),
-    Endpoint("sync-status", "get", Perm.RESULTS_SUBMIT, query={"ids": str(uuid7())}),
+    # An empty body is malformed: a permitted caller gets the validation outcome.
+    Endpoint("submissions", "post", Perm.RESULTS_SUBMIT, body=lambda t, w: {}, ok=400),
+    Endpoint(
+        "submission-status",
+        "get",
+        Perm.RESULTS_SUBMIT,
+        _result_version,
+        kwargs=lambda t: {"version_id": t.id},
+        visible=_never,  # another agent's submission
+    ),
+    Endpoint(
+        "result-form",
+        "get",
+        Perm.RESULTS_SUBMIT,
+        _form,
+        kwargs=lambda t: {"election_id": t.election_id, "polling_unit_id": t.polling_unit_id},
+        visible=_never,  # only for a unit the agent is assigned to
+    ),
     Endpoint(
         "evidence-uploads",
         "post",
@@ -588,7 +713,7 @@ ENDPOINTS = [
         Perm.EVIDENCE_VIEW,
         _evidence,
         kwargs=lambda t: {"evidence_id": t.id},
-        visible=_admin_in_org,  # agents hold evidence.view only for their own uploads
+        visible=_sheet_visible,
     ),
     # aggregation, review and history
     Endpoint(
@@ -606,12 +731,15 @@ ENDPOINTS = [
         "get",
         Perm.DASHBOARD_VIEW,
         _result_version,
-        kwargs=lambda t: {"contest_id": t.contest_id, "polling_unit_id": t.polling_unit_id},
+        kwargs=lambda t: {
+            "election_id": t.pu_result.election_id,
+            "polling_unit_id": t.polling_unit_id,
+        },
         visible=_oversight_visible,
     ),
     Endpoint("election-dashboard", "get", Perm.DASHBOARD_VIEW, _election, **_election_kw),
-    Endpoint("contest-results", "get", Perm.DASHBOARD_VIEW, _contest, **_contest_kw),
-    Endpoint("contest-coverage-timeline", "get", Perm.DASHBOARD_VIEW, _contest, **_contest_kw),
+    Endpoint("election-results", "get", Perm.DASHBOARD_VIEW, _election, **_election_kw),
+    Endpoint("election-coverage-timeline", "get", Perm.DASHBOARD_VIEW, _election, **_election_kw),
     Endpoint("election-reconciliation", "get", Perm.ELECTIONS_CONFIGURE, _election, **_election_kw),
     Endpoint(
         "election-reconcile", "post", Perm.ELECTIONS_CONFIGURE, _closed_election, **_election_kw
@@ -764,8 +892,6 @@ SELF_SERVICE = {
     ("auth-totp-setup", "POST"),
     ("auth-totp-confirm", "POST"),
     ("auth-step-up", "POST"),
-    # Needs a session opened on a registered device; covered in tests/anomalies.
-    ("my-push-token", "PUT"),
     # Each kind of export has its own permissions, checked in the service; covered in
     # tests/reports.
     ("exports", "POST"),
@@ -863,11 +989,11 @@ def test_matrix_permissions_match_the_views():
 def _dummy_kwargs(endpoint: Endpoint) -> dict:
     pattern_kwargs = {
         "user_id",
-        "device_id",
         "invitation_id",
         "election_id",
-        "contest_id",
         "candidate_id",
+        "party_id",
+        "issue_id",
         "assignment_id",
         "evidence_id",
         "version_id",

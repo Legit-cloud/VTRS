@@ -19,13 +19,13 @@ urlpatterns = [
         name="election-reconcile",
     ),
     path(
-        "contests/<uuid:contest_id>/results",
-        views.ContestResultsView.as_view(),
-        name="contest-results",
+        "elections/<uuid:election_id>/results",
+        views.ElectionResultsView.as_view(),
+        name="election-results",
     ),
     path(
-        "contests/<uuid:contest_id>/coverage-timeline",
+        "elections/<uuid:election_id>/coverage-timeline",
         views.CoverageTimelineView.as_view(),
-        name="contest-coverage-timeline",
+        name="election-coverage-timeline",
     ),
 ]

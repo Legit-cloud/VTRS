@@ -31,11 +31,12 @@ def chain(field_):
 
 
 def _critical(f):
-    """Over-voting: 205 cast but only 100 accredited. CRITICAL, from an inline rule."""
+    """Over-voting: more accredited than registered voters. CRITICAL, from an inline rule."""
+    accredited = (f.pu.registered_voters or 500) + 100
     return f.submit(
         f.pu,
         (120, 80),
-        totals={"accredited": 100, "valid": 200, "rejected": 5, "total_cast": 205},
+        totals={"accredited": accredited, "rejected": 5, "total_cast": 205},
     )
 
 

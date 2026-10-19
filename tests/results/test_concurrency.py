@@ -1,4 +1,4 @@
-"""M3 exit gate: 100 parallel replays of one version id create exactly one row; two agents
+"""M3 exit gate: 100 parallel replays of one submission id create exactly one row; two agents
 racing one polling unit get one pu_result and two versions (real connections, real commits)."""
 
 import threading
@@ -7,22 +7,21 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from django.db import connection, transaction
 
-from apps.accounts.models import Device, Membership, Session, User, UserStatus
+from apps.accounts.models import Membership, Session, User, UserStatus
 from apps.accounts.services.sessions import start_session
 from apps.anomalies.models import AnomalyFlag
 from apps.assignments.models import AgentAssignment
 from apps.core.crypto import blind_index
 from apps.core.domain.actor import Actor, Scope, ScopeKind
 from apps.core.domain.permissions import Role
-from apps.elections.models import Candidate, Contest, Election
-from apps.geography.domain.synthetic import synthetic_master_data
+from apps.elections.models import Election
 from apps.geography.models import PollingUnit, State
-from apps.geography.services import import_master_data
 from apps.organizations.models import Organization
 from apps.results import services
-from apps.results.api.serializers import SubmissionItemSerializer
+from apps.results.api.serializers import SubmissionSerializer
 from apps.results.models import PuResult, ResultVersion
 
+from ..factories import election_type, load_reference_data, make_ballot
 from .conftest import seal
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -30,38 +29,20 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def _world():
     with transaction.atomic():
-        import_master_data(synthetic_master_data(lgas=1, wards=1, polling_units=1))
+        load_reference_data(lgas=1, wards=1, polling_units=1, seed=1)
     pu = PollingUnit.objects.get()
     org = Organization.objects.create(name="Race Party", status="ACTIVE")
     election = Election.objects.create(
         organization=org,
         name="Race",
+        election_type=election_type(),
         state=State.objects.get(),
         election_date="2027-03-11",
         status="LIVE",
         created_by_id=org.id,
     )
-    contest = Contest.objects.create(
-        organization=org,
-        election=election,
-        office="GOVERNORSHIP",
-        title="Governor",
-        jurisdiction_level="STATE",
-        jurisdiction_ids=[election.state_id],
-    )
-    candidates = [
-        Candidate.objects.create(
-            organization=org,
-            contest=contest,
-            name=a,
-            party_name=a,
-            party_acronym=a,
-            ballot_order=i,
-            config_version=1,
-        )
-        for i, a in ((1, "AAA"), (2, "BBB"))
-    ]
-    return org, election, contest, candidates, pu
+    ballot = make_ballot(org, election, ("AAA", "BBB"), own=None)
+    return org, election, ballot.contest, ballot.candidates, pu
 
 
 def _agent(org, election, pu, n):
@@ -75,7 +56,6 @@ def _agent(org, election, pu, n):
     membership = Membership.objects.create(
         user=user, organization=org, role=Role.PU_AGENT, scope_type=ScopeKind.PU, scope_ids=[pu.id]
     )
-    device = Device.objects.create(user=user, platform="ANDROID", app_version="1.0.0")
     AgentAssignment.objects.create(
         organization=org,
         election=election,
@@ -86,9 +66,7 @@ def _agent(org, election, pu, n):
         assigned_by_id=user.id,
     )
     with transaction.atomic():
-        start_session(
-            user=user, membership=membership, client="MOBILE", device=device, mfa_at=None, ip=None
-        )
+        start_session(user=user, membership=membership, mfa_at=None, ip=None)
     session = Session.objects.get(user=user)
     actor = Actor(
         user.id,
@@ -97,21 +75,21 @@ def _agent(org, election, pu, n):
         Scope(ScopeKind.PU, frozenset({pu.id})),
         session_id=session.id,
     )
-    return actor, device
+    return actor
 
 
-def _item(contest, candidates, pu, device, **extra):
+def _item(election, candidates, pu, **extra):
     from django.utils import timezone
 
     from apps.core.ids import uuid7
 
     item = {
         "version_id": str(uuid7()),
-        "contest_id": str(contest.id),
+        "election_id": str(election.id),
         "polling_unit_id": str(pu.id),
         "config_version": 1,
         "parent_version_id": None,
-        "totals": {"accredited": 210, "valid": 200, "rejected": 5, "total_cast": 205},
+        "totals": {"accredited": 210, "rejected": 5, "total_cast": 205},
         "votes": [
             {"candidate_id": str(c.id), "votes": v}
             for c, v in zip(candidates, (120, 80), strict=True)
@@ -122,9 +100,6 @@ def _item(contest, candidates, pu, device, **extra):
             "lng": float(pu.longitude or 3.91),
             "accuracy_m": 10,
         },
-        "device_id": str(device.id),
-        "app_version": "1.0.0",
-        "evidence": [],
         **extra,
     }
     return seal(item)
@@ -132,7 +107,7 @@ def _item(contest, candidates, pu, device, **extra):
 
 def _submit(actor, raw):
     try:
-        serializer = SubmissionItemSerializer(data=raw)
+        serializer = SubmissionSerializer(data=raw)
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
             return services.submit(actor, serializer.validated_data, raw)
@@ -141,9 +116,9 @@ def _submit(actor, raw):
 
 
 def test_one_hundred_parallel_replays_create_one_version():
-    org, election, contest, candidates, pu = _world()
-    actor, device = _agent(org, election, pu, 1)
-    item = _item(contest, candidates, pu, device)
+    org, election, _contest, candidates, pu = _world()
+    actor = _agent(org, election, pu, 1)
+    item = _item(election, candidates, pu)
 
     start = threading.Barrier(30)
 
@@ -157,18 +132,18 @@ def test_one_hundred_parallel_replays_create_one_version():
     with ThreadPoolExecutor(max_workers=30) as pool:
         outcomes = list(pool.map(attempt, range(100)))
 
-    assert all(o["status"] == "SYNCED" for o in outcomes), {o.get("code") for o in outcomes}
+    assert all(o["status"] == "ACCEPTED" for o in outcomes), {o.get("code") for o in outcomes}
     assert sum(not o["replayed"] for o in outcomes) == 1
     assert ResultVersion.objects.filter(id=item["version_id"]).count() == 1
     assert PuResult.objects.get().version_count == 1
 
 
 def test_two_agents_racing_one_polling_unit():
-    org, election, contest, candidates, pu = _world()
-    (actor_a, device_a), (actor_b, device_b) = (_agent(org, election, pu, n) for n in (1, 2))
+    org, election, _contest, candidates, pu = _world()
+    actor_a, actor_b = (_agent(org, election, pu, n) for n in (1, 2))
     items = [
-        (actor_a, _item(contest, candidates, pu, device_a)),
-        (actor_b, _item(contest, candidates, pu, device_b)),
+        (actor_a, _item(election, candidates, pu)),
+        (actor_b, _item(election, candidates, pu)),
     ]
     barrier = threading.Barrier(2)
 
@@ -188,14 +163,14 @@ def test_two_agents_racing_one_polling_unit():
 
 def test_racing_corrections_get_distinct_version_numbers():
     """Once a result exists, only the row lock keeps concurrent versions from colliding."""
-    org, election, contest, candidates, pu = _world()
-    (actor_a, device_a), (actor_b, device_b) = (_agent(org, election, pu, n) for n in (1, 2))
-    first = _item(contest, candidates, pu, device_a)
-    assert _submit(actor_a, first)["status"] == "SYNCED"
+    org, election, _contest, candidates, pu = _world()
+    actor_a, actor_b = (_agent(org, election, pu, n) for n in (1, 2))
+    first = _item(election, candidates, pu)
+    assert _submit(actor_a, first)["status"] == "ACCEPTED"
 
     pairs = [
-        (actor_a, _item(contest, candidates, pu, device_a, parent_version_id=first["version_id"])),
-        (actor_b, _item(contest, candidates, pu, device_b, parent_version_id=first["version_id"])),
+        (actor_a, _item(election, candidates, pu, parent_version_id=first["version_id"])),
+        (actor_b, _item(election, candidates, pu, parent_version_id=first["version_id"])),
     ]
     barrier = threading.Barrier(2)
 

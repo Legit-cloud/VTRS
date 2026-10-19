@@ -102,14 +102,14 @@ def _uuid(value: Any) -> UUID | None:
 
 
 def _walk(
-    actor: Actor, contest_id: UUID, measure: str, level: str, parent_id: UUID | None
+    actor: Actor, election: Any, measure: Any, level: str, parent_id: UUID | None
 ) -> Iterator[tuple[dict[str, Any], dict[str, Any] | None, dict[str, Any]]]:
     """Yield (lga_row, ward_row, row) for every area at `level` inside the actor's scope."""
 
     def fetch(lvl: str | None, parent: UUID | None) -> list[dict[str, Any]]:
-        return aggregation.results(
-            actor, contest_id, level=lvl, parent_id=parent, measure_raw=measure
-        )["rows"]
+        return aggregation.results(actor, election, level=lvl, parent_id=parent, measure=measure)[
+            "rows"
+        ]
 
     top = fetch(None, None)
     if not top:
@@ -143,25 +143,37 @@ def _walk(
             yield parent_lga or {}, ward, unit
 
 
+def _leader(position: dict[str, Any], abbreviations: dict[Any, str]) -> str:
+    if position["status"] == "TIED":
+        return "TIED: " + ", ".join(abbreviations.get(p, "") for p in position["leading_party_ids"])
+    return position["leader_abbreviation"] or ""
+
+
 def build_results(job: ExportJob, actor: Actor, path: str) -> Built:
+    """One row per area (or polling unit) with one vote column per contesting party, in the
+    election's party order. Votes are summed by party id, never by name."""
     params = job.params
-    contest = elections.contest_for(actor, UUID(params["contest_id"]))
-    candidates = [c.party_acronym for c in elections.candidates_for(actor, contest)]
+    election = elections.election_for(actor, UUID(params["election_id"]))
+    parties = list(elections.election_parties(actor, election))
+    abbreviations = {p.party_id: p.party.abbreviation for p in parties}
     level = params.get("level", "pu")
-    measure = params.get("measure") or contest.election.count_policy.lower()
+    measure = aggregation.parse_measure(params.get("measure"), election)
     table = _table(job, path, "Results")
     base = ["lga_code", "lga_name", "ward_code", "ward_name"]
     if level == "pu":
-        base += ["pu_code", "pu_name", "registered_voters", "status", "version_no"]
+        base += ["pu_code", "pu_name", "registered_voters", "status", "verification"]
     else:
         base += ["expected_pus", "reported_pus", "verified_pus", "review_pus", "reported_pct"]
     base += ["accredited", "valid", "rejected", "total_cast"]
     table.header(
-        columns_for_candidates([*base, "leader", "margin", "open_flags", "updated_at"], candidates)
+        columns_for_candidates(
+            [*base, "leader_status", "leader", "margin", "open_flags", "updated_at"],
+            [p.party.abbreviation for p in parties],
+        )
     )
     count = 0
-    for lga, ward, row in _walk(actor, contest.id, measure, level, _uuid(params.get("parent_id"))):
-        by_party = {v["party_acronym"]: v["votes"] for v in row["votes"]}
+    for lga, ward, row in _walk(actor, election, measure, level, _uuid(params.get("parent_id"))):
+        by_party = {v["party_id"]: v["votes"] for v in row["votes"]}
         totals = row["totals"]
         values: list[Any] = [
             lga.get("area_code", ""),
@@ -175,7 +187,7 @@ def build_results(job: ExportJob, actor: Actor, path: str) -> Built:
                 row["area_name"],
                 row["registered_voters"],
                 row.get("status", ""),
-                row.get("revision") or "",
+                "VERIFIED" if row.get("verified") else "UNVERIFIED",
             ]
         else:
             values += [
@@ -187,26 +199,29 @@ def build_results(job: ExportJob, actor: Actor, path: str) -> Built:
             ]
         values += [totals.get(k) for k in ("accredited", "valid", "rejected", "total_cast")]
         values += [
-            row["position"]["leader_party"] or "",
+            row["position"]["status"],
+            _leader(row["position"], abbreviations),
             row["position"]["margin"],
             row["open_flags"],
             _iso(row["updated_at"]),
-            *(by_party.get(a, 0) for a in candidates),
+            *(by_party.get(p.party_id, 0) for p in parties),
         ]
         table.row(values)
         count += 1
     table.close(
         {
             "notice": PROVISIONAL_NOTICE,
-            "contest": contest.title,
-            "election": contest.election.name,
+            "election": election.name,
+            "parties": [
+                {"party_id": str(p.party_id), "abbreviation": p.party.abbreviation} for p in parties
+            ],
             "level": level,
-            "measure": measure.upper(),
+            "measure": measure.value,
             "generated_at": timezone.now().isoformat(),
             "rows": count,
         }
     )
-    return Built(label=contest.title, row_count=count)
+    return Built(label=election.name, row_count=count)
 
 
 # --- Flags ----------------------------------------------------------------------------------
@@ -385,7 +400,7 @@ def build_pack(job: ExportJob, actor: Actor, path: str) -> tuple[Built, list[Evi
                         "id": str(version.id),
                         "number": version.version_no,
                         "state": version.state,
-                        "contest": version.contest.title,
+                        "constituency": version.contest.constituency.name,
                     },
                     "custody": events,
                 }
@@ -426,25 +441,26 @@ def _pack_results_csv(version_ids: list[UUID]) -> str:
     buffer = io.StringIO(newline="")
     writer = csv.writer(buffer)
     writer.writerow(
-        ["pu_code", "pu_name", "contest", "version_no", "state", "accredited", "valid",
+        ["pu_code", "pu_name", "constituency", "version_no", "state", "accredited", "valid",
          "rejected", "total_cast", "votes", "server_received_at", "device_captured_at",
          "payload_hash", "version_id"]
     )  # fmt: skip
     versions = (
         ResultVersion.objects.filter(id__in=version_ids)
-        .select_related("polling_unit", "contest")
-        .prefetch_related("vote_lines__candidate")
+        .select_related("polling_unit", "contest__constituency")
+        .prefetch_related("vote_lines__candidate__party")
         .order_by("polling_unit__inec_code", "version_no")
     )
     for v in versions:
         votes = "; ".join(
-            f"{line.candidate.party_acronym}={line.votes}"
-            for line in sorted(v.vote_lines.all(), key=lambda x: x.candidate.ballot_order)
+            f"{line.candidate.party.abbreviation}={line.votes}"
+            for line in sorted(v.vote_lines.all(), key=lambda x: x.candidate.party.abbreviation)
         )
         writer.writerow(
             safe_row(
                 [
-                    v.polling_unit.inec_code, v.polling_unit.name, v.contest.title, v.version_no,
+                    v.polling_unit.inec_code, v.polling_unit.name, v.contest.constituency.name,
+                    v.version_no,
                     v.state, v.accredited, v.valid, v.rejected, v.total_cast, votes,
                     _iso(v.server_received_at), _iso(v.device_captured_at), v.payload_hash, v.id,
                 ]

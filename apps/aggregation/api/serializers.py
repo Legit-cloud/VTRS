@@ -1,10 +1,12 @@
 from rest_framework import serializers
 
 
-class VoteSerializer(serializers.Serializer):
-    candidate_id = serializers.UUIDField()
-    party_acronym = serializers.CharField()
-    name = serializers.CharField()
+class PartyVoteSerializer(serializers.Serializer):
+    party_id = serializers.UUIDField()
+    abbreviation = serializers.CharField()
+    # Set when the area is a single constituency, where each party has one contestant.
+    candidate_id = serializers.UUIDField(allow_null=True)
+    candidate_name = serializers.CharField(allow_null=True)
     votes = serializers.IntegerField()
 
 
@@ -16,10 +18,14 @@ class TotalsSerializer(serializers.Serializer):
 
 
 class PositionSerializer(serializers.Serializer):
-    leader_id = serializers.UUIDField(allow_null=True)
-    leader_party = serializers.CharField(allow_null=True)
-    runner_up_id = serializers.UUIDField(allow_null=True)
-    leading_ids = serializers.ListField(child=serializers.UUIDField())
+    """The provisional position. `status` is NO_VOTES, TIED, NARROW or LEADING; a tie names no
+    leader (`leading_party_ids` lists every party sharing the top)."""
+
+    status = serializers.ChoiceField(choices=["NO_VOTES", "TIED", "NARROW", "LEADING"])
+    leader_party_id = serializers.UUIDField(allow_null=True)
+    leader_abbreviation = serializers.CharField(allow_null=True)
+    runner_up_party_id = serializers.UUIDField(allow_null=True)
+    leading_party_ids = serializers.ListField(child=serializers.UUIDField())
     margin = serializers.IntegerField()
     margin_pct = serializers.FloatField(allow_null=True)
     total_votes = serializers.IntegerField()
@@ -28,8 +34,8 @@ class PositionSerializer(serializers.Serializer):
 
 
 class AreaResultSerializer(serializers.Serializer):
-    """One area's figures. `votes` and `totals` follow `measure`; the polling-unit counts
-    for both measures are always present."""
+    """One area's figures. `votes` and `totals` follow `measure`; the polling-unit counts for
+    both measures are always present, so "X of Y reported" travels with every total."""
 
     level = serializers.CharField()
     area_id = serializers.UUIDField()
@@ -46,41 +52,46 @@ class AreaResultSerializer(serializers.Serializer):
     open_flags = serializers.IntegerField()
     registered_voters = serializers.IntegerField()
     totals = TotalsSerializer()
-    votes = VoteSerializer(many=True)
+    votes = PartyVoteSerializer(many=True)
     position = PositionSerializer()
     measure = serializers.CharField()
     updated_at = serializers.DateTimeField(allow_null=True)
-    revision = serializers.IntegerField(allow_null=True)
     # Polling-unit rows only.
     status = serializers.CharField(required=False)
     head_version_id = serializers.UUIDField(required=False, allow_null=True)
+    verified = serializers.BooleanField(required=False)
+    completion = serializers.CharField(required=False, allow_null=True)
 
 
-class ContestSummarySerializer(AreaResultSerializer):
-    contest_id = serializers.UUIDField()
-    office = serializers.CharField()
-    title = serializers.CharField()
+class BallotPartySerializer(serializers.Serializer):
+    party_id = serializers.UUIDField()
+    abbreviation = serializers.CharField()
+    full_name = serializers.CharField()
+    ballot_order = serializers.IntegerField()
+    is_own = serializers.BooleanField()
+    logo_url = serializers.CharField(allow_null=True)
+
+
+class _ElectionHeaderSerializer(serializers.Serializer):
+    election_id = serializers.UUIDField()
+    election_name = serializers.CharField()
+    election_type = serializers.CharField()
+    election_type_name = serializers.CharField()
+    status = serializers.CharField()
+    measure = serializers.CharField()
+    provisional = serializers.BooleanField()
+    notice = serializers.CharField()
+    parties = BallotPartySerializer(many=True)
+
+
+class DashboardSerializer(_ElectionHeaderSerializer):
+    summary = AreaResultSerializer()
     areas_in_scope = serializers.IntegerField()
 
 
-class DashboardSerializer(serializers.Serializer):
-    election_id = serializers.UUIDField()
-    election_name = serializers.CharField()
-    status = serializers.CharField()
-    measure = serializers.CharField()
-    review_enabled = serializers.BooleanField()
-    provisional = serializers.BooleanField()
-    notice = serializers.CharField()
-    contests = ContestSummarySerializer(many=True)
-
-
-class ContestResultsSerializer(serializers.Serializer):
-    contest_id = serializers.UUIDField()
+class ElectionResultsSerializer(_ElectionHeaderSerializer):
     level = serializers.CharField()
     parent_id = serializers.UUIDField(allow_null=True)
-    measure = serializers.CharField()
-    provisional = serializers.BooleanField()
-    notice = serializers.CharField()
     rows = AreaResultSerializer(many=True)
 
 
@@ -91,7 +102,7 @@ class TimelinePointSerializer(serializers.Serializer):
 
 
 class CoverageTimelineSerializer(serializers.Serializer):
-    contest_id = serializers.UUIDField()
+    election_id = serializers.UUIDField()
     interval = serializers.CharField()
     expected_pus = serializers.IntegerField()
     points = TimelinePointSerializer(many=True)
@@ -100,8 +111,7 @@ class CoverageTimelineSerializer(serializers.Serializer):
 class ReadinessSerializer(serializers.Serializer):
     election_id = serializers.UUIDField()
     status = serializers.CharField()
-    review_enabled = serializers.BooleanField()
-    undecided_results = serializers.IntegerField()
+    unverified_results = serializers.IntegerField()
     rollup_differences = serializers.ListField(child=serializers.CharField())
     can_reconcile = serializers.BooleanField()
     reconciled_at = serializers.DateTimeField(allow_null=True)

@@ -72,7 +72,7 @@ def _actor_of(job: ExportJob) -> Actor:
 def _clean_params(kind: ExportKind, raw: dict[str, Any]) -> dict[str, Any]:
     """Keep only the fields this kind understands, as plain JSON values."""
     allowed = {
-        ExportKind.RESULTS: {"election_id", "contest_id", "level", "measure", "parent_id"},
+        ExportKind.RESULTS: {"election_id", "level", "measure", "parent_id"},
         ExportKind.FLAGS: {"election_id", "status", "severity", "rule_code"},
         ExportKind.AUDIT: {"since", "until", "action"},
         ExportKind.EVIDENCE_PACK: {
@@ -100,13 +100,8 @@ def _validate(actor: Actor, kind: ExportKind, params: dict[str, Any]) -> None:
         return
     if "election_id" not in params:
         raise InvalidExport("`election_id` is required.")
-    election = elections.election_for(actor, UUID(params["election_id"]))
+    elections.election_for(actor, UUID(params["election_id"]))  # 404 outside the organization
     if kind is ExportKind.RESULTS:
-        if "contest_id" not in params:
-            raise InvalidExport("`contest_id` is required for a results export.")
-        contest = elections.contest_for(actor, UUID(params["contest_id"]))
-        if contest.election_id != election.id:
-            raise InvalidExport("That contest belongs to another election.")
         if params.get("level", "pu") not in {"pu", "ward", "lga"}:
             raise InvalidExport("`level` must be pu, ward or lga.")
         if params.get("measure", "reported") not in {"reported", "verified"}:

@@ -26,7 +26,6 @@ class Level(IntEnum):
 
 class Channel(StrEnum):
     IN_APP = "IN_APP"
-    PUSH = "PUSH"
     SMS = "SMS"
     EMAIL = "EMAIL"
     WHATSAPP = "WHATSAPP"

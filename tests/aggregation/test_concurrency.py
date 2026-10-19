@@ -16,19 +16,19 @@ from apps.aggregation import services
 from apps.aggregation.models import Rollup, RollupDirty, RollupVote
 from apps.core.crypto import blind_index
 from apps.core.ids import uuid7
-from apps.elections.models import Candidate, Contest, Election
-from apps.geography.domain.synthetic import synthetic_master_data
+from apps.elections.models import Election
 from apps.geography.models import PollingUnit, State, Ward
-from apps.geography.services import import_master_data
 from apps.organizations.models import Organization
 from apps.results.models import PuResult, ResultVersion, VoteLine
+
+from ..factories import election_type, load_reference_data, make_ballot
 
 ROUNDS = 12
 
 
 def _seed():
     with transaction.atomic():
-        import_master_data(synthetic_master_data(lgas=2, wards=4, polling_units=8, seed=5))
+        load_reference_data(lgas=2, wards=4, polling_units=8, seed=5)
     org = Organization.objects.create(name="Lock Party", status="ACTIVE")
     email = "admin@lock.example"
     user = User.objects.create_user(
@@ -40,31 +40,14 @@ def _seed():
     election = Election.objects.create(
         organization=org,
         name="Lock",
+        election_type=election_type(),
         state=State.objects.get(),
         election_date="2027-03-11",
         status="LIVE",
         created_by_id=user.id,
     )
-    contest = Contest.objects.create(
-        organization=org,
-        election=election,
-        office="GOVERNORSHIP",
-        title="Governor",
-        jurisdiction_level="STATE",
-        jurisdiction_ids=[election.state_id],
-    )
-    candidates = [
-        Candidate.objects.create(
-            organization=org,
-            contest=contest,
-            name=f"C{n}",
-            party_name=f"P{n}",
-            party_acronym=f"P{n}",
-            ballot_order=n,
-            config_version=1,
-        )
-        for n in (1, 2)
-    ]
+    ballot = make_ballot(org, election, ("P1", "P2"), own=None)
+    contest, candidates = ballot.contest, ballot.candidates
     for index, pu in enumerate(PollingUnit.objects.order_by("inec_code")):
         pu_result = PuResult.objects.create(
             organization=org,
@@ -90,7 +73,6 @@ def _seed():
             device_captured_at=timezone.now(),
             server_received_at=timezone.now(),
             submitted_by=user,
-            app_version="1.0.0",
             config_version=1,
             payload_hash="0" * 64,
             state="SUBMITTED",

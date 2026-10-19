@@ -56,7 +56,6 @@ def _token(field, member):
         user=member.user,
         membership=member.membership,
         client="WEB",
-        device=None,
         mfa_at=timezone.now(),
         ip=None,
     )
@@ -72,7 +71,7 @@ def test_an_admin_is_told_when_results_change(field_):
         ready = await comm.receive_json_from(timeout=2)
         assert ready["type"] == "ready"
         assert ready["scope"] == "ORG"
-        assert "not an official declaration" in ready["notice"].lower()
+        assert "not the official inec count" in ready["notice"].lower()
 
         await sync_to_async(field_.submit)(pu, (50, 25))
         update = await comm.receive_json_from(timeout=3)
@@ -168,5 +167,5 @@ def test_a_publisher_failure_never_fails_the_recompute(field_, monkeypatch):
 
     monkeypatch.setattr(realtime, "get_channel_layer", lambda: Broken())
     outcome = field_.submit(field_.pus[0], (5, 5))
-    assert outcome["status"] == "SYNCED"
+    assert outcome["status"] == "ACCEPTED"
     assert asyncio.iscoroutinefunction(Broken.group_send)

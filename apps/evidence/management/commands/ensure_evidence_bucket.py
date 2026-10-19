@@ -9,7 +9,9 @@ from apps.evidence.storage import S3Storage
 class Command(BaseCommand):
     help = (
         "Create the private evidence bucket (development). Versioning and object lock are "
-        "enabled when the store supports them; retention periods wait for PB-09."
+        "enabled when the store supports them; retention periods wait for PB-09. Browsers "
+        "upload result sheets straight to the bucket, so it also allows PUT from the web app's "
+        "own origins (VTRS_CORS_ALLOWED_ORIGINS) and nothing else."
     )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -46,6 +48,10 @@ class Command(BaseCommand):
                     },
                 ),
             ),
+            (
+                "browser uploads (CORS)",
+                lambda: _allow_browser_uploads(client, bucket),
+            ),
         ):
             try:
                 call()
@@ -55,3 +61,25 @@ class Command(BaseCommand):
                     self.style.WARNING(f"{label}: not supported by this store ({exc})")
                 )
         self.stdout.write(self.style.SUCCESS(f"Bucket {bucket} ready"))
+
+
+def _allow_browser_uploads(client: Any, bucket: str) -> None:
+    """A presigned PUT from the web app is cross-origin: exact origins only, PUT only, and only
+    the headers the presigned request pins (spec section 10.1, step 5)."""
+    origins = list(settings.VTRS_CORS_ALLOWED_ORIGINS)
+    if not origins:
+        raise CommandError("VTRS_CORS_ALLOWED_ORIGINS is empty; browsers could not upload")
+    client.put_bucket_cors(
+        Bucket=bucket,
+        CORSConfiguration={
+            "CORSRules": [
+                {
+                    "AllowedOrigins": origins,
+                    "AllowedMethods": ["PUT"],
+                    "AllowedHeaders": ["content-type", "x-amz-checksum-sha256"],
+                    "ExposeHeaders": ["ETag"],
+                    "MaxAgeSeconds": 3600,
+                }
+            ]
+        },
+    )

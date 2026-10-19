@@ -11,6 +11,8 @@ os.environ.setdefault("VTRS_EXPOSE_SCHEMA", "true")
 os.environ.setdefault("VTRS_S3_ENDPOINT_URL", "http://localhost:9000")
 os.environ.setdefault("VTRS_S3_ACCESS_KEY", "vtrs-dev")
 os.environ.setdefault("VTRS_S3_SECRET_KEY", "vtrs-dev-password")
+# The web app on the developer's machine; browsers upload result sheets straight to storage.
+os.environ.setdefault("VTRS_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 apply_defaults()
 
 from .base import *

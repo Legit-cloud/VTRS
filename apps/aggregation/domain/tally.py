@@ -1,7 +1,9 @@
-"""Positions from vote counts: ranking, leader, margin, coverage (FR-6.8.2, FR-6.8.4).
+"""Positions from vote counts: ranking, leader status, margin, coverage (FR-6.8.2 - FR-6.8.6).
 
-Pure arithmetic. Every figure it produces is a provisional position from party-captured data,
-never an official declaration, and callers must carry `PROVISIONAL_NOTICE` with it.
+Pure arithmetic over party totals. Every figure it produces is a provisional position from the
+party's own captured data, never an official declaration, and callers must carry
+`PROVISIONAL_NOTICE` with it. A tie or a narrow lead is reported as such: the status says so,
+and no single leader is named for a tie.
 """
 
 from collections.abc import Iterable, Mapping
@@ -11,8 +13,8 @@ from typing import Any
 from uuid import UUID
 
 PROVISIONAL_NOTICE = (
-    "Provisional position based on results captured by this party's agents. "
-    "It is not an official declaration."
+    "Provisional figures collected by this party's own agents. "
+    "They are not the official INEC count."
 )
 
 
@@ -26,60 +28,69 @@ class RollupLevel(StrEnum):
 class Measure(StrEnum):
     """Two counts are always kept (spec section 11). The election's policy picks the default."""
 
-    REPORTED = "REPORTED"  # every counting head: submitted, flagged or approved
-    VERIFIED = "VERIFIED"  # only heads a reviewer has approved
+    REPORTED = "REPORTED"  # every counting head: submitted, flagged or verified
+    VERIFIED = "VERIFIED"  # only heads a coordinator has verified against the sheet
+
+
+class LeaderStatus(StrEnum):
+    NO_VOTES = "NO_VOTES"  # nothing counted yet
+    TIED = "TIED"  # two or more parties share the top
+    NARROW = "NARROW"  # a lead at or below the narrow-margin threshold
+    LEADING = "LEADING"
 
 
 @dataclass(frozen=True, slots=True)
-class CandidateInfo:
+class PartyInfo:
     id: UUID
-    name: str
-    party_acronym: str
+    abbreviation: str
     ballot_order: int
-    is_own_party: bool
+    is_own: bool
 
 
 @dataclass(frozen=True, slots=True)
 class Position:
-    leader_id: UUID | None
+    status: LeaderStatus
+    leader_id: UUID | None  # None unless LEADING or NARROW
     runner_up_id: UUID | None
-    leading_ids: tuple[UUID, ...]  # more than one id means the top spot is tied
+    leading_ids: tuple[UUID, ...]  # every party sharing the top
     margin: int  # leader minus runner-up; 0 when tied or nobody has votes
-    margin_pct: float | None  # of all candidate votes counted; None when there are none
+    margin_pct: float | None  # of all party votes counted; None when there are none
     total_votes: int
-    is_tie: bool
-    own_margin: int | None  # own candidate minus the best rival; negative when behind
+    own_margin: int | None  # own party minus the best rival; negative when behind
+
+    @property
+    def is_tie(self) -> bool:
+        return self.status is LeaderStatus.TIED
 
 
-def position(votes: Mapping[UUID, int], candidates: Iterable[CandidateInfo]) -> Position:
-    """Rank candidates by votes (ballot order breaks ties in the listing) and derive the lead."""
-    info = {c.id: c for c in candidates}
-    ranked = sorted(info.values(), key=lambda c: (-votes.get(c.id, 0), c.ballot_order))
-    total = sum(votes.get(c.id, 0) for c in ranked)
+def position(
+    votes: Mapping[UUID, int], parties: Iterable[PartyInfo], *, narrow_pct: float
+) -> Position:
+    """Rank parties by votes (ballot order breaks ties in the listing) and derive the lead.
+
+    A lead of `narrow_pct` percent of the counted votes or less is NARROW."""
+    info = {p.id: p for p in parties}
+    ranked = sorted(info.values(), key=lambda p: (-votes.get(p.id, 0), p.ballot_order))
+    total = sum(votes.get(p.id, 0) for p in ranked)
+    own = _own_margin(votes, ranked)
     if not ranked or total == 0:
-        return Position(None, None, (), 0, None, total, False, _own_margin(votes, ranked))
+        return Position(LeaderStatus.NO_VOTES, None, None, (), 0, None, total, own)
     top = votes.get(ranked[0].id, 0)
-    leading = tuple(c.id for c in ranked if votes.get(c.id, 0) == top)
-    runner_votes = votes.get(ranked[1].id, 0) if len(ranked) > 1 else 0
-    is_tie = len(leading) > 1
-    margin = 0 if is_tie else top - runner_votes
-    return Position(
-        leader_id=None if is_tie else ranked[0].id,
-        runner_up_id=ranked[1].id if len(ranked) > 1 else None,
-        leading_ids=leading,
-        margin=margin,
-        margin_pct=round(100 * margin / total, 2),
-        total_votes=total,
-        is_tie=is_tie,
-        own_margin=_own_margin(votes, ranked),
-    )
+    leading = tuple(p.id for p in ranked if votes.get(p.id, 0) == top)
+    runner_up = ranked[1].id if len(ranked) > 1 else None
+    if len(leading) > 1:
+        return Position(LeaderStatus.TIED, None, runner_up, leading, 0, 0.0, total, own)
+    margin = top - (votes.get(ranked[1].id, 0) if len(ranked) > 1 else 0)
+    margin_pct = round(100 * margin / total, 2)
+    status = LeaderStatus.NARROW if margin_pct <= narrow_pct else LeaderStatus.LEADING
+    return Position(status, ranked[0].id, runner_up, leading, margin, margin_pct, total, own)
 
 
-def _own_margin(votes: Mapping[UUID, int], ranked: list[CandidateInfo]) -> int | None:
-    own = next((c for c in ranked if c.is_own_party), None)
+def _own_margin(votes: Mapping[UUID, int], ranked: list[PartyInfo]) -> int | None:
+    own = next((p for p in ranked if p.is_own), None)
     if own is None:
         return None
-    rivals = [votes.get(c.id, 0) for c in ranked if c.id != own.id]
+    rivals = [votes.get(p.id, 0) for p in ranked if p.id != own.id]
     return votes.get(own.id, 0) - (max(rivals) if rivals else 0)
 
 
@@ -91,9 +102,9 @@ def coverage_pct(reported: int, expected: int) -> float:
 
 
 def merge_votes(parts: Iterable[Mapping[Any, int]]) -> dict[Any, int]:
-    """Sum per-candidate votes across child areas."""
+    """Sum per-party (or per-contestant) votes across child areas or contests."""
     merged: dict[Any, int] = {}
     for part in parts:
-        for candidate_id, count in part.items():
-            merged[candidate_id] = merged.get(candidate_id, 0) + count
+        for key, count in part.items():
+            merged[key] = merged.get(key, 0) + count
     return merged

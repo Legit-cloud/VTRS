@@ -191,8 +191,6 @@ def token_for(db) -> Callable[..., str]:
         pair = start_session(
             user=member.user,
             membership=member.membership,
-            client="WEB",
-            device=None,
             mfa_at=timezone.now() if mfa else None,
             ip=None,
         )

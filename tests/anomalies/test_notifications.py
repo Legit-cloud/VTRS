@@ -5,13 +5,13 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from apps.accounts.models import Device, User
+from apps.accounts.models import User
 from apps.core.domain.permissions import Role
 from apps.core.ids import uuid7
 from apps.core.rls import system_context
 from apps.notifications import services
 from apps.notifications.models import Delivery, Notification
-from apps.notifications.providers import FakePushProvider, FakeSmsProvider
+from apps.notifications.providers import FakeSmsProvider
 
 from .helpers import deliveries, notifications_for
 
@@ -49,66 +49,32 @@ def _reject(f, outcome, reason="Totals do not match the photo"):
     )
 
 
-def test_a_rejected_result_is_pushed_to_the_agents_phone(reviewed_field):
+def test_a_rejected_result_reaches_the_agents_inbox(reviewed_field):
+    """The agent sees the reason in the web app (inbox and their polling unit's status)."""
     f = reviewed_field
     pu = f.pus[0]
     agent = f.agents[pu.id]
-    token = "fcm-token-for-this-device-123456"
-    assert (
-        agent.client.put("/api/v1/me/push-token", {"token": token}, format="json").status_code
-        == 204
-    )
-    with system_context():
-        assert Device.objects.get(id=agent.device.id).push_token == token
-
     outcome = f.submit(pu, (100, 50))
     assert _reject(f, outcome).status_code == 200
 
-    [push] = FakePushProvider.outbox
-    assert push.token == token
-    assert "Result rejected" in push.title
-    assert "Totals do not match the photo" in push.body
-    assert push.data["version_id"] == outcome["version_id"]
     [note] = notifications_for(agent.member.user.id, kind="RESULT_REJECTED")
-    assert deliveries(note) == {"IN_APP": "DELIVERED", "PUSH": "SENT"}
+    assert "Result rejected" in note.title
+    assert "Totals do not match the photo" in note.body
+    assert note.data["version_id"] == outcome["version_id"]
+    assert deliveries(note) == {"IN_APP": "DELIVERED"}
+    inbox = agent.client.get("/api/v1/me/notifications").json()["results"]
+    assert inbox[0]["title"] == note.title
+    status = agent.client.get(f"/api/v1/submissions/{outcome['version_id']}").json()
+    assert status["review"]["reason"] == "Totals do not match the photo"
 
 
 def test_an_approval_is_an_inbox_entry_only(reviewed_field):
     f = reviewed_field
     pu = f.pus[0]
     outcome = f.submit(pu, (100, 50))
-    f.admin_client().post(
-        f"/api/v1/results/{outcome['version_id']}/review",
-        {"decision": "APPROVED"},
-        format="json",
-        HTTP_IDEMPOTENCY_KEY=str(uuid7()),
-    )
+    assert f.verify(outcome).status_code == 200
     [note] = notifications_for(f.agents[pu.id].member.user.id, kind="RESULT_APPROVED")
     assert deliveries(note) == {"IN_APP": "DELIVERED"}
-    assert FakePushProvider.outbox == []
-
-
-def test_no_device_token_means_skipped_not_failed(reviewed_field):
-    f = reviewed_field
-    pu = f.pus[0]
-    outcome = f.submit(pu, (100, 50))
-    _reject(f, outcome)
-    [note] = notifications_for(f.agents[pu.id].member.user.id, kind="RESULT_REJECTED")
-    assert deliveries(note)["PUSH"] == "SKIPPED"
-    with system_context():
-        assert Delivery.objects.get(notification=note, channel="PUSH").detail == "no_push_token"
-
-
-def test_only_a_device_session_may_register_a_push_token(field_):
-    f = field_
-    assert (
-        f.admin_client()
-        .put("/api/v1/me/push-token", {"token": "x" * 20}, format="json")
-        .status_code
-        == 403
-    )  # not a mobile user
-    agent = f.agents[f.pus[0].id].client
-    assert agent.put("/api/v1/me/push-token", {"token": "short"}, format="json").status_code == 400
 
 
 def test_a_failed_send_is_retried_then_given_up_on(field_, monkeypatch):

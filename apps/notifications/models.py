@@ -2,7 +2,7 @@
 
 A notification is one message to one user. Each channel it is sent on gets a delivery row, so
 "was it sent, did it arrive, why did it fail" is a query, not a log search. In-app delivery is
-the notification row itself; push, SMS, email and WhatsApp go through provider adapters.
+the notification row itself; SMS, email and WhatsApp go through provider adapters.
 """
 
 from django.db import models
@@ -49,7 +49,7 @@ class DeliveryStatus(models.TextChoices):
     SENT = "SENT"  # handed to the provider
     DELIVERED = "DELIVERED"  # the provider (or the in-app store) confirmed arrival
     FAILED = "FAILED"
-    SKIPPED = "SKIPPED"  # nothing to send to (no device, no phone) or the channel is off
+    SKIPPED = "SKIPPED"  # nothing to send to (no phone or address) or the channel is off
 
 
 class Delivery(UUIDv7Model):

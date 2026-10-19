@@ -26,7 +26,7 @@ class Command(BaseCommand):
                 contests = contests.filter(election_id=options["election"])
             if options["contest"]:
                 contests = contests.filter(id=options["contest"])
-            targets = list(contests.values_list("organization_id", "id", "title"))
+            targets = list(contests.values_list("organization_id", "id", "constituency__name"))
         for organization_id, contest_id, title in targets:
             wards = services.rebuild_contest(organization_id=organization_id, contest_id=contest_id)
             self.stdout.write(f"{title} ({contest_id}): rebuilt {wards} wards")

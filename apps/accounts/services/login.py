@@ -6,7 +6,6 @@ audit rows are written before the error is raised, so they survive the failed re
 
 from dataclasses import dataclass
 from typing import Any
-from uuid import UUID
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
@@ -23,12 +22,11 @@ from ..domain.contact import looks_like_email, normalize_email, normalize_phone
 from ..domain.lockout import lockout_for
 from ..errors import (
     AccountNotActive,
-    DeviceNotRegistered,
     InvalidCredentials,
     InvalidMfaCode,
     OrganizationNotActive,
 )
-from ..models import Device, DeviceStatus, Membership, SessionClient, User, UserStatus
+from ..models import User, UserStatus
 from . import mfa
 from .sessions import TokenPair, active_membership, start_session
 
@@ -91,20 +89,7 @@ def _record_failure(user: User | None, ip: str | None) -> None:
         )
 
 
-def _device_for(
-    user: User, membership: Membership, client: str, device_id: UUID | None
-) -> Device | None:
-    if client != SessionClient.MOBILE:
-        return None
-    device = Device.objects.filter(user=user, status=DeviceStatus.ACTIVE).first()
-    if membership.role == Role.PU_AGENT and (device is None or device.id != device_id):
-        raise DeviceNotRegistered()
-    return device if device is not None and device.id == device_id else None
-
-
-def login(
-    *, identifier: str, password: str, client: str, device_id: UUID | None, ip: str | None
-) -> LoginResult:
+def login(*, identifier: str, password: str, ip: str | None) -> LoginResult:
     user = find_user(identifier)
     now = timezone.now()
     if user is not None and user.locked_until and user.locked_until > now:
@@ -122,20 +107,14 @@ def login(
         raise AccountNotActive()
     if membership.organization.status != OrganizationStatus.ACTIVE:
         raise OrganizationNotActive()
-    device = _device_for(user, membership, client, device_id)
 
     User.objects.filter(id=user.id).update(failed_login_count=0, locked_until=None)
     if user.mfa_enabled:
-        token = signing.dumps(
-            {"uid": str(user.id), "client": client, "device": str(device.id) if device else None},
-            salt=MFA_TOKEN_SALT,
-        )
+        token = signing.dumps({"uid": str(user.id)}, salt=MFA_TOKEN_SALT)
         return LoginResult(mfa_token=token)
 
     with transaction.atomic():
-        pair = start_session(
-            user=user, membership=membership, client=client, device=device, mfa_at=None, ip=ip
-        )
+        pair = start_session(user=user, membership=membership, mfa_at=None, ip=ip)
     role = Role(membership.role)
     granted = [Perm(p) for p in membership.granted_permissions if p in Perm._value2member_map_]
     needs_mfa = mfa_mandatory(role, effective_permissions(role, granted))
@@ -153,13 +132,5 @@ def complete_mfa(*, mfa_token: str, code: str, ip: str | None) -> TokenPair:
         raise InvalidMfaCode()
     if not mfa.verify_second_factor(user, code):
         raise InvalidMfaCode()
-    device = Device.objects.filter(id=data["device"]).first() if data["device"] else None
     with transaction.atomic():
-        return start_session(
-            user=user,
-            membership=membership,
-            client=data["client"],
-            device=device,
-            mfa_at=timezone.now(),
-            ip=ip,
-        )
+        return start_session(user=user, membership=membership, mfa_at=timezone.now(), ip=ip)

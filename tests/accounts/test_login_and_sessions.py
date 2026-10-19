@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from apps.accounts.models import Device, RefreshToken, Session, User
+from apps.accounts.models import RefreshToken, Session, User
 from apps.audit.models import AuditEvent
 from apps.core.domain.permissions import Role
 
@@ -120,32 +120,6 @@ def test_web_sessions_do_not_slide(api_client, make_member):
     assert expired.json()["code"] == "invalid_refresh_token"
 
 
-def test_agents_must_sign_in_from_their_registered_device(api_client, make_member):
-    agent = make_member(Role.PU_AGENT)
-    device = Device.objects.create(user=agent.user, platform="ANDROID", app_version="1.0.0")
-
-    assert (
-        _login(api_client, agent.phone, client="MOBILE").json()["code"] == "device_not_registered"
-    )
-    ok = _login(api_client, agent.phone, client="MOBILE", device_id=str(device.id))
-    assert ok.status_code == 200
-
-    # Refresh is bound to the device too, and mobile sessions slide.
-    tokens = ok.json()
-    stolen = api_client.post(
-        "/api/v1/auth/refresh", {"refresh_token": tokens["refresh_token"]}, format="json"
-    )
-    assert stolen.json()["code"] == "invalid_refresh_token"
-    fresh = _login(api_client, agent.phone, client="MOBILE", device_id=str(device.id)).json()
-    rotated = api_client.post(
-        "/api/v1/auth/refresh",
-        {"refresh_token": fresh["refresh_token"], "device_id": str(device.id)},
-        format="json",
-    )
-    assert rotated.status_code == 200
-    assert rotated.json()["refresh_expires_at"] >= fresh["refresh_expires_at"]
-
-
 def test_logout_kills_the_access_token_immediately(api_client, make_member):
     member = make_member(Role.WARD_OFFICER)
     tokens = _login(api_client, member.email).json()
@@ -210,16 +184,3 @@ def test_non_object_bodies_are_validation_errors(api_client):
     response = api_client.post("/api/v1/auth/login", ["identifier", "password"], format="json")
     assert response.status_code == 400
     assert response.json()["code"] == "validation_error"
-
-
-def test_old_app_versions_must_upgrade(api_client):
-    response = api_client.get(
-        "/api/v1/health/live", HTTP_X_APP_PLATFORM="android", HTTP_X_APP_VERSION="0.9.9"
-    )
-    assert response.status_code == 426
-    assert response.json()["code"] == "upgrade_required"
-    ok = api_client.get(
-        "/api/v1/health/live", HTTP_X_APP_PLATFORM="android", HTTP_X_APP_VERSION="1.0.0"
-    )
-    assert ok.status_code == 200
-    assert api_client.get("/api/v1/health/live").status_code == 200  # web: no header

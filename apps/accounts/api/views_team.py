@@ -4,7 +4,6 @@ from uuid import UUID
 
 from django.db.models import QuerySet
 from drf_spectacular.utils import extend_schema
-from rest_framework.exceptions import NotFound
 from rest_framework.generics import ListAPIView
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -31,7 +30,6 @@ class MeView(APIView):
         actor = request.actor  # type: ignore[attr-defined]
         membership = selectors.own_membership(actor)
         user = membership.user
-        device = selectors.session_device(actor)
         return Response(
             {
                 "user_id": user.id,
@@ -47,7 +45,6 @@ class MeView(APIView):
                 "permissions": sorted(actor.permissions),
                 "mfa_enabled": user.mfa_enabled,
                 "mfa_required": mfa_mandatory(actor.role, actor.permissions),
-                "device_id": str(device.id) if device else None,
             }
         )
 
@@ -75,11 +72,7 @@ class UserDetailView(APIView):
     def get(self, request: Request, user_id: UUID) -> Response:
         actor = request.actor  # type: ignore[attr-defined]
         membership = selectors.member_for(actor, user_id)
-        body = dict(s.MemberSerializer(membership).data)
-        body["devices"] = s.DeviceSerializer(
-            selectors.devices_of(actor, membership), many=True
-        ).data
-        return Response(body)
+        return Response(s.MemberSerializer(membership).data)
 
 
 class UserDeactivateView(APIView):
@@ -115,23 +108,6 @@ class MembershipUpdateView(APIView):
             return 200, dict(s.MemberSerializer(updated).data)
 
         return idempotent_response(request, "users.membership", operation)
-
-
-class DeviceRevokeView(APIView):
-    required_permission = Perm.USERS_MANAGE
-
-    @extend_schema(request=None, responses={200: s.DeviceSerializer}, tags=["team"])
-    def post(self, request: Request, user_id: UUID, device_id: UUID) -> Response:
-        actor = request.actor  # type: ignore[attr-defined]
-        membership = selectors.member_for(actor, user_id)
-
-        def operation() -> tuple[int, dict]:
-            device = team.revoke_device(actor, membership, device_id)
-            if device is None:
-                raise NotFound()
-            return 200, dict(s.DeviceSerializer(device).data)
-
-        return idempotent_response(request, "devices.revoke", operation)
 
 
 class InvitationListView(StrictQueryParamsMixin, ListAPIView):

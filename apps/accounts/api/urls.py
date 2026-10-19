@@ -40,11 +40,6 @@ team_urls = [
         team.MembershipUpdateView.as_view(),
         name="user-membership",
     ),
-    path(
-        "users/<uuid:user_id>/devices/<uuid:device_id>/revoke",
-        team.DeviceRevokeView.as_view(),
-        name="user-device-revoke",
-    ),
     path("invitations", team.InvitationListView.as_view(), name="invitations"),
     path(
         "invitations/<uuid:invitation_id>/revoke",

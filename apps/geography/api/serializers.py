@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from apps.geography.models import Lga, PollingUnit, Ward
+from apps.geography.models import Constituency, ElectionType, Lga, PollingUnit, Ward
 
 
 class LgaSerializer(serializers.ModelSerializer):
@@ -33,3 +33,15 @@ class PollingUnitSerializer(serializers.ModelSerializer):
             "longitude",
             "registered_voters",
         )
+
+
+class ElectionTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ElectionType
+        fields = ("code", "name", "constituency_kind")
+
+
+class ConstituencySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Constituency
+        fields = ("id", "kind", "code", "name", "state_id")

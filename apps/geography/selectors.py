@@ -9,7 +9,7 @@ from apps.core.authz import authorize
 from apps.core.domain.actor import Actor, ScopeKind
 from apps.core.domain.permissions import Perm
 
-from .models import Lga, PollingUnit, State, Ward
+from .models import Constituency, ElectionType, Lga, PollingUnit, State, Ward
 
 
 def lgas_for(actor: Actor, *, state_code: str | None = None) -> QuerySet[Lga]:
@@ -73,3 +73,43 @@ def polling_units_for(
     if lga_id:
         qs = qs.filter(lga_id=lga_id)
     return qs
+
+
+# --- Election types and constituencies (FR-6.3.6) ---------------------------------------------
+
+
+def election_types_for(actor: Actor) -> QuerySet[ElectionType]:
+    authorize(actor, Perm.GEOGRAPHY_VIEW)
+    return ElectionType.objects.filter(is_active=True).order_by("sort_order", "code")
+
+
+def election_type(actor: Actor, code: str) -> ElectionType | None:
+    authorize(actor, Perm.GEOGRAPHY_VIEW)
+    return ElectionType.objects.filter(code=code.upper(), is_active=True).first()
+
+
+def constituencies_for(
+    actor: Actor, *, kind: str | None = None, state_id: UUID | None = None, search: str = ""
+) -> QuerySet[Constituency]:
+    authorize(actor, Perm.GEOGRAPHY_VIEW)
+    qs = Constituency.objects.all()
+    if kind:
+        qs = qs.filter(kind=kind.upper())
+    if state_id:
+        qs = qs.filter(state_id=state_id)
+    if search:
+        qs = qs.filter(name__icontains=search)
+    return qs
+
+
+def constituency(actor: Actor, constituency_id: UUID) -> Constituency | None:
+    authorize(actor, Perm.GEOGRAPHY_VIEW)
+    return Constituency.objects.filter(id=constituency_id).first()
+
+
+def constituency_of(actor: Actor, polling_unit_id: UUID, kind: str) -> Constituency | None:
+    """The one constituency of `kind` a polling unit belongs to, if the mapping has it."""
+    authorize(actor, Perm.GEOGRAPHY_VIEW)
+    return Constituency.objects.filter(
+        polling_units__polling_unit_id=polling_unit_id, polling_units__kind=kind
+    ).first()

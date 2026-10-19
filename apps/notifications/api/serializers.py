@@ -1,7 +1,5 @@
 from rest_framework import serializers
 
-from apps.core.api.serializers import StrictSerializer
-
 
 class DeliverySerializer(serializers.Serializer):
     channel = serializers.CharField()
@@ -25,10 +23,6 @@ class NotificationSerializer(serializers.Serializer):
 
 class UnreadCountSerializer(serializers.Serializer):
     unread = serializers.IntegerField()
-
-
-class PushTokenSerializer(StrictSerializer):
-    token = serializers.CharField(min_length=8, max_length=4096)
 
 
 class MarkedSerializer(serializers.Serializer):

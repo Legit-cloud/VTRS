@@ -1,4 +1,4 @@
-"""Identity: users, memberships (role + scope), devices, sessions and one-time credentials.
+"""Identity: users, memberships (role + scope), sessions and one-time credentials.
 
 Contact details are encrypted per field; lookups go through HMAC blind indexes (section 16).
 Every secret (OTP, refresh token, invitation token, reset token, recovery code) is stored
@@ -128,47 +128,15 @@ class Membership(UUIDv7Model):
         indexes = [models.Index(fields=["organization", "created_at"], name="membership_org_idx")]
 
 
-class DeviceStatus(models.TextChoices):
-    ACTIVE = "ACTIVE"
-    REVOKED = "REVOKED"
-
-
-class Device(UUIDv7Model):
-    """A registered agent device. One active device per agent by default."""
-
-    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="devices")
-    platform = models.CharField(max_length=10, choices=[("ANDROID", "ANDROID"), ("IOS", "IOS")])
-    app_version = models.CharField(max_length=32)
-    public_key = models.TextField(blank=True, default="")
-    push_token = models.TextField(blank=True, default="")
-    status = models.CharField(
-        max_length=8, choices=DeviceStatus.choices, default=DeviceStatus.ACTIVE
-    )
-    # Play Integrity / App Attest verdicts. A failed verdict raises a flag; it never blocks.
-    integrity = models.JSONField(default=dict, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    last_seen_at = models.DateTimeField(null=True, blank=True)
-    revoked_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        db_table = "account_device"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["user"], condition=Q(status="ACTIVE"), name="device_one_active"
-            )
-        ]
-
-
 class SessionClient(models.TextChoices):
+    # Every role signs in to the same web app.
     WEB = "WEB"
-    MOBILE = "MOBILE"
 
 
 class Session(UUIDv7Model):
     """A sign-in. Its refresh tokens form one rotation family; reuse revokes the session."""
 
     user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="sessions")
-    device = models.ForeignKey(Device, null=True, blank=True, on_delete=models.PROTECT)
     client = models.CharField(max_length=8, choices=SessionClient.choices)
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()

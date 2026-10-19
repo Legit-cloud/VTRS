@@ -1,14 +1,13 @@
 """Invite-only onboarding (FR-6.1.5, FR-6.2.1 - FR-6.2.4, AC-03).
 
 Admin invites with role, scope and contact -> a 256-bit token goes out by SMS/email (only its
-hash is stored) -> the invitee presents the token and gets an OTP on the *invited* contact ->
-with the code they set a password (agents also register their device) -> the account is
-ACTIVE and signed in. Used, expired, revoked and unknown tokens all fail the same way.
+hash is stored) -> the invitee opens the link in the web app, presents the token and gets an
+OTP on the *invited* contact -> with the code they set a password -> the account is ACTIVE and
+signed in. Used, expired, revoked and unknown tokens all fail the same way.
 """
 
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any
 from uuid import UUID
 
 from django.conf import settings
@@ -30,12 +29,10 @@ from ..domain.codes import generate_token, hash_token
 from ..domain.contact import mask_email, mask_phone
 from ..errors import ContactInUse, InvitationInvalid
 from ..models import (
-    Device,
     Invitation,
     Membership,
     OtpChannel,
     OtpPurpose,
-    SessionClient,
     User,
     UserStatus,
 )
@@ -207,7 +204,6 @@ def complete_acceptance(
     challenge_id: UUID,
     code: str,
     password: str,
-    device: dict[str, Any] | None,
     ip: str | None,
 ) -> AcceptanceResult:
     with transaction.atomic(), system_context():
@@ -220,8 +216,6 @@ def complete_acceptance(
     with transaction.atomic(), system_context():
         invitation = _usable(token, lock=True)
         role = Role(invitation.role)
-        if role is Role.PU_AGENT and not device:
-            raise ValidationError({"device": ["Agents must register their device."]})
         if _contact_in_use(invitation.email_index, invitation.phone_index):
             raise ContactInUse()
         now = timezone.now()
@@ -245,7 +239,6 @@ def complete_acceptance(
             granted_permissions=invitation.granted_permissions,
             created_by_id=invitation.created_by_id,
         )
-        registered = Device.objects.create(user=user, **device) if device else None
         invitation.accepted_at = now
         invitation.accepted_user_id = user.id
         invitation.save(update_fields=["accepted_at", "accepted_user_id"])
@@ -254,15 +247,8 @@ def complete_acceptance(
             object_type="invitation",
             object_id=invitation.id,
             organization_id=invitation.organization_id,
-            diff={"user_id": user.id, "device_id": registered.id if registered else None},
+            diff={"user_id": user.id},
         )
         membership.user = user
-        pair = start_session(
-            user=user,
-            membership=membership,
-            client=SessionClient.MOBILE if registered else SessionClient.WEB,
-            device=registered,
-            mfa_at=None,
-            ip=ip,
-        )
+        pair = start_session(user=user, membership=membership, mfa_at=None, ip=ip)
     return AcceptanceResult(user=user, membership=membership, tokens=pair)

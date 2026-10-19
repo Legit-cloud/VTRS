@@ -9,7 +9,6 @@ from rest_framework.exceptions import NotFound
 from apps.core.authz import authorize
 from apps.core.domain.actor import Actor
 from apps.core.domain.permissions import Perm
-from apps.elections import selectors as elections
 from apps.elections.domain.rules import ElectionStatus
 
 from .models import AgentAssignment, AssignmentStatus
@@ -53,7 +52,8 @@ def active_assignment(actor: Actor, *, election_id: UUID, polling_unit_id: UUID)
 
 
 def my_assignments(actor: Actor) -> list[dict[str, Any]]:
-    """What the agent app shows before capture: where, for which election, and the ballot."""
+    """What the agent sees before capture: which election and which polling unit (FR-6.2.5).
+    The parties to enter come from the result form, which is resolved per unit."""
     authorize(actor, Perm.RESULTS_SUBMIT)
     rows = (
         AgentAssignment.objects.for_actor(actor)
@@ -62,56 +62,32 @@ def my_assignments(actor: Actor) -> list[dict[str, Any]]:
             status=AssignmentStatus.ACTIVE,
             election__status__in=VISIBLE_TO_AGENTS,
         )
-        .select_related("election", "polling_unit", "ward", "lga")
+        .select_related("election", "election__election_type", "polling_unit", "ward", "lga")
         .order_by("election__election_date", "polling_unit__inec_code")
     )
-    result = []
-    for assignment in rows:
-        election, pu = assignment.election, assignment.polling_unit
-        contests = elections.contests_covering(
-            actor, election, state_id=pu.state_id, lga_id=pu.lga_id, ward_id=pu.ward_id
-        )
-        result.append(
-            {
-                "assignment_id": assignment.id,
-                "election": {
-                    "id": election.id,
-                    "name": election.name,
-                    "election_date": election.election_date,
-                    "status": election.status,
-                    "capture_open": election.status == ElectionStatus.LIVE,
-                    "config_version": election.config_version,
-                    "polls_open_at": election.polls_open_at,
-                    "polls_close_at": election.polls_close_at,
-                },
-                "polling_unit": {
-                    "id": pu.id,
-                    "inec_code": pu.inec_code,
-                    "name": pu.name,
-                    "ward": assignment.ward.name,
-                    "lga": assignment.lga.name,
-                    "latitude": pu.latitude,
-                    "longitude": pu.longitude,
-                    "registered_voters": pu.registered_voters,
-                },
-                "contests": [
-                    {
-                        "id": contest.id,
-                        "office": contest.office,
-                        "title": contest.title,
-                        "sheet_fields": contest.sheet_fields,
-                        "candidates": [
-                            {
-                                "id": k.id,
-                                "name": k.name,
-                                "party_acronym": k.party_acronym,
-                                "ballot_order": k.ballot_order,
-                            }
-                            for k in contest.candidates.all()
-                        ],
-                    }
-                    for contest in contests
-                ],
-            }
-        )
-    return result
+    return [
+        {
+            "assignment_id": assignment.id,
+            "election": {
+                "id": assignment.election.id,
+                "name": assignment.election.name,
+                "election_type_name": assignment.election.election_type.name,
+                "election_date": assignment.election.election_date,
+                "status": assignment.election.status,
+                "capture_open": assignment.election.status == ElectionStatus.LIVE,
+                "polls_open_at": assignment.election.polls_open_at,
+                "polls_close_at": assignment.election.polls_close_at,
+            },
+            "polling_unit": {
+                "id": assignment.polling_unit.id,
+                "inec_code": assignment.polling_unit.inec_code,
+                "name": assignment.polling_unit.name,
+                "ward": assignment.ward.name,
+                "lga": assignment.lga.name,
+                "latitude": assignment.polling_unit.latitude,
+                "longitude": assignment.polling_unit.longitude,
+                "registered_voters": assignment.polling_unit.registered_voters,
+            },
+        }
+        for assignment in rows
+    ]

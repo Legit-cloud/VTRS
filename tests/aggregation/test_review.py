@@ -1,11 +1,12 @@
-"""Review: approve / reject / resubmit (FR-6.7.4, FR-6.7.5)."""
+"""Verification: a coordinator verifies a result against its uploaded sheet, or rejects it
+with a reason; the agent resubmits a new version (FR-6.7.4, FR-6.7.5)."""
 
 import pytest
 from django.db import DatabaseError, connection, transaction
 
 from apps.aggregation.models import Rollup
 from apps.audit.models import AuditEvent
-from apps.core.domain.permissions import Perm, Role
+from apps.core.domain.permissions import Role
 from apps.core.ids import uuid7
 from apps.core.rls import system_context
 from apps.results.models import PuResult, ResultReview, ResultVersion
@@ -22,6 +23,13 @@ def _review(client, version_id, decision, **body):
     )
 
 
+def _complete(field, pu, votes=(120, 80), **overrides):
+    """Numbers and sheet, as the agent sends them: a result ready to be verified."""
+    outcome = field.submit(pu, votes, **overrides)
+    field.attach_sheet(outcome)
+    return outcome
+
+
 def _state_row(field):
     with system_context():
         return Rollup.objects.get(
@@ -31,13 +39,14 @@ def _state_row(field):
 
 def _verified_votes(row):
     return {
-        v.candidate.party_acronym: v.verified_votes for v in row.votes.select_related("candidate")
+        v.candidate.party.abbreviation: v.verified_votes
+        for v in row.votes.select_related("candidate__party")
     }
 
 
 def test_approving_a_result_makes_it_verified(reviewed_field):
     pu = reviewed_field.pus[0]
-    outcome = reviewed_field.submit(pu, (90, 60))
+    outcome = _complete(reviewed_field, pu, (90, 60))
     state = _state_row(reviewed_field)
     assert (state.reported_pus, state.verified_pus) == (1, 0)
 
@@ -56,14 +65,26 @@ def test_approving_a_result_makes_it_verified(reviewed_field):
         assert AuditEvent.objects.filter(action="result.review_decided").exists()
 
 
-def test_review_is_off_unless_the_election_enables_it(field_):
+def test_a_result_is_verified_only_against_its_sheet(field_):
+    """Unverified until a coordinator verifies it, and only once the sheet is attached."""
     outcome = field_.submit(field_.pus[0])
-    response = _review(field_.admin_client(), outcome["version_id"], "APPROVED")
-    assert (response.status_code, response.json()["code"]) == (409, "review_not_enabled")
+    client = field_.admin_client()
+    refused = _review(client, outcome["version_id"], "APPROVED")
+    assert (refused.status_code, refused.json()["code"]) == (409, "evidence_required")
+    assert _state_row(field_).verified_pus == 0
+    field_.attach_sheet(outcome)
+    assert _review(client, outcome["version_id"], "APPROVED").status_code == 200
+    assert _state_row(field_).verified_pus == 1
+
+
+def test_a_result_can_be_rejected_without_its_sheet(field_):
+    outcome = field_.submit(field_.pus[0])
+    response = _review(field_.admin_client(), outcome["version_id"], "REJECTED", reason="No sheet")
+    assert response.status_code == 200
 
 
 def test_rejecting_needs_a_reason(reviewed_field):
-    outcome = reviewed_field.submit(reviewed_field.pus[0])
+    outcome = _complete(reviewed_field, reviewed_field.pus[0])
     client = reviewed_field.admin_client()
     assert _review(client, outcome["version_id"], "REJECTED").status_code == 400
     assert _review(client, outcome["version_id"], "REJECTED", reason="  ").status_code == 400
@@ -91,8 +112,8 @@ def test_rejection_keeps_the_record_and_the_head_falls_back(reviewed_field):
         assert ResultReview.objects.get().reason == "Sheet total does not match the photo"
     assert _verified_votes(_state_row(reviewed_field)) == {"AAA": 0, "BBB": 0}
     votes = {
-        v.candidate.party_acronym: v.reported_votes
-        for v in _state_row(reviewed_field).votes.select_related("candidate")
+        v.candidate.party.abbreviation: v.reported_votes
+        for v in _state_row(reviewed_field).votes.select_related("candidate__party")
     }
     assert votes == {"AAA": 100, "BBB": 50}  # back to the earlier version
 
@@ -117,7 +138,7 @@ def test_the_agent_sees_why_and_can_resubmit_without_a_fork_flag(reviewed_field)
         reason="Photo is of another unit",
     )
     agent = reviewed_field.agents[pu.id].client
-    status = agent.get("/api/v1/sync/status", {"ids": outcome["version_id"]}).json()[0]
+    status = agent.get(f"/api/v1/submissions/{outcome['version_id']}").json()
     assert status["state"] == "REJECTED"
     assert status["review"]["reason"] == "Photo is of another unit"
     assert status["review"]["decision"] == "REJECTED"
@@ -130,8 +151,8 @@ def test_the_agent_sees_why_and_can_resubmit_without_a_fork_flag(reviewed_field)
 
 def test_flags_must_be_acknowledged_to_approve(reviewed_field):
     pu = reviewed_field.pus[0]
-    flagged = reviewed_field.submit(
-        pu, (100, 50), totals={"accredited": 400, "valid": 140, "rejected": 5, "total_cast": 145}
+    flagged = _complete(
+        reviewed_field, pu, (100, 50), totals={"accredited": 400, "rejected": 5, "total_cast": 175}
     )
     assert flagged["status"] == "REQUIRES_REVIEW"
     client = reviewed_field.admin_client()
@@ -155,7 +176,7 @@ def test_only_the_counting_version_can_be_reviewed(reviewed_field):
 
 
 def test_a_decision_cannot_be_repeated(reviewed_field):
-    outcome = reviewed_field.submit(reviewed_field.pus[0])
+    outcome = _complete(reviewed_field, reviewed_field.pus[0])
     client = reviewed_field.admin_client()
     assert _review(client, outcome["version_id"], "APPROVED").status_code == 200
     again = _review(client, outcome["version_id"], "APPROVED")
@@ -163,7 +184,7 @@ def test_a_decision_cannot_be_repeated(reviewed_field):
 
 
 def test_an_approved_result_can_still_be_rejected(reviewed_field):
-    outcome = reviewed_field.submit(reviewed_field.pus[0])
+    outcome = _complete(reviewed_field, reviewed_field.pus[0])
     client = reviewed_field.admin_client()
     _review(client, outcome["version_id"], "APPROVED")
     response = _review(client, outcome["version_id"], "REJECTED", reason="Found a recount sheet")
@@ -172,7 +193,7 @@ def test_an_approved_result_can_still_be_rejected(reviewed_field):
 
 
 def test_the_same_idempotency_key_replays_the_decision(reviewed_field):
-    outcome = reviewed_field.submit(reviewed_field.pus[0])
+    outcome = _complete(reviewed_field, reviewed_field.pus[0])
     client = reviewed_field.admin_client()
     key = str(uuid7())
     url = f"/api/v1/results/{outcome['version_id']}/review"
@@ -187,35 +208,35 @@ def test_the_same_idempotency_key_replays_the_decision(reviewed_field):
 def test_who_may_review_and_where(reviewed_field):
     f = reviewed_field
     ward_a1, ward_a2 = f.wards[0], f.wards[1]
-    outcome = f.submit(f.pus_of(ward_a1)[0])
+    outcome = _complete(f, f.pus_of(ward_a1)[0])
 
     own_ward = f.officer_client(Role.WARD_OFFICER, ward_a1)
     sibling_ward = f.officer_client(Role.WARD_OFFICER, ward_a2)
     lga_officer = f.officer_client(Role.LGA_OFFICER, f.lgas[0])
     agent = f.agents[f.pus_of(ward_a1)[0].id].client
 
+    other_lga = f.officer_client(Role.LGA_OFFICER, f.lgas[1])
     assert _review(agent, outcome["version_id"], "APPROVED").status_code == 403
-    assert _review(lga_officer, outcome["version_id"], "APPROVED").status_code == 403
     assert _review(sibling_ward, outcome["version_id"], "APPROVED").status_code == 404
+    assert _review(other_lga, outcome["version_id"], "APPROVED").status_code == 404
     assert _review(own_ward, outcome["version_id"], "APPROVED").status_code == 200
-
-
-def test_an_lga_officer_with_the_grant_can_review_inside_the_lga(reviewed_field):
-    f = reviewed_field
-    outcome = f.submit(f.pus_of(f.wards[0])[0])
-    member = f.make_member(
-        Role.LGA_OFFICER,
-        scope_ids=[f.lgas[0].id],
-        organization=f.org,
-        granted=[Perm.RESULTS_REVIEW],
+    # The LGA coordinator verifies too (no grant needed); it is decided by now.
+    assert _review(lga_officer, outcome["version_id"], "APPROVED").json()["code"] == (
+        "already_decided"
     )
-    assert _review(f.client_as(member), outcome["version_id"], "APPROVED").status_code == 200
+
+
+def test_an_lga_coordinator_verifies_inside_the_lga(reviewed_field):
+    f = reviewed_field
+    outcome = _complete(f, f.pus_of(f.wards[1])[0])
+    lga = f.officer_client(Role.LGA_OFFICER, f.lgas[0])
+    assert _review(lga, outcome["version_id"], "APPROVED").status_code == 200
 
 
 def test_the_review_queue_lists_what_is_waiting_in_scope(reviewed_field):
     f = reviewed_field
     ward_a1, ward_b1 = f.wards[0], f.wards[2]
-    mine = f.submit(f.pus_of(ward_a1)[0], (10, 5))
+    mine = _complete(f, f.pus_of(ward_a1)[0], (10, 5))
     f.submit(f.pus_of(ward_b1)[0], (1, 1))
     url = f"/api/v1/elections/{f.election.id}/review-queue"
 
@@ -225,7 +246,8 @@ def test_the_review_queue_lists_what_is_waiting_in_scope(reviewed_field):
     ward_client = f.officer_client(Role.WARD_OFFICER, ward_a1)
     rows = ward_client.get(url).json()["results"]
     assert [r["version_id"] for r in rows] == [mine["version_id"]]
-    assert rows[0]["votes"][0]["party_acronym"] == "AAA"
+    assert rows[0]["votes"][0]["party_abbreviation"] == "AAA"
+    assert rows[0]["completion"] == "COMPLETE"
     assert rows[0]["polling_unit_code"].startswith("SYN-01-01")
 
     _review(ward_client, mine["version_id"], "APPROVED")
@@ -233,7 +255,7 @@ def test_the_review_queue_lists_what_is_waiting_in_scope(reviewed_field):
 
 
 def test_the_review_ledger_cannot_be_edited(reviewed_field, as_superuser):
-    outcome = reviewed_field.submit(reviewed_field.pus[0])
+    outcome = _complete(reviewed_field, reviewed_field.pus[0])
     _review(reviewed_field.admin_client(), outcome["version_id"], "REJECTED", reason="Duplicate")
 
     def refused(sql):

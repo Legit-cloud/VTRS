@@ -10,7 +10,7 @@ from django.db import DatabaseError, connection, transaction
 from django.utils import timezone
 from PIL import Image
 
-from apps.core.domain.permissions import Perm, Role
+from apps.core.domain.permissions import Role
 from apps.core.ids import uuid7
 from apps.core.rls import system_context
 from apps.evidence import services
@@ -18,15 +18,28 @@ from apps.evidence.models import CustodyEvent, EvidenceFile
 from apps.evidence.scanning import EICAR
 from apps.evidence.storage import get_storage
 
-from .conftest import jpeg_bytes, manifest_entry
+from .conftest import PDF_BYTES, jpeg_bytes, manifest_entry
 
 pytestmark = pytest.mark.django_db
 
 
+def _request_uploads(scenario, item, entries):
+    uploads = []
+    for entry in entries:
+        response = scenario.agent.client.post(
+            "/api/v1/evidence/uploads", {**entry, "version_id": item["version_id"]}, format="json"
+        )
+        assert response.status_code == 200, response.content
+        uploads.append(response.json())
+    return uploads
+
+
 def _submit_with(scenario, *payloads, **manifest_kwargs):
+    """The web flow: send the numbers, then ask to upload the result sheet(s)."""
     entries = [manifest_entry(p, **manifest_kwargs) for p in payloads]
-    item = scenario.item(evidence=entries)
+    item = scenario.item()
     [outcome] = scenario.submit(item)
+    outcome["evidence_uploads"] = _request_uploads(scenario, item, entries)
     return item, entries, outcome
 
 
@@ -36,7 +49,7 @@ def _evidence(evidence_id):
 
 
 def _upload(evidence_id, data):
-    """What the device's PUT to the presigned URL does."""
+    """What the browser's PUT to the presigned URL does."""
     get_storage().write(_evidence(evidence_id).object_key, data, mime="image/jpeg")
 
 
@@ -83,11 +96,33 @@ def test_happy_path_upload_verify_and_custody(scenario):
     assert _complete(scenario, entry["evidence_id"]).json()["status"] == "VERIFIED"
 
 
-def test_numbers_sync_first_photos_follow(scenario):
-    """A result is accepted and visible before its photos exist."""
+def test_numbers_first_sheet_follows(scenario):
+    """A result is accepted and visible before its sheet exists, and says it is incomplete."""
     _, [entry], outcome = _submit_with(scenario, jpeg_bytes())
-    assert outcome["status"] == "SYNCED"
+    assert (outcome["status"], outcome["completion"]) == ("ACCEPTED", "NUMBERS_SUBMITTED")
     assert _evidence(entry["evidence_id"]).status == "PENDING_UPLOAD"
+
+
+def test_pdf_sheets_are_verified_without_derivatives(scenario):
+    _, [entry], _ = _submit_with(scenario, PDF_BYTES, mime="application/pdf")
+    _upload(entry["evidence_id"], PDF_BYTES)
+    response = _complete(scenario, entry["evidence_id"])
+    assert response.json()["completion"] == "COMPLETE"
+    evidence = _evidence(entry["evidence_id"])
+    assert evidence.status == "VERIFIED", evidence.quarantine_reason
+    assert evidence.object_key.endswith(".pdf")
+    assert "thumbnail_key" not in evidence.metadata and "dhash" not in evidence.metadata
+    assert _chain(entry["evidence_id"]) == ["upload_requested", "uploaded", "verified"]
+
+
+def test_a_pdf_that_is_not_a_pdf_is_quarantined(scenario):
+    fake = jpeg_bytes()
+    _, [entry], _ = _submit_with(scenario, fake, mime="application/pdf")
+    _upload(entry["evidence_id"], fake)
+    _complete(scenario, entry["evidence_id"])
+    evidence = _evidence(entry["evidence_id"])
+    assert evidence.status == "QUARANTINED"
+    assert "content is image/jpeg" in evidence.quarantine_reason
 
 
 def test_confirm_before_upload(scenario):
@@ -164,20 +199,22 @@ def test_extra_photo_and_fresh_url(scenario):
 
 
 def test_limits_on_declared_files(scenario):
+    item = scenario.item()
+    scenario.submit(item)
     big = {**manifest_entry(jpeg_bytes()), "size": 9 * 1024 * 1024}
     gif = {**manifest_entry(jpeg_bytes()), "mime": "image/gif"}
-    item = scenario.item(evidence=[big, gif])
-    [outcome] = scenario.submit(item)
-    assert outcome["code"] == "malformed"
-    # Errors for list items are keyed by position (djangorestframework 3.17 and later).
-    assert set(outcome["errors"]["evidence"]["0"]) == {"size"}
-    assert set(outcome["errors"]["evidence"]["1"]) == {"mime"}
+    for entry, field_name in ((big, "size"), (gif, "mime")):
+        response = scenario.agent.client.post(
+            "/api/v1/evidence/uploads", {**entry, "version_id": item["version_id"]}, format="json"
+        )
+        assert response.status_code == 400
+        assert field_name in response.json()["errors"]
 
 
 def test_reconciliation_completes_unconfirmed_uploads(scenario):
     photo = jpeg_bytes()
     _, [entry], _ = _submit_with(scenario, photo)
-    _upload(entry["evidence_id"], photo)  # uploaded, but the app died before confirming
+    _upload(entry["evidence_id"], photo)  # uploaded, but the tab closed before confirming
     with system_context():
         EvidenceFile.objects.filter(id=entry["evidence_id"]).update(
             created_at=timezone.now() - timedelta(minutes=30)
@@ -216,22 +253,18 @@ def test_download_links_are_scoped_short_lived_and_logged(scenario, make_member,
     other_agent = scenario.make_agent()
     assert other_agent.client.post(url).status_code == 404
 
-    # Officers need an explicit grant, and stay inside their geography.
+    # Coordinators see the sheets of their own area, and nothing outside it.
     pu = scenario.pu
-    ward_officer = make_member(Role.WARD_OFFICER, scope_ids=[pu.ward_id], organization=scenario.org)
-    assert client_as(ward_officer).post(url).status_code == 403
-    granted = make_member(
-        Role.LGA_OFFICER,
-        scope_ids=[pu.lga_id],
-        organization=scenario.org,
-        granted=[Perm.EVIDENCE_VIEW],
+    ward_coordinator = make_member(
+        Role.WARD_OFFICER, scope_ids=[pu.ward_id], organization=scenario.org
     )
-    assert client_as(granted).post(url).status_code == 200
+    assert client_as(ward_coordinator).post(url).status_code == 200
+    lga_coordinator = make_member(
+        Role.LGA_OFFICER, scope_ids=[pu.lga_id], organization=scenario.org
+    )
+    assert client_as(lga_coordinator).post(url).status_code == 200
     elsewhere = make_member(
-        Role.LGA_OFFICER,
-        scope_ids=[scenario.other_pu.lga_id],
-        organization=scenario.org,
-        granted=[Perm.EVIDENCE_VIEW],
+        Role.LGA_OFFICER, scope_ids=[scenario.other_pu.lga_id], organization=scenario.org
     )
     assert client_as(elsewhere).post(url).status_code == 404
     outsider = make_member(Role.PARTY_ADMIN)
@@ -269,9 +302,12 @@ def test_custody_is_append_only_and_tampering_is_detected(scenario, as_superuser
 def test_evidence_ids_cannot_be_reused_across_versions(scenario):
     photo = jpeg_bytes()
     _, [entry], _ = _submit_with(scenario, photo)
-    item = scenario.item(evidence=[entry])
-    [outcome] = scenario.submit(item)
-    assert outcome["code"] == "evidence_conflict"
+    correction = scenario.item(votes=[121, 80])
+    scenario.submit(correction)
+    response = scenario.agent.client.post(
+        "/api/v1/evidence/uploads", {**entry, "version_id": correction["version_id"]}, format="json"
+    )
+    assert response.json()["code"] == "evidence_conflict"
 
 
 def test_unknown_evidence_is_not_found(scenario):

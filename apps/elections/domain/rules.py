@@ -1,11 +1,11 @@
-"""Election configuration rules (FR-6.3.1 - FR-6.3.3, spec section 11).
+"""Election configuration rules (FR-6.3.1 - FR-6.3.7, spec section 11).
 
 Lifecycle: DRAFT <-> CONFIGURED -> LOCKED -> LIVE -> CLOSED -> RECONCILED.
-Contests and candidates can change only before LOCKED. Locking records a fingerprint of the
-whole configuration, so any later difference is detectable.
+Contesting parties, contests and contestants can change only before LOCKED. Locking records a
+fingerprint of the whole configuration, so any later difference is detectable.
 """
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -33,7 +33,7 @@ TRANSITIONS: Mapping[ElectionStatus, frozenset[ElectionStatus]] = {
     ElectionStatus.RECONCILED: frozenset(),
 }
 
-# Contests and candidates may change only in these states (FR-6.3.3).
+# Contesting parties, contests and contestants may change only in these states (FR-6.3.3).
 EDITABLE = frozenset({ElectionStatus.DRAFT, ElectionStatus.CONFIGURED})
 # Agents can be deployed until polls close.
 ASSIGNABLE = frozenset(
@@ -45,102 +45,82 @@ def can_transition(current: ElectionStatus, target: ElectionStatus) -> bool:
     return target in TRANSITIONS[current]
 
 
-class JurisdictionLevel(StrEnum):
-    STATE = "STATE"
-    LGA = "LGA"
-    WARD = "WARD"
+class IssueKind(StrEnum):
+    """What an agent reports when the result form does not match the sheet (FR-6.3.7)."""
+
+    PARTY_MISSING = "PARTY_MISSING"
+    CONTESTANT_MISSING = "CONTESTANT_MISSING"
 
 
-# Result-sheet totals a contest can capture (PB-05 decides the final set per form).
-SHEET_FIELDS = ("accredited", "valid", "rejected", "total_cast")
-REQUIRED_SHEET_FIELDS = frozenset({"valid"})
+class IssueStatus(StrEnum):
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
 
 
-def sheet_field_problems(fields: Sequence[str]) -> list[str]:
-    problems = [f"unknown result field {f!r}" for f in fields if f not in SHEET_FIELDS]
-    if len(set(fields)) != len(fields):
-        problems.append("result fields repeat")
-    missing = REQUIRED_SHEET_FIELDS - set(fields)
-    if missing:
-        problems.append(f"result fields must include {sorted(missing)}")
-    return problems
-
-
-def covers(
-    level: JurisdictionLevel,
-    jurisdiction_ids: Iterable[UUID],
-    *,
-    state_id: UUID,
-    lga_id: UUID,
-    ward_id: UUID,
-) -> bool:
-    """Whether a contest's jurisdiction includes a polling unit."""
-    target = {
-        JurisdictionLevel.STATE: state_id,
-        JurisdictionLevel.LGA: lga_id,
-        JurisdictionLevel.WARD: ward_id,
-    }[level]
-    return target in set(jurisdiction_ids)
+def normalize_abbreviation(raw: str) -> str:
+    """Party abbreviations are compared and stored upper case, without surrounding spaces."""
+    return raw.strip().upper()
 
 
 @dataclass(frozen=True)
-class CandidateSpec:
+class ContestantSpec:
     id: UUID
     name: str
-    party_acronym: str
-    ballot_order: int
-    is_own_party: bool
+    party_id: UUID
 
 
 @dataclass(frozen=True)
 class ContestSpec:
     id: UUID
-    office: str
-    title: str
-    jurisdiction_level: str
-    jurisdiction_ids: tuple[UUID, ...]
-    sheet_fields: tuple[str, ...]
-    candidates: tuple[CandidateSpec, ...] = field(default_factory=tuple)
+    constituency_id: UUID
+    constituency_name: str
+    contestants: tuple[ContestantSpec, ...] = field(default_factory=tuple)
 
 
-def configuration_problems(contests: Sequence[ContestSpec]) -> list[str]:
+@dataclass(frozen=True)
+class PartySpec:
+    party_id: UUID
+    abbreviation: str
+    ballot_order: int
+
+
+def configuration_problems(
+    parties: Sequence[PartySpec], contests: Sequence[ContestSpec]
+) -> list[str]:
     """Everything that stops an election from being CONFIGURED or LOCKED."""
-    if not contests:
-        return ["the election has no contests"]
     problems = []
+    if len(parties) < 2:
+        problems.append("the election needs at least two contesting parties")
+    if not contests:
+        problems.append("no constituency has contestants yet")
+    contesting = {p.party_id for p in parties}
     for contest in contests:
-        label = f"contest {contest.title!r}"
-        if not contest.jurisdiction_ids:
-            problems.append(f"{label} has no jurisdiction")
-        if len(contest.candidates) < 2:
-            problems.append(f"{label} needs at least two candidates")
-        if sum(c.is_own_party for c in contest.candidates) > 1:
-            problems.append(f"{label} marks more than one candidate as the party's own")
-        problems.extend(f"{label}: {p}" for p in sheet_field_problems(contest.sheet_fields))
+        label = f"constituency {contest.constituency_name!r}"
+        if len(contest.contestants) < 2:
+            problems.append(f"{label} needs contestants from at least two parties")
+        stray = [c.name for c in contest.contestants if c.party_id not in contesting]
+        if stray:
+            problems.append(f"{label}: {', '.join(stray)} stand for a party not contesting")
     return problems
 
 
-def fingerprint(election_id: UUID, contests: Sequence[ContestSpec]) -> str:
+def fingerprint(
+    election_id: UUID, parties: Sequence[PartySpec], contests: Sequence[ContestSpec]
+) -> str:
     """SHA-256 over a canonical view of the configuration, recorded when the election locks."""
     snapshot: dict[str, Any] = {
         "election": election_id,
+        "parties": [
+            {"party_id": p.party_id, "abbreviation": p.abbreviation, "ballot_order": p.ballot_order}
+            for p in sorted(parties, key=lambda p: p.ballot_order)
+        ],
         "contests": [
             {
                 "id": c.id,
-                "office": c.office,
-                "title": c.title,
-                "jurisdiction_level": c.jurisdiction_level,
-                "jurisdiction_ids": sorted(str(i) for i in c.jurisdiction_ids),
-                "sheet_fields": list(c.sheet_fields),
-                "candidates": [
-                    {
-                        "id": k.id,
-                        "name": k.name,
-                        "party_acronym": k.party_acronym,
-                        "ballot_order": k.ballot_order,
-                        "is_own_party": k.is_own_party,
-                    }
-                    for k in sorted(c.candidates, key=lambda k: k.ballot_order)
+                "constituency_id": c.constituency_id,
+                "contestants": [
+                    {"id": k.id, "name": k.name, "party_id": k.party_id}
+                    for k in sorted(c.contestants, key=lambda k: str(k.party_id))
                 ],
             }
             for c in sorted(contests, key=lambda c: str(c.id))

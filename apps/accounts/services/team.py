@@ -1,4 +1,4 @@
-"""Team management (FR-6.11.1 - FR-6.11.4): deactivate users, change role/scope, revoke devices.
+"""Team management (FR-6.11.1 - FR-6.11.4): deactivate users and change role/scope.
 
 Role and scope changes need a fresh second factor, take effect on the very next request
 (the actor is rebuilt from the membership each time), and are audited with before/after.
@@ -10,7 +10,6 @@ from uuid import UUID
 
 from django.db import transaction
 from django.db.models import F
-from django.utils import timezone
 
 from apps.audit import services as audit
 from apps.core.authz import authorize, require_recent_mfa
@@ -18,9 +17,9 @@ from apps.core.domain.actor import Actor
 from apps.core.domain.permissions import Perm, Role
 
 from ..errors import LastAdmin
-from ..models import Device, DeviceStatus, Membership, MembershipStatus, User, UserStatus
+from ..models import Membership, MembershipStatus, User, UserStatus
 from .invitations import validate_grant
-from .sessions import revoke_all_sessions, revoke_session
+from .sessions import revoke_all_sessions
 
 
 def _ensure_not_last_admin(membership: Membership) -> None:
@@ -60,9 +59,6 @@ def deactivate_user(actor: Actor, membership: Membership) -> User:
         user.status = UserStatus.DEACTIVATED
         user.save(update_fields=["status"])
         revoked = revoke_all_sessions(user, "deactivated")
-        Device.objects.filter(user=user, status=DeviceStatus.ACTIVE).update(
-            status=DeviceStatus.REVOKED, revoked_at=timezone.now()
-        )
         # A deactivated agent must stop counting against their polling unit: otherwise the
         # unit looks covered (and full) while nobody can report from it.
         from apps.assignments.services import revoke_all_for_agent
@@ -111,30 +107,3 @@ def update_membership(
             diff={"before": before, "after": _snapshot(membership)},
         )
     return membership
-
-
-def revoke_device(actor: Actor, membership: Membership, device_id: UUID) -> Device | None:
-    authorize(actor, Perm.USERS_MANAGE)
-    with transaction.atomic():
-        device = (
-            Device.objects.select_for_update()
-            .filter(id=device_id, user_id=membership.user_id)
-            .first()
-        )
-        if device is None:
-            return None
-        if device.status == DeviceStatus.ACTIVE:
-            device.status = DeviceStatus.REVOKED
-            device.revoked_at = timezone.now()
-            device.save(update_fields=["status", "revoked_at"])
-            # Sessions bound to the device end with it.
-            for session in device.session_set.filter(revoked_at__isnull=True):
-                revoke_session(session, "device_revoked")
-            audit.record(
-                action="device.revoked",
-                object_type="device",
-                object_id=device.id,
-                actor=actor,
-                diff={"user_id": membership.user_id},
-            )
-    return device

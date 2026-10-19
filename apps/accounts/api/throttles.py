@@ -65,9 +65,9 @@ class RefreshIpThrottle(_PerIp):
 
 
 class SubmitThrottle(_SettingsRateThrottle):
-    """Per agent (one active device each): enough to flush a 50-item backlog in a minute."""
+    """Per agent: generous for retries and corrections, tight enough to stop a script."""
 
-    scope = "submit_device"
+    scope = "submit_agent"
 
     def get_cache_key(self, request: Request, view: Any) -> str | None:
         user = getattr(request, "user", None)

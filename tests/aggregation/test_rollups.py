@@ -18,7 +18,8 @@ def _row(field, level, area_id):
 
 def _votes(row):
     return {
-        v.candidate.party_acronym: v.reported_votes for v in row.votes.select_related("candidate")
+        v.candidate.party.abbreviation: v.reported_votes
+        for v in row.votes.select_related("candidate__party")
     }
 
 
@@ -63,14 +64,12 @@ def test_a_correction_replaces_the_old_figures_it_does_not_add_to_them(field_):
         assert state.reported_pus == 1
 
 
-def test_a_replayed_sync_changes_nothing(field_):
+def test_a_replayed_submission_changes_nothing(field_):
     pu = field_.pus[0]
     outcome = field_.submit(pu, (100, 50))
     before = _row(field_, "STATE", field_.election.state_id).revision
-    again = field_.agents[pu.id].client.post(
-        "/api/v1/sync/submissions", {"items": [outcome["item"]]}, format="json"
-    )
-    assert again.json()["items"][0]["replayed"] is True
+    again = field_.agents[pu.id].client.post("/api/v1/submissions", outcome["item"], format="json")
+    assert again.json()["replayed"] is True
     state = _row(field_, "STATE", field_.election.state_id)
     assert _votes(state) == {"AAA": 100, "BBB": 50}
     assert state.revision == before  # a replay emits no event
@@ -78,9 +77,9 @@ def test_a_replayed_sync_changes_nothing(field_):
 
 def test_flagged_results_count_and_are_marked_for_review(field_):
     pu = field_.pus[0]
-    # Candidate votes (150) do not match valid votes (140): flagged, still counted.
+    # Party votes (150) plus rejected (5) fall short of total cast (175): flagged, still counted.
     outcome = field_.submit(
-        pu, (100, 50), totals={"accredited": 400, "valid": 140, "rejected": 5, "total_cast": 145}
+        pu, (100, 50), totals={"accredited": 400, "rejected": 5, "total_cast": 175}
     )
     assert outcome["status"] == "REQUIRES_REVIEW"
     with system_context():
@@ -126,9 +125,7 @@ def test_going_live_builds_every_row_before_the_first_result(
 ):
     from .conftest import build_field
 
-    field = build_field(
-        make_org, make_member, client_as, django_capture_on_commit_callbacks, review_enabled=False
-    )
+    field = build_field(make_org, make_member, client_as, django_capture_on_commit_callbacks)
     with system_context():
         assert Rollup.objects.filter(contest=field.contest).count() == 0
         Election.objects.filter(id=field.election.id).update(status="LOCKED")

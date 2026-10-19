@@ -66,14 +66,3 @@ class AssignmentRevokeView(APIView):
             return 200, dict(s.AssignmentSerializer(services.revoke(actor, assignment)).data)
 
         return idempotent_response(request, "assignments.revoke", operation)
-
-
-class MyAssignmentsView(APIView):
-    """What the agent app shows before capture (FR-6.2.5, AC-04)."""
-
-    required_permission = Perm.RESULTS_SUBMIT
-
-    @extend_schema(responses={200: s.MyAssignmentSerializer(many=True)})
-    def get(self, request: Request) -> Response:
-        rows = selectors.my_assignments(request.actor)  # type: ignore[attr-defined]
-        return Response(s.MyAssignmentSerializer(rows, many=True).data)

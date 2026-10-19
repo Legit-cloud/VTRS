@@ -256,12 +256,11 @@ def messaging(actor: Actor, *, hours: int = 24) -> dict[str, Any]:
 
     providers = {
         "SMS": _provider_name(getattr(settings, "VTRS_SMS_PROVIDER", "")),
-        "PUSH": _provider_name(getattr(settings, "VTRS_PUSH_PROVIDER", "")),
         "WHATSAPP": _provider_name(getattr(settings, "VTRS_WHATSAPP_PROVIDER", "")),
         "EMAIL": _provider_name(getattr(settings, "EMAIL_BACKEND", "")),
     }
     channels = []
-    for channel in ("SMS", "EMAIL", "PUSH", "WHATSAPP", "IN_APP"):
+    for channel in ("SMS", "EMAIL", "WHATSAPP", "IN_APP"):
         counts = by_channel.get(channel, {})
         attempted = sum(
             counts.get(s, 0)

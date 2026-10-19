@@ -1,12 +1,6 @@
 from rest_framework.exceptions import APIException
 
 
-class ReviewNotEnabled(APIException):
-    status_code = 409
-    default_detail = "Review is not enabled for this election."
-    default_code = "review_not_enabled"
-
-
 class ResultsFrozen(APIException):
     status_code = 409
     default_detail = "Results can no longer be changed for this election."
@@ -29,3 +23,9 @@ class FlagsUnacknowledged(APIException):
     status_code = 409
     default_detail = "This result has open flags. Acknowledge them to approve it."
     default_code = "flags_unacknowledged"
+
+
+class EvidenceRequired(APIException):
+    status_code = 409
+    default_detail = "Verify a result against its sheet: the result sheet is not uploaded yet."
+    default_code = "evidence_required"

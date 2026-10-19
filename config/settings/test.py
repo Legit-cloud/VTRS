@@ -32,3 +32,7 @@ VTRS_OTP_HOURLY_PER_DESTINATION = 1000
 VTRS_OTP_HOURLY_PER_IP = 1000
 
 LOGGING["root"]["level"] = "WARNING"
+
+# Between transactional tests the database is flushed (TRUNCATE of every table), which can take
+# longer than the 5 s statement limit on a loaded machine. Production keeps the tight limit.
+DATABASES["default"]["OPTIONS"]["options"] = "-c statement_timeout=60000 -c lock_timeout=2000"

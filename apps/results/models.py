@@ -1,9 +1,10 @@
 """Result ledger (spec section 6). PostgreSQL is the single system of record for results.
 
-pu_result is the aggregate root: one per (contest, polling unit), locked FOR UPDATE whenever a
-version is added. result_version and vote_line are immutable: a trigger rejects UPDATE and
-DELETE (only result_version.state may change, for review decisions), and the app role has
-no DELETE on them.
+pu_result is the aggregate root: one per (election, polling unit), locked FOR UPDATE whenever a
+version is added. A polling unit votes in exactly one contest per election (its constituency),
+so this is also one per contest and unit. result_version and vote_line are immutable: a trigger
+rejects UPDATE and DELETE (only result_version.state may change, for review decisions), and the
+app role has no DELETE on them.
 """
 
 from django.db import models
@@ -55,7 +56,7 @@ class PuResult(models.Model):
         db_table = "pu_result"
         constraints = [
             models.UniqueConstraint(
-                fields=["contest", "polling_unit"], name="pu_result_one_per_contest_pu"
+                fields=["election", "polling_unit"], name="pu_result_one_per_election_pu"
             )
         ]
         indexes = [
@@ -82,20 +83,17 @@ class ResultVersion(models.Model):
     lga = models.ForeignKey("geography.Lga", on_delete=models.PROTECT, related_name="+")
     version_no = models.PositiveIntegerField()
     accredited = models.PositiveIntegerField(null=True, blank=True)
+    # The sum of the party votes; never entered separately.
     valid = models.PositiveIntegerField()
     rejected = models.PositiveIntegerField(null=True, blank=True)
     total_cast = models.PositiveIntegerField(null=True, blank=True)
-    # Device time is recorded but untrusted; server_received_at is authoritative.
+    # The phone's clock is recorded but untrusted; server_received_at is authoritative.
     device_captured_at = models.DateTimeField()
     server_received_at = models.DateTimeField()
     gps_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     gps_lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     gps_accuracy_m = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
-    device = models.ForeignKey(
-        "accounts.Device", null=True, blank=True, on_delete=models.PROTECT, related_name="+"
-    )
     submitted_by = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="+")
-    app_version = models.CharField(max_length=32)
     config_version = models.PositiveIntegerField()
     payload_hash = models.CharField(max_length=64)
     parent_version_id = models.UUIDField(null=True, blank=True)

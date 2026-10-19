@@ -1,16 +1,26 @@
 from uuid import UUID
 
 from django.db.models import QuerySet
+from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView
+from rest_framework.request import Request
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.core.api.views import StrictQueryParamsMixin
 from apps.core.domain.permissions import Perm
 from apps.core.pagination import KeysetPagination
 from apps.geography import selectors
-from apps.geography.models import Lga, PollingUnit, Ward
+from apps.geography.models import Constituency, Lga, PollingUnit, Ward
 
-from .serializers import LgaSerializer, PollingUnitSerializer, WardSerializer
+from .serializers import (
+    ConstituencySerializer,
+    ElectionTypeSerializer,
+    LgaSerializer,
+    PollingUnitSerializer,
+    WardSerializer,
+)
 
 MAX_IDS = 100
 
@@ -61,3 +71,33 @@ class PollingUnitListView(StrictQueryParamsMixin, ListAPIView):
                     {"ids": ["Must be a comma-separated list of UUIDs."]}
                 ) from None
         return qs
+
+
+class ElectionTypeListView(APIView):
+    """The configured election types and the constituency kind each is held in."""
+
+    required_permission = Perm.GEOGRAPHY_VIEW
+
+    @extend_schema(responses={200: ElectionTypeSerializer(many=True)})
+    def get(self, request: Request) -> Response:
+        types = selectors.election_types_for(request.actor)  # type: ignore[attr-defined]
+        return Response(ElectionTypeSerializer(types, many=True).data)
+
+
+class ByNamePagination(KeysetPagination):
+    ordering = "name"
+
+
+class ConstituencyListView(StrictQueryParamsMixin, ListAPIView):
+    required_permission = Perm.GEOGRAPHY_VIEW
+    serializer_class = ConstituencySerializer
+    pagination_class = ByNamePagination
+    allowed_query_params = frozenset({"kind", "state", "search"})
+
+    def get_queryset(self) -> QuerySet[Constituency]:
+        return selectors.constituencies_for(
+            self.actor,
+            kind=self.request.query_params.get("kind"),
+            state_id=self.uuid_param("state"),
+            search=self.request.query_params.get("search", "").strip()[:100],
+        )

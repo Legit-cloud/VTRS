@@ -1,8 +1,8 @@
 """Election-Day simulation and load test (PB-13, AC-15, DD-02, DD-06).
 
 Creates a throwaway organization, election, officers and agents on the polling-unit directory
-already in the database, then drives the real API the way the field does: agents submit in
-offline batches, retry, correct and occasionally send suspicious results, while dashboard users
+already in the database, then drives the real API the way the field does: agents submit from
+the web app, retry, correct and occasionally send suspicious results, while dashboard users
 read at the same time. Afterwards it waits for the workers to catch up, proves the rollups and
 the audit chain, and prints a report.
 
@@ -28,7 +28,7 @@ from django.db import connection, transaction
 from django.test import Client
 from django.utils import timezone
 
-from apps.accounts.models import Device, Membership, User, UserStatus
+from apps.accounts.models import Membership, User, UserStatus
 from apps.accounts.services.sessions import start_session
 from apps.aggregation import services as aggregation
 from apps.aggregation.models import Rollup, RollupDirty
@@ -38,8 +38,9 @@ from apps.core.crypto import blind_index
 from apps.core.ids import uuid7
 from apps.core.models import OutboxEvent
 from apps.core.rls import system_context
-from apps.elections.models import Candidate, Contest, Election
-from apps.geography.models import PollingUnit, State
+from apps.elections.models import Candidate, Contest, Election, ElectionParty, Party
+from apps.geography import services as geography
+from apps.geography.models import Constituency, ElectionType, PollingUnit, State
 from apps.organizations.models import Organization
 from apps.results.domain.versions import submission_hash
 from apps.results.models import ResultVersion
@@ -71,7 +72,6 @@ class Command(BaseCommand):
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument("--agents", type=int, default=300)
         parser.add_argument("--workers", type=int, default=12, help="Concurrent agents")
-        parser.add_argument("--batch", type=int, default=1, help="Results per sync request (1-10)")
         parser.add_argument("--readers", type=int, default=20, help="Concurrent dashboard users")
         parser.add_argument("--correction-rate", type=float, default=0.05)
         parser.add_argument("--replay-rate", type=float, default=0.05)
@@ -111,45 +111,33 @@ class Command(BaseCommand):
         errors: list[str] = []
         accepted = replays = corrections = flagged_expected = 0
         started = time.perf_counter()
-        batches = [
-            world["agents"][i : i + options["batch"]]
-            for i in range(0, len(world["agents"]), options["batch"])
-        ]
         lock = threading.Lock()
 
-        def drive(batch: list[dict[str, Any]]) -> None:
+        def drive(agent: dict[str, Any]) -> None:
             nonlocal accepted, replays, corrections, flagged_expected
             client = Client(SERVER_NAME="localhost")
             try:
-                items, kinds = [], []
-                for agent in batch:
-                    anomalous = self.rng.random() < options["anomaly_rate"]
-                    item = self._item(world, agent, anomalous=anomalous)
-                    items.append(item)
-                    kinds.append(anomalous)
-                outcomes = self._post(client, batch[0], items, write_latencies, errors, lock)
+                anomalous = self.rng.random() < options["anomaly_rate"]
+                item = self._item(world, agent, anomalous=anomalous)
+                outcome = self._post(client, agent, item, write_latencies, errors, lock)
                 with lock:
-                    accepted += sum(
-                        1 for o in outcomes if o["status"] in {"SYNCED", "REQUIRES_REVIEW"}
-                    )
-                    flagged_expected += sum(kinds)
+                    accepted += int(outcome.get("status") in {"ACCEPTED", "REQUIRES_REVIEW"})
+                    flagged_expected += int(anomalous)
                 if self.rng.random() < options["replay_rate"]:
-                    again = self._post(client, batch[0], items, write_latencies, errors, lock)
+                    # A double tap or a retry after a dropped connection: same submission id.
+                    again = self._post(client, agent, item, write_latencies, errors, lock)
                     with lock:
-                        replays += sum(1 for o in again if o.get("replayed"))
+                        replays += int(bool(again.get("replayed")))
                 if self.rng.random() < options["correction_rate"]:
-                    fixed = [
-                        self._item(world, a, parent=i["version_id"], bump=3)
-                        for a, i in zip(batch, items, strict=True)
-                    ]
-                    self._post(client, batch[0], fixed, write_latencies, errors, lock)
+                    fixed = self._item(world, agent, parent=item["version_id"], bump=3)
+                    self._post(client, agent, fixed, write_latencies, errors, lock)
                     with lock:
-                        corrections += len(fixed)
+                        corrections += 1
             finally:
                 connection.close()
 
         with ThreadPoolExecutor(max_workers=options["workers"]) as pool:
-            list(pool.map(drive, batches))
+            list(pool.map(drive, world["agents"]))
         elapsed = time.perf_counter() - started
         stop_readers.set()
         for thread in readers:
@@ -206,6 +194,12 @@ class Command(BaseCommand):
             )
         run = secrets.token_hex(3)
         now = timezone.now()
+        if not ElectionType.objects.filter(code="GOVERNORSHIP").exists():
+            geography.load_election_types(
+                json.loads((settings.BASE_DIR / "data" / "election_types.json").read_text())
+            )
+        if not Constituency.objects.filter(kind="STATE", state=state).exists():
+            geography.derive_constituencies()
         with transaction.atomic(), system_context():
             org = Organization.objects.create(name=f"Sim {run}", status="ACTIVE")
             admin = User.objects.create_user(
@@ -222,6 +216,7 @@ class Command(BaseCommand):
             election = Election.objects.create(
                 organization=org,
                 name=f"Simulation {run}",
+                election_type=ElectionType.objects.get(code="GOVERNORSHIP"),
                 state=state,
                 election_date=now.date(),
                 status="LIVE",
@@ -231,23 +226,27 @@ class Command(BaseCommand):
             contest = Contest.objects.create(
                 organization=org,
                 election=election,
-                office="GOVERNORSHIP",
-                title="Governor",
-                jurisdiction_level="STATE",
-                jurisdiction_ids=[state.id],
+                constituency=Constituency.objects.get(kind="STATE", state=state),
+            )
+            parties = [
+                Party.objects.create(
+                    organization=org, full_name=f"{a} Party", abbreviation=a, is_own=(i == 1)
+                )
+                for i, a in enumerate(("AAA", "BBB", "CCC"), start=1)
+            ]
+            ElectionParty.objects.bulk_create(
+                ElectionParty(organization=org, election=election, party=p, ballot_order=i)
+                for i, p in enumerate(parties, start=1)
             )
             candidates = [
                 Candidate.objects.create(
                     organization=org,
                     contest=contest,
-                    name=f"Candidate {a}",
-                    party_name=a,
-                    party_acronym=a,
-                    ballot_order=i,
-                    is_own_party=(i == 1),
+                    party=p,
+                    name=f"Candidate {p.abbreviation}",
                     config_version=1,
                 )
-                for i, a in enumerate(("AAA", "BBB", "CCC"), start=1)
+                for p in parties
             ]
             users = User.objects.bulk_create(
                 User(
@@ -270,9 +269,6 @@ class Command(BaseCommand):
                 )
                 for u, unit in zip(users, units, strict=True)
             )
-            devices = Device.objects.bulk_create(
-                Device(user=u, platform="ANDROID", app_version="1.0.0") for u in users
-            )
             AgentAssignment.objects.bulk_create(
                 AgentAssignment(
                     organization=org,
@@ -286,14 +282,12 @@ class Command(BaseCommand):
                 for u, unit in zip(users, units, strict=True)
             )
             admin_token = start_session(
-                user=admin, membership=admin_m, client="WEB", device=None, mfa_at=now, ip=None
+                user=admin, membership=admin_m, mfa_at=now, ip=None
             ).access_token
             agents = []
-            for u, m, d, unit in zip(users, memberships, devices, units, strict=True):
-                token = start_session(
-                    user=u, membership=m, client="MOBILE", device=d, mfa_at=None, ip=None
-                ).access_token
-                agents.append({"token": token, "device": str(d.id), "pu": unit, "user_id": u.id})
+            for u, m, unit in zip(users, memberships, units, strict=True):
+                token = start_session(user=u, membership=m, mfa_at=None, ip=None).access_token
+                agents.append({"token": token, "pu": unit, "user_id": u.id})
         aggregation.rebuild_contest(organization_id=org.id, contest_id=contest.id)
         return {
             "org": org,
@@ -325,20 +319,19 @@ class Command(BaseCommand):
         votes[0] += cast - sum(votes) + bump
         valid = sum(votes)
         rejected = int(valid * 0.02)
-        accredited = valid + rejected + 3
+        total_cast = valid + rejected
         if anomalous:
-            accredited = max(1, valid // 2)  # more cast than accredited: over-voting
+            total_cast += 25  # the sheet's totals do not reconcile: flagged, still counted
         item = {
             "version_id": str(uuid7()),
-            "contest_id": str(world["contest"].id),
+            "election_id": str(world["election"].id),
             "polling_unit_id": str(pu.id),
             "config_version": world["election"].config_version,
             "parent_version_id": parent,
             "totals": {
-                "accredited": accredited,
-                "valid": valid,
+                "accredited": total_cast + 3,
                 "rejected": rejected,
-                "total_cast": valid + rejected,
+                "total_cast": total_cast,
             },
             "votes": [
                 {"candidate_id": str(c.id), "votes": v}
@@ -348,9 +341,6 @@ class Command(BaseCommand):
                 timezone.now() - timedelta(seconds=self.rng.randint(0, 900))
             ).isoformat(),
             "gps": {"lat": float(pu.latitude), "lng": float(pu.longitude), "accuracy_m": 9},
-            "device_id": agent["device"],
-            "app_version": "1.0.0",
-            "evidence": [],
         }
         item = json.loads(json.dumps(item))
         item["payload_hash"] = submission_hash(item)
@@ -360,15 +350,15 @@ class Command(BaseCommand):
         self,
         client: Client,
         agent: dict[str, Any],
-        items: list[dict[str, Any]],
+        item: dict[str, Any],
         latencies: list[float],
         errors: list[str],
         lock: threading.Lock,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         started = time.perf_counter()
         response = client.post(
-            "/api/v1/sync/submissions",
-            data=json.dumps({"items": items}),
+            "/api/v1/submissions",
+            data=json.dumps(item),
             content_type="application/json",
             HTTP_AUTHORIZATION=f"Bearer {agent['token']}",
         )
@@ -377,8 +367,8 @@ class Command(BaseCommand):
             latencies.append(took)
             if response.status_code != 200:
                 errors.append(f"{response.status_code}: {response.content[:120]!r}")
-                return []
-        return list(response.json()["items"])
+                return {}
+        return dict(response.json())
 
     def _reader(
         self,
@@ -389,10 +379,9 @@ class Command(BaseCommand):
     ) -> None:
         client = Client(SERVER_NAME="localhost")
         election = world["election"].id
-        contest = world["contest"].id
         urls = [
             f"/api/v1/elections/{election}/dashboard",
-            f"/api/v1/contests/{contest}/results?level=lga",
+            f"/api/v1/elections/{election}/results?level=lga",
             f"/api/v1/elections/{election}/flags/summary",
             f"/api/v1/elections/{election}/review-queue?limit=20",
         ]

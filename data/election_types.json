@@ -1,0 +1,9 @@
+[
+  {"code": "PRESIDENTIAL", "name": "Presidential", "constituency_kind": "STATE", "sort_order": 10},
+  {"code": "GOVERNORSHIP", "name": "Governorship", "constituency_kind": "STATE", "sort_order": 20},
+  {"code": "SENATORIAL", "name": "Senatorial", "constituency_kind": "SENATORIAL_DISTRICT", "sort_order": 30},
+  {"code": "HOUSE_OF_REPRESENTATIVES", "name": "House of Representatives", "constituency_kind": "FEDERAL_CONSTITUENCY", "sort_order": 40},
+  {"code": "STATE_ASSEMBLY", "name": "State House of Assembly", "constituency_kind": "STATE_CONSTITUENCY", "sort_order": 50},
+  {"code": "LGA_CHAIRMANSHIP", "name": "Local government chairmanship", "constituency_kind": "LGA", "sort_order": 60},
+  {"code": "COUNCILLORSHIP", "name": "Councillorship", "constituency_kind": "WARD", "sort_order": 70}
+]

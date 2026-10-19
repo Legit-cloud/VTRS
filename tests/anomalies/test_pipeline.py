@@ -48,14 +48,10 @@ def test_a_submission_from_far_away_is_flagged_and_sent_to_review(field_):
     assert flag.details["distance_m"] > 50_000
     assert version_state(outcome["version_id"]) == "REQUIRES_REVIEW"
     # The agent sees it on their next status poll, and the result still counts.
-    status = (
-        field_.agents[pu.id]
-        .client.get("/api/v1/sync/status", {"ids": outcome["version_id"]})
-        .json()[0]
-    )
-    assert status["status"] == "REQUIRES_REVIEW"
+    status = field_.agents[pu.id].client.get(f"/api/v1/submissions/{outcome['version_id']}")
+    assert status.json()["state"] == "REQUIRES_REVIEW"
     dashboard = field_.admin_client().get(f"/api/v1/elections/{field_.election.id}/dashboard")
-    assert dashboard.json()["contests"][0]["reported_pus"] == 1
+    assert dashboard.json()["summary"]["reported_pus"] == 1
 
 
 def test_no_gps_at_all_is_a_medium_flag(field_):
@@ -112,7 +108,7 @@ def test_a_turnout_far_from_its_neighbours_is_flagged(big_field):
     wild = f.submit(
         pu,
         (cast - 70, 70),
-        totals={"accredited": registered, "valid": cast, "rejected": 0, "total_cast": cast},
+        totals={"accredited": registered, "rejected": 0, "total_cast": cast},
         gps={"lat": float(pu.latitude or 7.4), "lng": float(pu.longitude or 3.9), "accuracy_m": 8},
     )
     flags = {fl.rule_code: fl for fl in flags_of(wild["version_id"])}
@@ -152,8 +148,11 @@ def test_a_quarantined_photo_raises_a_flag(field_):
     f = field_
     pu = f.pus[0]
     bad = jpeg_bytes()[:-40] + EICAR  # a JPEG with the malware test signature appended
+    outcome = f.submit(pu)
     entry = manifest_entry(bad)
-    outcome = f.submit(pu, evidence=[entry])
+    upload = {**entry, "version_id": outcome["version_id"]}
+    requested = f.agents[pu.id].client.post("/api/v1/evidence/uploads", upload, format="json")
+    assert requested.status_code == 200
     with system_context():
         key = EvidenceFile.objects.get(id=entry["evidence_id"]).object_key
     get_storage().write(key, bad, mime="image/jpeg")
@@ -203,8 +202,8 @@ def test_flags_never_remove_a_result_from_the_count(field_):
             "accuracy_m": 10,
         },
     )
-    top = f.admin_client().get(f"/api/v1/elections/{f.election.id}/dashboard").json()["contests"][0]
-    assert {v["party_acronym"]: v["votes"] for v in top["votes"]} == {"AAA": 70, "BBB": 30}
+    top = f.admin_client().get(f"/api/v1/elections/{f.election.id}/dashboard").json()["summary"]
+    assert {v["abbreviation"]: v["votes"] for v in top["votes"]} == {"AAA": 70, "BBB": 30}
     assert top["review_pus"] == 1
     assert top["open_flags"] >= 1
 

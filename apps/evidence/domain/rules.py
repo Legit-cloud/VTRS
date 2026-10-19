@@ -25,22 +25,26 @@ class EvidenceStatus(StrEnum):
     QUARANTINED = "QUARANTINED"
 
 
-# MIME type -> (file extension, magic-byte check)
+# MIME type -> file extension. Result sheets are photos (compressed in the browser) or PDFs.
 ALLOWED_TYPES: Mapping[str, str] = {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
+    "application/pdf": "pdf",
 }
+PDF = "application/pdf"
 
 
 def sniff_mime(head: bytes) -> str | None:
-    """Identify an image by its leading bytes, never by what the client claims."""
+    """Identify a file by its leading bytes, never by what the client claims."""
     if head.startswith(b"\xff\xd8\xff"):
         return "image/jpeg"
     if head.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
     if len(head) >= 12 and head[:4] == b"RIFF" and head[8:12] == b"WEBP":
         return "image/webp"
+    if head.startswith(b"%PDF-"):
+        return PDF
     return None
 
 

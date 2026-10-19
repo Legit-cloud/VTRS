@@ -38,28 +38,13 @@ class AssignmentCreateSerializer(StrictSerializer):
     polling_unit_id = serializers.UUIDField()
 
 
-class CandidateBallotSerializer(serializers.Serializer):
-    id = serializers.UUIDField()
-    name = serializers.CharField()
-    party_acronym = serializers.CharField()
-    ballot_order = serializers.IntegerField()
-
-
-class ContestBallotSerializer(serializers.Serializer):
-    id = serializers.UUIDField()
-    office = serializers.CharField()
-    title = serializers.CharField()
-    sheet_fields = serializers.ListField(child=serializers.CharField())
-    candidates = CandidateBallotSerializer(many=True)
-
-
 class AssignedElectionSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     name = serializers.CharField()
+    election_type_name = serializers.CharField()
     election_date = serializers.DateField()
     status = serializers.CharField()
     capture_open = serializers.BooleanField()
-    config_version = serializers.IntegerField()
     polls_open_at = serializers.DateTimeField(allow_null=True)
     polls_close_at = serializers.DateTimeField(allow_null=True)
 
@@ -79,4 +64,3 @@ class MyAssignmentSerializer(serializers.Serializer):
     assignment_id = serializers.UUIDField()
     election = AssignedElectionSerializer()
     polling_unit = AssignedPollingUnitSerializer()
-    contests = ContestBallotSerializer(many=True)

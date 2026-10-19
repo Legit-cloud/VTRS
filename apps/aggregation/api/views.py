@@ -26,8 +26,9 @@ MEASURE = OpenApiParameter(
 
 
 class DashboardView(StrictQueryParamsMixin, APIView):
-    """War Room: headline figures per contest over everything the caller may see. Figures are
-    provisional and based on party-captured data; they are not an official declaration."""
+    """War room: every party and contestant side by side over everything the caller may see,
+    with the leader status (ties and narrow margins named) and X of Y polling units reported.
+    Figures are the party's own collection, not the official INEC count."""
 
     required_permission = Perm.DASHBOARD_VIEW
     allowed_query_params = frozenset({"measure"})
@@ -42,9 +43,9 @@ class DashboardView(StrictQueryParamsMixin, APIView):
         )
 
 
-class ContestResultsView(StrictQueryParamsMixin, APIView):
-    """Drill-down: LGA scorecards, ward lists and polling-unit lists for one contest. Omit
-    `level` to start at the top of the caller's own scope."""
+class ElectionResultsView(StrictQueryParamsMixin, APIView):
+    """Drill-down: state, LGA, ward and polling-unit rows for one election, each with every
+    party's votes and its leader. Omit `level` to start at the top of the caller's scope."""
 
     required_permission = Perm.DASHBOARD_VIEW
     allowed_query_params = frozenset({"level", "parent_id", "measure"})
@@ -55,18 +56,20 @@ class ContestResultsView(StrictQueryParamsMixin, APIView):
             OpenApiParameter("parent_id", str, description="The area one level up"),
             MEASURE,
         ],
-        responses={200: s.ContestResultsSerializer},
+        responses={200: s.ElectionResultsSerializer},
     )
-    def get(self, request: Request, contest_id: UUID) -> Response:
-        services.ensure_rows_for_contest(self.actor, contest_id)
+    def get(self, request: Request, election_id: UUID) -> Response:
+        election = elections.election_for(self.actor, election_id)
+        measure = selectors.parse_measure(request.query_params.get("measure"), election)
+        services.ensure_rows_for_election(self.actor, election)
         body = selectors.results(
             self.actor,
-            contest_id,
+            election,
             level=request.query_params.get("level"),
             parent_id=self.uuid_param("parent_id"),
-            measure_raw=request.query_params.get("measure"),
+            measure=measure,
         )
-        return Response(s.ContestResultsSerializer(body).data)
+        return Response(s.ElectionResultsSerializer(body).data)
 
 
 class CoverageTimelineView(StrictQueryParamsMixin, APIView):
@@ -80,11 +83,12 @@ class CoverageTimelineView(StrictQueryParamsMixin, APIView):
         ],
         responses={200: s.CoverageTimelineSerializer},
     )
-    def get(self, request: Request, contest_id: UUID) -> Response:
-        services.ensure_rows_for_contest(self.actor, contest_id)
+    def get(self, request: Request, election_id: UUID) -> Response:
+        election = elections.election_for(self.actor, election_id)
+        services.ensure_rows_for_election(self.actor, election)
         body = selectors.coverage_timeline(
             self.actor,
-            contest_id,
+            election,
             interval=request.query_params.get("interval", "hour"),
             parent_id=self.uuid_param("parent_id"),
         )

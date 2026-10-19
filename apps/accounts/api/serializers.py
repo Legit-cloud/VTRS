@@ -3,7 +3,7 @@ from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from apps.accounts.domain.contact import mask_email, mask_phone
-from apps.accounts.models import Device, Invitation, Membership
+from apps.accounts.models import Invitation, Membership
 from apps.core.api.serializers import StrictSerializer
 from apps.core.domain.permissions import Perm, Role
 
@@ -39,8 +39,6 @@ class OtpVerifySerializer(StrictSerializer):
 class LoginSerializer(StrictSerializer):
     identifier = serializers.CharField(max_length=254)
     password = serializers.CharField(max_length=128, trim_whitespace=False)
-    client = serializers.ChoiceField(choices=[("WEB", "WEB"), ("MOBILE", "MOBILE")], default="WEB")
-    device_id = serializers.UUIDField(required=False, allow_null=True, default=None)
 
 
 class MfaLoginSerializer(StrictSerializer):
@@ -50,7 +48,6 @@ class MfaLoginSerializer(StrictSerializer):
 
 class RefreshSerializer(StrictSerializer):
     refresh_token = serializers.CharField(max_length=128)
-    device_id = serializers.UUIDField(required=False, allow_null=True, default=None)
 
 
 class PasswordForgotSerializer(StrictSerializer):
@@ -67,23 +64,11 @@ class InvitationAcceptSerializer(StrictSerializer):
     token = serializers.CharField(max_length=128)
 
 
-class DeviceRegistrationSerializer(StrictSerializer):
-    platform = serializers.ChoiceField(choices=[("ANDROID", "ANDROID"), ("IOS", "IOS")])
-    app_version = serializers.CharField(max_length=32)
-    public_key = serializers.CharField(
-        max_length=4096, required=False, allow_blank=True, default=""
-    )
-    push_token = serializers.CharField(
-        max_length=4096, required=False, allow_blank=True, default=""
-    )
-
-
 class InvitationCompleteSerializer(StrictSerializer):
     token = serializers.CharField(max_length=128)
     challenge_id = serializers.UUIDField()
     code = serializers.RegexField(r"^\d{6}$")
     password = serializers.CharField(max_length=128, trim_whitespace=False)
-    device = DeviceRegistrationSerializer(required=False, allow_null=True, default=None)
 
 
 class MfaCodeSerializer(StrictSerializer):
@@ -119,7 +104,6 @@ class TokenPairSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
     refresh_expires_at = serializers.DateTimeField()
     session_id = serializers.UUIDField()
-    device_id = serializers.UUIDField(allow_null=True)
 
 
 class LoginResponseSerializer(serializers.Serializer):
@@ -132,7 +116,6 @@ class LoginResponseSerializer(serializers.Serializer):
     refresh_token = serializers.CharField(required=False)
     refresh_expires_at = serializers.DateTimeField(required=False)
     session_id = serializers.UUIDField(required=False)
-    device_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class RegistrationResponseSerializer(serializers.Serializer):
@@ -220,12 +203,6 @@ class MemberSerializer(serializers.ModelSerializer):
         return {"type": obj.scope_type, "ids": [str(i) for i in obj.scope_ids]}
 
 
-class DeviceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Device
-        fields = ("id", "platform", "app_version", "status", "created_at", "last_seen_at")
-
-
 class InvitationSerializer(serializers.ModelSerializer):
     email = serializers.SerializerMethodField()
     phone = serializers.SerializerMethodField()
@@ -272,4 +249,3 @@ class MeSerializer(serializers.Serializer):
     permissions = serializers.ListField(child=serializers.CharField())
     mfa_enabled = serializers.BooleanField()
     mfa_required = serializers.BooleanField()
-    device_id = serializers.UUIDField(allow_null=True)

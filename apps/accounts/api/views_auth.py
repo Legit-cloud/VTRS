@@ -121,9 +121,7 @@ class RefreshView(PublicView):
     )
     def post(self, request: Request) -> Response:
         data = _valid(s.RefreshSerializer, request)
-        return Response(
-            sessions.refresh(data["refresh_token"], device_id=data["device_id"]).as_dict()
-        )
+        return Response(sessions.refresh(data["refresh_token"]).as_dict())
 
 
 class LogoutView(APIView):

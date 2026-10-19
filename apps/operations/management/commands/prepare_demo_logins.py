@@ -2,11 +2,12 @@
 
 `simulate_election_day` mints tokens for its users, so none of them has a password. This turns
 the latest simulated organization into something a person (or the browser tests in
-`frontend/e2e`) can use: the admin, a ward officer and an LGA officer, each with a password.
+`frontend/e2e`) can use: the admin, a ward coordinator, an LGA coordinator and one agent,
+each with a password.
 The admin has no second factor yet, so signing in walks through enrolment.
 
 Development databases only, like the simulator. Safe to run again: it resets the passwords and
-switches the second factor off for these three accounts.
+switches the second factor off for these accounts.
 """
 
 import os
@@ -20,7 +21,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import Membership, User, UserStatus
-from apps.assignments.models import AgentAssignment
+from apps.assignments.models import AgentAssignment, AssignmentStatus
 from apps.core.crypto import blind_index
 from apps.core.rls import system_context
 from apps.elections.models import Election
@@ -52,9 +53,15 @@ class Command(BaseCommand):
                 .order_by("-created_at")
                 .first()
             )
+            # A still-deployed agent: a browser test may have deactivated an earlier one.
             first = (
-                AgentAssignment.objects.filter(election=election)
+                AgentAssignment.objects.filter(
+                    election=election,
+                    status=AssignmentStatus.ACTIVE,
+                    agent__status=UserStatus.ACTIVE,
+                )
                 .select_related("polling_unit")
+                .order_by("polling_unit__inec_code")
                 .first()
                 if election
                 else None
@@ -73,9 +80,6 @@ class Command(BaseCommand):
             admin.mfa_enabled = False
             admin.status = UserStatus.ACTIVE
             admin.save()
-
-            election.review_enabled = True
-            election.save(update_fields=["review_enabled"])
 
             def person(email: str, name: str, role: str, scope_type: str, scope_ids: list) -> None:
                 index = blind_index("email", email)
@@ -102,6 +106,21 @@ class Command(BaseCommand):
             unit = first.polling_unit
             person(f"ward@{DOMAIN}", "Tunde Okafor", "WARD_OFFICER", "WARD", [unit.ward_id])
             person(f"lga@{DOMAIN}", "Funmi Adeyemi", "LGA_OFFICER", "LGA", [unit.lga_id])
+            # The first deployed agent signs in to the same web app, from a phone browser.
+            agent = User.objects.get(id=first.agent_id)
+            agent_email = f"agent@{DOMAIN}"
+            agent_index = blind_index("email", agent_email)
+            # The address moves to this agent; whoever had it before keeps their history.
+            for previous in User.objects.filter(email_index=agent_index).exclude(id=agent.id):
+                previous.email = f"retired-{previous.id}@{DOMAIN}"
+                previous.email_index = blind_index("email", previous.email)
+                previous.save()
+            agent.email = agent_email
+            agent.email_index = agent_index
+            agent.full_name = "Kemi Adebayo"
+            agent.password = password
+            agent.mfa_enabled = False
+            agent.save()
 
         # A platform operator, and registrations waiting for them to decide on.
         operator_password = options["password"] + "-ops"
@@ -131,8 +150,9 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Ready: {org.name}, election {election.name}.\n"
             f"  admin@{DOMAIN} (party admin, no second factor yet)\n"
-            f"  ward@{DOMAIN}  (ward officer)\n"
-            f"  lga@{DOMAIN}   (LGA officer)\n"
+            f"  ward@{DOMAIN}  (ward coordinator)\n"
+            f"  lga@{DOMAIN}   (LGA coordinator)\n"
+            f"  agent@{DOMAIN} (polling unit agent, {unit.inec_code})\n"
             f"  password: {options['password']}\n"
             f"  ops@{DOMAIN}   (platform operator, no second factor yet)\n"
             f"  password: {operator_password}"

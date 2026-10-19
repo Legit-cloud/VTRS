@@ -30,10 +30,8 @@ if any(
             "Twilio needs VTRS_TWILIO_ACCOUNT_SID, VTRS_TWILIO_AUTH_TOKEN and "
             "VTRS_PUBLIC_BASE_URL (for delivery receipts)"
         )
-if VTRS_PUSH_PROVIDER.endswith("FcmPushProvider") and not VTRS_FCM_SERVICE_ACCOUNT_JSON:
-    raise ImproperlyConfigured("VTRS_FCM_SERVICE_ACCOUNT_JSON is required for push")
-if VTRS_PUSH_PROVIDER.endswith("FakePushProvider"):
-    raise ImproperlyConfigured("Production cannot use the fake push provider")
+if not VTRS_INVITATION_LINK.startswith("https://"):
+    raise ImproperlyConfigured("VTRS_INVITATION_LINK must point at the web app over HTTPS")
 if VTRS_FEATURE_WHATSAPP_ALERTS and VTRS_WHATSAPP_PROVIDER.endswith("FakeWhatsAppProvider"):
     raise ImproperlyConfigured("WhatsApp alerts are on but the provider is the fake")
 if VTRS_EVIDENCE_STORAGE != "s3":

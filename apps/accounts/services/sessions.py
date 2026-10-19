@@ -3,8 +3,7 @@
 - Access token: 10-minute EdDSA JWT.
 - Refresh token: opaque 256-bit, stored hashed, rotated on every use. Presenting a used token
   again revokes the whole session (reuse detection).
-- Mobile sessions slide (7 days from last refresh) and are bound to the registered device.
-  Web sessions end 12 hours after sign-in, whatever happens.
+- Sessions end 12 hours after sign-in, whatever happens: one election-day shift.
 - Emergency revocation: bump the user's session_version and deny-list the session id for the
   access-token lifetime.
 """
@@ -28,7 +27,6 @@ from .. import tokens
 from ..domain.codes import generate_token, hash_token
 from ..errors import InvalidRefreshToken, TokenRevoked
 from ..models import (
-    Device,
     Membership,
     MembershipStatus,
     RefreshToken,
@@ -48,9 +46,6 @@ class TokenPair:
     refresh_token: str
     refresh_expires_at: datetime
     session_id: UUID
-    # The device the session is bound to. A mobile client needs it to sign in again and to
-    # sign every submission, and the server creates it, so the client cannot invent it.
-    device_id: UUID | None = None
 
     def as_dict(self) -> dict[str, str | None]:
         return {
@@ -60,13 +55,10 @@ class TokenPair:
             "refresh_token": self.refresh_token,
             "refresh_expires_at": self.refresh_expires_at.isoformat(),
             "session_id": str(self.session_id),
-            "device_id": str(self.device_id) if self.device_id else None,
         }
 
 
-def _session_lifetime(client: str) -> timedelta:
-    if client == SessionClient.MOBILE:
-        return timedelta(days=settings.VTRS_MOBILE_SESSION_DAYS)
+def _session_lifetime() -> timedelta:
     return timedelta(hours=settings.VTRS_WEB_SESSION_HOURS)
 
 
@@ -90,17 +82,15 @@ def start_session(
     *,
     user: User,
     membership: Membership,
-    client: str,
-    device: Device | None,
+    client: str = SessionClient.WEB,
     mfa_at: datetime | None,
     ip: str | None,
 ) -> TokenPair:
     now = timezone.now()
     session = Session.objects.create(
         user=user,
-        device=device,
         client=client,
-        expires_at=now + _session_lifetime(client),
+        expires_at=now + _session_lifetime(),
         last_used_at=now,
         mfa_at=mfa_at,
         ip=ip,
@@ -114,9 +104,7 @@ def start_session(
         organization_id=membership.organization_id,
         diff={"user_id": user.id, "client": client, "mfa": mfa_at is not None},
     )
-    return TokenPair(
-        access, access_expires, refresh, session.expires_at, session.id, session.device_id
-    )
+    return TokenPair(access, access_expires, refresh, session.expires_at, session.id)
 
 
 def _deny(session_id: UUID) -> None:
@@ -150,7 +138,7 @@ def active_membership(user_id: UUID) -> Membership | None:
         )
 
 
-def refresh(refresh_token: str, *, device_id: UUID | None) -> TokenPair:
+def refresh(refresh_token: str) -> TokenPair:
     # Failures raise only after the transaction commits, so a reuse revocation sticks.
     pair: TokenPair | None = None
     with transaction.atomic():
@@ -180,23 +168,15 @@ def refresh(refresh_token: str, *, device_id: UUID | None) -> TokenPair:
                 and membership is not None
                 and session.user.status == UserStatus.ACTIVE
                 and membership.organization.status == OrganizationStatus.ACTIVE
-                and (session.client != SessionClient.MOBILE or session.device_id == device_id)
             ):
                 record.used_at = now
                 record.save(update_fields=["used_at"])
                 session.last_used_at = now
-                if session.client == SessionClient.MOBILE:
-                    session.expires_at = now + _session_lifetime(SessionClient.MOBILE)
-                session.save(update_fields=["last_used_at", "expires_at"])
+                session.save(update_fields=["last_used_at"])
                 new_refresh = _new_refresh_token(session)
                 access, access_expires = access_token_for(session, membership)
                 pair = TokenPair(
-                    access,
-                    access_expires,
-                    new_refresh,
-                    session.expires_at,
-                    session.id,
-                    session.device_id,
+                    access, access_expires, new_refresh, session.expires_at, session.id
                 )
     if pair is None:
         raise InvalidRefreshToken()

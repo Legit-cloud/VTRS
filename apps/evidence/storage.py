@@ -34,7 +34,9 @@ class EvidenceStorage(Protocol):
     def presign_upload(
         self, key: str, *, mime: str, sha256_hex: str, size: int
     ) -> PresignedUpload: ...
-    def presign_download(self, key: str, *, filename: str) -> str: ...
+    def presign_download(
+        self, key: str, *, filename: str, inline: bool = False, expires_in: int | None = None
+    ) -> str: ...
     def size_of(self, key: str) -> int | None: ...
     def read(self, key: str) -> bytes: ...
     def write(self, key: str, data: bytes, *, mime: str) -> None: ...
@@ -83,15 +85,18 @@ class S3Storage:
         }
         return PresignedUpload("PUT", url, headers, expires)
 
-    def presign_download(self, key: str, *, filename: str) -> str:
+    def presign_download(
+        self, key: str, *, filename: str, inline: bool = False, expires_in: int | None = None
+    ) -> str:
+        disposition = "inline" if inline else "attachment"
         return self.client.generate_presigned_url(
             "get_object",
             Params={
                 "Bucket": self.bucket,
                 "Key": key,
-                "ResponseContentDisposition": f'attachment; filename="{filename}"',
+                "ResponseContentDisposition": f'{disposition}; filename="{filename}"',
             },
-            ExpiresIn=settings.VTRS_EVIDENCE_DOWNLOAD_URL_SECONDS,
+            ExpiresIn=expires_in or settings.VTRS_EVIDENCE_DOWNLOAD_URL_SECONDS,
         )
 
     def size_of(self, key: str) -> int | None:
@@ -142,7 +147,9 @@ class LocalStorage:
         }
         return PresignedUpload("PUT", f"local://{key}", headers, 900)
 
-    def presign_download(self, key: str, *, filename: str) -> str:
+    def presign_download(
+        self, key: str, *, filename: str, inline: bool = False, expires_in: int | None = None
+    ) -> str:
         return f"local://{key}?filename={filename}"
 
     def size_of(self, key: str) -> int | None:

@@ -19,10 +19,10 @@ EXPECTED = {
     Perm.ASSIGNMENTS_MANAGE: {Role.PARTY_ADMIN},
     Perm.RESULTS_SUBMIT: {Role.PU_AGENT},
     Perm.RESULTS_VIEW: set(Role) - {Role.PLATFORM_ADMIN},
-    Perm.RESULTS_REVIEW: {Role.PARTY_ADMIN, Role.WARD_OFFICER},
+    Perm.RESULTS_REVIEW: {Role.PARTY_ADMIN, Role.LGA_OFFICER, Role.WARD_OFFICER},
     Perm.ANOMALIES_VIEW: {Role.PARTY_ADMIN, Role.LGA_OFFICER, Role.WARD_OFFICER},
     Perm.ANOMALIES_RESOLVE: {Role.PARTY_ADMIN, Role.LGA_OFFICER},
-    Perm.EVIDENCE_VIEW: {Role.PARTY_ADMIN, Role.PU_AGENT},
+    Perm.EVIDENCE_VIEW: {Role.PARTY_ADMIN, Role.LGA_OFFICER, Role.WARD_OFFICER, Role.PU_AGENT},
     Perm.EVIDENCE_EXPORT: {Role.PARTY_ADMIN},
     Perm.REPORTS_EXPORT: {Role.PARTY_ADMIN},
     Perm.AUDIT_VIEW: {Role.PARTY_ADMIN},
@@ -41,8 +41,9 @@ def test_role_matrix(perm):
 
 
 def test_grants_only_apply_where_the_role_allows_them():
-    assert Perm.EVIDENCE_VIEW in effective_permissions(Role.LGA_OFFICER, {Perm.EVIDENCE_VIEW})
-    assert Perm.RESULTS_REVIEW in effective_permissions(Role.LGA_OFFICER, {Perm.RESULTS_REVIEW})
+    assert Perm.EVIDENCE_EXPORT in effective_permissions(Role.LGA_OFFICER, {Perm.EVIDENCE_EXPORT})
+    assert Perm.REPORTS_EXPORT in effective_permissions(Role.LGA_OFFICER, {Perm.REPORTS_EXPORT})
+    assert Perm.EVIDENCE_EXPORT not in effective_permissions(Role.LGA_OFFICER)
     # A ward officer can never be granted exports, nor an agent the audit log.
     assert Perm.EVIDENCE_EXPORT not in effective_permissions(
         Role.WARD_OFFICER, {Perm.EVIDENCE_EXPORT}

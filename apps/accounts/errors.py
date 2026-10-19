@@ -22,12 +22,6 @@ class OrganizationNotActive(APIException):
     default_code = "organization_not_active"
 
 
-class DeviceNotRegistered(APIException):
-    status_code = 403
-    default_detail = "This device is not registered for the account."
-    default_code = "device_not_registered"
-
-
 class InvalidRefreshToken(CommitsSideEffects, APIException):
     status_code = 401
     default_detail = "The refresh token is not valid."

@@ -30,7 +30,6 @@ def _stale_client(f):
         user=f.admin.user,
         membership=f.admin.membership,
         client="WEB",
-        device=None,
         mfa_at=timezone.now() - timedelta(hours=2),
         ip=None,
     )
@@ -151,9 +150,13 @@ def test_programme_analytics(field_):
     }
     assert body["capture"]["polling_units_reported"] == 3
     assert body["capture"]["submission_completion_pct"] == 37.5
-    assert body["sync"]["submissions"] == 3
-    assert body["sync"]["offline_pct"] == pytest.approx(33.3, abs=0.1)
-    assert body["sync"]["average_sync_delay_seconds"] > 40 * 60
+    # Three results, none with its sheet yet, so none complete.
+    assert body["submission"]["submissions"] == 3
+    assert body["submission"]["complete"] == 0
+    assert body["submission"]["complete_pct"] == 0.0
+    # Two arrived at once and one 45 minutes after capture: the median is the quick ones.
+    assert body["submission"]["median_receipt_delay_seconds"] < 60
+    assert body["submission"]["p90_receipt_delay_seconds"] is None
     assert body["invitations"]["sent"] == 0
     assert body["integrity"]["flags_raised"] >= 0
 

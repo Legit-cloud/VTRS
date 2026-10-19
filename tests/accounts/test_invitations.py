@@ -6,7 +6,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from apps.accounts.models import Device, Invitation, Membership
+from apps.accounts.models import Invitation, Membership
 from apps.core.domain.permissions import Role
 from apps.core.rls import system_context
 from apps.geography.domain.synthetic import synthetic_master_data
@@ -15,7 +15,6 @@ from apps.geography.services import import_master_data
 
 pytestmark = pytest.mark.django_db
 AGENT_PHONE = "08035550001"
-DEVICE = {"platform": "ANDROID", "app_version": "1.2.0", "public_key": "pk", "push_token": "fcm"}
 
 
 @pytest.fixture
@@ -48,7 +47,7 @@ def _agent_invite(client, pu_ids, key="inv-1"):
     )
 
 
-def _accept(client, inbox, device=DEVICE):
+def _accept(client, inbox):
     token = inbox.last_invitation_token("+2348035550001")
     started = client.post("/api/v1/auth/invitations/accept", {"token": token}, format="json").json()
     assert started["destination_hint"] == "***********001"
@@ -59,7 +58,6 @@ def _accept(client, inbox, device=DEVICE):
             "challenge_id": started["challenge_id"],
             "code": inbox.last_code("+2348035550001"),
             "password": "agent-strong-passphrase",
-            "device": device,
         },
         format="json",
     )
@@ -84,26 +82,14 @@ def test_agent_onboarding_end_to_end(geography, admin, admin_client, api_client,
     assert "results.submit" in me["permissions"]
     assert me["organization"]["id"] == str(admin.organization.id)
 
-    device = Device.objects.get(user_id=me["user_id"])
-    assert (device.platform, device.app_version, device.status) == ("ANDROID", "1.2.0", "ACTIVE")
-
-    # The app has no other way to learn its device id, and every login and submission needs it.
-    assert tokens["device_id"] == str(device.id)
-    assert me["device_id"] == str(device.id)
-
-    # The agent can sign in again only from that device.
+    # The agent signs in again to the same web app, from any browser: no device binding.
+    assert "device_id" not in tokens and "device_id" not in me
     login = api_client.post(
         "/api/v1/auth/login",
-        {
-            "identifier": AGENT_PHONE,
-            "password": "agent-strong-passphrase",
-            "client": "MOBILE",
-            "device_id": str(device.id),
-        },
+        {"identifier": AGENT_PHONE, "password": "agent-strong-passphrase"},
         format="json",
     )
-    assert login.status_code == 200
-    assert login.json()["device_id"] == str(device.id)
+    assert login.status_code == 200, login.json()
 
     # Agents cannot manage the team.
     assert api_client.get("/api/v1/users").json()["code"] == "forbidden"
@@ -160,18 +146,10 @@ def test_otp_from_another_invitation_does_not_work(geography, admin_client, api_
             "challenge_id": challenge_b,
             "code": inbox.last_code("+2348035550002"),
             "password": "agent-strong-passphrase",
-            "device": DEVICE,
         },
         format="json",
     )
     assert response.json()["code"] == "invitation_invalid"
-
-
-def test_agents_must_register_a_device(geography, admin_client, api_client, inbox):
-    _agent_invite(admin_client, PollingUnit.objects.values_list("id", flat=True)[:1])
-    response = _accept(api_client, inbox, device=None)
-    assert response.status_code == 400
-    assert "device" in response.json()["errors"]
 
 
 def test_ward_officer_invited_by_email(geography, admin_client, api_client, inbox):
@@ -180,7 +158,6 @@ def test_ward_officer_invited_by_email(geography, admin_client, api_client, inbo
         admin_client,
         role="WARD_OFFICER",
         scope_ids=[str(ward.id)],
-        granted_permissions=["evidence.view"],
         email="ward.officer@party.example",
     )
     assert response.status_code == 201
@@ -203,7 +180,8 @@ def test_ward_officer_invited_by_email(geography, admin_client, api_client, inbo
     with system_context():
         membership = Membership.objects.get(role="WARD_OFFICER")
     assert membership.scope_ids == [ward.id]
-    assert membership.granted_permissions == ["evidence.view"]
+    # Coordinators see their area's sheets by role; nothing needs granting.
+    assert membership.granted_permissions == []
 
 
 @pytest.mark.parametrize(
