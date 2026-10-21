@@ -25,8 +25,7 @@ import {
 type Status = "loading" | "anonymous" | "authenticated";
 
 export type LoginOutcome =
-  | { kind: "signed-in"; enrolmentRequired: boolean }
-  | { kind: "mfa"; mfaToken: string; enrolmentRequired: boolean };
+  { kind: "signed-in" } | { kind: "mfa"; mfaToken: string; destinationHint: string };
 
 interface AuthState {
   status: Status;
@@ -36,7 +35,7 @@ interface AuthState {
   verifyMfa: (mfaToken: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   reloadMe: () => Promise<void>;
-  /** Swap in the token a step-up or TOTP confirmation returned. */
+  /** Swap in the token a step-up returned. */
   adoptToken: (token: string, expiresAt: string) => void;
 }
 
@@ -122,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     }
     // Signed-in visitors to /login are moved on by the login page itself, which knows where
-    // they were going (and whether they still have to set up a second factor).
+    // they were going.
   }, [status, pathname, router]);
 
   const value = useMemo<AuthState>(() => {
@@ -135,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const result = await postSession<{
           mfa_required: boolean;
           mfa_token?: string;
-          mfa_enrolment_required?: boolean;
+          destination_hint?: string;
           access_token?: string;
           access_expires_at?: string;
         }>("/session/login", { identifier, password });
@@ -143,12 +142,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return {
             kind: "mfa",
             mfaToken: result.mfa_token,
-            enrolmentRequired: result.mfa_enrolment_required ?? false,
+            destinationHint: result.destination_hint ?? "your email",
           };
         }
         setAccessToken(result.access_token ?? null, result.access_expires_at);
         await loadMe();
-        return { kind: "signed-in", enrolmentRequired: result.mfa_enrolment_required ?? false };
+        return { kind: "signed-in" };
       },
       async verifyMfa(mfaToken, code) {
         const tokens = await postSession<{ access_token: string; access_expires_at: string }>(

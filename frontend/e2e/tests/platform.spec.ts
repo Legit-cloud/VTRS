@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { OFFICER, nextTotpWindow, signIn, totp } from "./helpers";
+import { OFFICER, signIn } from "./helpers";
 
 const OPS = {
   identifier: process.env.E2E_OPS_ID ?? "ops@demo.example",
@@ -21,7 +21,6 @@ test.describe("platform operator", () => {
   test.describe.configure({ mode: "serial" });
 
   let context: BrowserContext;
-  let secret = "";
 
   test.beforeAll(async ({ browser }) => {
     context = await browser.newContext();
@@ -30,27 +29,10 @@ test.describe("platform operator", () => {
     await context.close();
   });
 
-  test("enrols an authenticator before seeing anything else", async () => {
-    const page = await context.newPage();
-    await signIn(page, OPS);
-    await expect(page).toHaveURL(/\/settings/);
-    await page.getByRole("button", { name: "Set up authenticator" }).click();
-    const box = page.locator("code.mono").first();
-    await expect(box).toBeVisible();
-    secret = (await box.innerText()).trim();
-    await page.getByLabel("6-digit code from the app").fill(totp(secret));
-    await page.getByRole("button", { name: "Turn on authenticator" }).click();
-    await expect(page.getByText("Save your recovery codes")).toBeVisible();
-    await page.close();
-  });
-
   test("signs in to chrome that is unmistakably the platform's", async ({ browser }) => {
-    await nextTotpWindow();
     const fresh = await browser.newContext();
     const page = await fresh.newPage();
     await signIn(page, OPS);
-    await page.getByLabel("Authenticator code").fill(totp(secret));
-    await page.getByRole("button", { name: "Verify" }).click();
 
     await expect(page).toHaveURL(/\/platform/);
     const nav = page.getByRole("navigation", { name: "Main" });

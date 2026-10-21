@@ -195,9 +195,6 @@ export function OrgPanel({
                     <p className="text-subtle-foreground">
                       {a.email} · {a.phone || "no phone"}
                     </p>
-                    <p className="text-caption text-subtle-foreground">
-                      {a.mfa_enabled ? "Second factor on" : "No second factor yet"}
-                    </p>
                   </li>
                 ))}
               </ul>

@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from apps.accounts.models import PasswordResetToken, Session
 
-from ..conftest import PASSWORD
+from ..conftest import PASSWORD, sign_in
 
 pytestmark = pytest.mark.django_db
 NEW_PASSWORD = "a-brand-new-long-passphrase"
@@ -39,9 +39,7 @@ def test_reset_flow_revokes_sessions(api_client, make_member, inbox, token_for):
         "/api/v1/auth/login", {"identifier": member.email, "password": PASSWORD}, format="json"
     )
     assert login.json()["code"] == "invalid_credentials"
-    login = api_client.post(
-        "/api/v1/auth/login", {"identifier": member.email, "password": NEW_PASSWORD}, format="json"
-    )
+    login = sign_in(api_client, member.email, NEW_PASSWORD)
     assert login.status_code == 200
 
     assert (

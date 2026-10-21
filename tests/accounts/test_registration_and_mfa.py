@@ -1,12 +1,16 @@
-"""AC-01: register an organization, verify by OTP, operator approval, admin MFA enrolment."""
+"""AC-01: register an organization, verify by OTP, operator approval; then every sign-in and
+every sensitive action needs a code sent to the account's email."""
+
+from datetime import timedelta
 
 import pytest
 from django.core.management import call_command
-from django_otp.oath import totp
-from django_otp.plugins.otp_totp.models import TOTPDevice
+from django.utils import timezone
 
-from apps.accounts.models import Membership, User, UserStatus
+from apps.accounts.domain.contact import mask_email
+from apps.accounts.models import Membership, OtpChallenge, User, UserStatus
 from apps.audit.models import AuditEvent
+from apps.core.domain.permissions import Role
 from apps.core.rls import system_context
 from apps.organizations.models import Organization, OrganizationStatus
 
@@ -36,9 +40,10 @@ def _login(api_client, identifier="ada@party.example", password=PASSWORD):
     )
 
 
-def _current_totp(user_id):
-    device = TOTPDevice.objects.get(user_id=user_id)
-    return f"{totp(device.bin_key, step=device.step, digits=device.digits):06d}"
+def _code(api_client, mfa_token, code):
+    return api_client.post(
+        "/api/v1/auth/login/mfa", {"mfa_token": mfa_token, "code": code}, format="json"
+    )
 
 
 def test_full_registration_flow(api_client, inbox):
@@ -65,26 +70,18 @@ def test_full_registration_flow(api_client, inbox):
 
     call_command("approve_organization", org_id, "--operator", "ops@vtrs")
     login = _login(api_client).json()
-    assert login["mfa_required"] is False
-    assert login["mfa_enrolment_required"] is True  # admins must enrol MFA
+    # The password alone is not enough: a code went to the signer's email.
+    assert login["mfa_required"] is True
+    assert login["destination_hint"] == "a***@party.example"
+    assert "access_token" not in login
+    tokens = _code(api_client, login["mfa_token"], inbox.last_code("ada@party.example")).json()
 
     admin = api_client.__class__(api_client._capture)
-    admin.credentials(HTTP_AUTHORIZATION=f"Bearer {login['access_token']}")
+    admin.credentials(HTTP_AUTHORIZATION=f"Bearer {tokens['access_token']}")
     me = admin.get("/api/v1/me").json()
-    assert (me["role"], me["mfa_required"], me["mfa_enabled"]) == ("PARTY_ADMIN", True, False)
+    assert (me["role"], me["mfa_required"]) == ("PARTY_ADMIN", True)
+    assert "mfa_enabled" not in me
     assert me["email"] == "ada@party.example"
-
-    # Privileged endpoints refuse until a second factor is enrolled.
-    assert admin.get("/api/v1/users").json()["code"] == "mfa_required"
-
-    setup = admin.post("/api/v1/auth/mfa/totp/setup").json()
-    assert setup["otpauth_uri"].startswith("otpauth://totp/")
-    confirm = admin.post(
-        "/api/v1/auth/mfa/totp/confirm", {"code": _current_totp(user.id)}, format="json"
-    ).json()
-    assert len(confirm["recovery_codes"]) == 10
-
-    admin.credentials(HTTP_AUTHORIZATION=f"Bearer {confirm['access_token']}")
     assert admin.get("/api/v1/users").status_code == 200
 
     actions = set(AuditEvent.objects.values_list("action", flat=True))
@@ -93,48 +90,136 @@ def test_full_registration_flow(api_client, inbox):
         "organization.signer_verified",
         "organization.approved",
         "auth.signed_in",
-        "auth.mfa_enrolled",
     } <= actions
 
 
-def test_next_login_asks_for_the_second_factor(api_client, inbox, make_member):
-    member = make_member(mfa_enabled=True)
-    TOTPDevice.objects.create(user=member.user, name="authenticator", confirmed=True)
+@pytest.mark.parametrize("role", list(Role))
+def test_every_role_signs_in_with_an_emailed_code(api_client, inbox, make_member, role):
+    member = make_member(role)
     first = _login(api_client, member.email).json()
-    assert first == {"mfa_required": True, "mfa_token": first["mfa_token"]}
+    assert set(first) == {"mfa_required", "mfa_token", "challenge_id", "destination_hint"}
+    code = inbox.last_code(member.email)
+    assert "sign in to VTRS" in inbox.messages(member.email)[-1]
 
-    ok = api_client.post(
-        "/api/v1/auth/login/mfa",
-        {"mfa_token": first["mfa_token"], "code": _current_totp(member.user.id)},
-        format="json",
+    ok = _code(api_client, first["mfa_token"], code)
+    assert ok.status_code == 200, ok.json()
+    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {ok.json()['access_token']}")
+    assert api_client.get("/api/v1/me").json()["role"] == role
+    # Used once only.
+    assert _code(api_client, first["mfa_token"], code).json()["code"] == "mfa_invalid"
+
+
+def test_wrong_codes_run_out(api_client, inbox, make_member):
+    member = make_member(Role.PU_AGENT)
+    first = _login(api_client, member.email).json()
+    code = inbox.last_code(member.email)
+    wrong = "000000" if code != "000000" else "111111"
+    for _ in range(5):
+        assert _code(api_client, first["mfa_token"], wrong).json()["code"] == "mfa_invalid"
+    # After five misses even the right code is refused; the agent signs in again.
+    assert _code(api_client, first["mfa_token"], code).json()["code"] == "mfa_invalid"
+
+
+def test_a_code_only_works_with_its_own_sign_in(api_client, inbox, make_member, client_as):
+    alice, bob = make_member(Role.WARD_OFFICER), make_member(Role.WARD_OFFICER)
+    alice_login = _login(api_client, alice.email).json()
+    _login(api_client, bob.email)
+    bob_code = inbox.last_code(bob.email)
+    assert _code(api_client, alice_login["mfa_token"], bob_code).json()["code"] == "mfa_invalid"
+    assert _code(api_client, "forged", bob_code).json()["code"] == "mfa_invalid"
+
+    # A step-up code is not a sign-in code.
+    step = client_as(alice).post("/api/v1/auth/mfa/step-up/request").json()
+    step_code = inbox.last_code(alice.email)
+    assert step["challenge_id"] != alice_login["challenge_id"]
+    assert _code(api_client, alice_login["mfa_token"], step_code).json()["code"] == "mfa_invalid"
+
+
+def test_signing_in_twice_quickly_sends_one_email(api_client, inbox, make_member):
+    member = make_member(Role.PU_AGENT)
+    first = _login(api_client, member.email).json()
+    second = _login(api_client, member.email).json()
+    assert first["challenge_id"] == second["challenge_id"]
+    assert len(inbox.messages(member.email)) == 1
+    # Either token works with that one code.
+    code = inbox.last_code(member.email)
+    assert _code(api_client, second["mfa_token"], code).status_code == 200
+
+
+def test_resend_waits_a_minute(api_client, inbox, make_member):
+    member = make_member(Role.PU_AGENT)
+    first = _login(api_client, member.email).json()
+    resend = {"mfa_token": first["mfa_token"]}
+    too_soon = api_client.post("/api/v1/auth/login/mfa/resend", resend, format="json")
+    assert too_soon.json()["code"] == "otp_resend_too_soon"
+
+    OtpChallenge.objects.filter(id=first["challenge_id"]).update(
+        last_sent_at=timezone.now() - timedelta(minutes=2)
     )
-    assert ok.status_code == 200
-    assert "access_token" in ok.json()
-
-    wrong = api_client.post(
-        "/api/v1/auth/login/mfa", {"mfa_token": first["mfa_token"], "code": "000000"}, format="json"
+    assert (
+        api_client.post("/api/v1/auth/login/mfa/resend", resend, format="json").status_code == 202
     )
-    assert wrong.json()["code"] == "mfa_invalid"
-    # django-otp also throttles the device after a failure, so a guessing run slows down.
-    device = TOTPDevice.objects.get(user=member.user)
-    assert device.throttling_failure_count == 1
+    assert len(inbox.messages(member.email)) == 2
+    assert _code(api_client, first["mfa_token"], inbox.last_code(member.email)).status_code == 200
 
 
-def test_recovery_code_works_once(api_client, make_member, client_as):
+def test_an_account_without_email_cannot_get_a_code(api_client, make_member):
+    member = make_member(Role.PU_AGENT)
+    User.objects.filter(id=member.user.id).update(email="", email_index=None)
+    response = _login(api_client, member.phone)
+    assert response.status_code == 403
+    assert response.json()["code"] == "email_required"
+
+
+def test_sessions_without_the_code_are_shut_out(make_member, client_as):
+    agent = client_as(make_member(Role.PU_AGENT), mfa=False)
+    assert agent.get("/api/v1/me").status_code == 200  # to find out who they are
+    assert agent.get("/api/v1/me/assignments").json()["code"] == "mfa_required"
+
+
+def test_development_settings_can_turn_codes_off(api_client, make_member, settings):
+    settings.VTRS_ENFORCE_MFA = False
+    member = make_member(Role.PU_AGENT)
+    body = _login(api_client, member.email).json()
+    assert body["mfa_required"] is False
+    assert "access_token" in body
+
+
+def test_step_up_by_email(make_member, client_as, inbox):
     member = make_member()
-    client = client_as(member, mfa=False)
-    client.post("/api/v1/auth/mfa/totp/setup")
-    codes = client.post(
-        "/api/v1/auth/mfa/totp/confirm",
-        {"code": _current_totp(member.user.id)},
-        format="json",
-    ).json()["recovery_codes"]
+    client = client_as(member)
+    sent = client.post("/api/v1/auth/mfa/step-up/request")
+    assert sent.status_code == 202
+    body = sent.json()
+    assert body["destination_hint"] == mask_email(member.email)
+    assert "confirm a change in VTRS" in inbox.messages(member.email)[-1]
 
-    first = _login(api_client, member.email).json()
-    use = {"mfa_token": first["mfa_token"], "code": codes[0].lower()}
-    assert api_client.post("/api/v1/auth/login/mfa", use, format="json").status_code == 200
-    again = api_client.post("/api/v1/auth/login/mfa", use, format="json")
-    assert again.json()["code"] == "mfa_invalid"
+    wrong = client.post(
+        "/api/v1/auth/mfa/step-up",
+        {"challenge_id": body["challenge_id"], "code": "12345"},
+        format="json",
+    )
+    assert wrong.status_code == 400
+    ok = client.post(
+        "/api/v1/auth/mfa/step-up",
+        {"challenge_id": body["challenge_id"], "code": inbox.last_code(member.email)},
+        format="json",
+    )
+    assert ok.status_code == 200, ok.json()
+    assert ok.json()["access_token"]
+    assert AuditEvent.objects.filter(action="auth.mfa_step_up").count() == 1
+
+
+def test_someone_elses_step_up_code_does_not_work(make_member, client_as, inbox):
+    alice = make_member()
+    bob = make_member(organization=alice.organization)
+    body = client_as(bob).post("/api/v1/auth/mfa/step-up/request").json()
+    stolen = client_as(alice).post(
+        "/api/v1/auth/mfa/step-up",
+        {"challenge_id": body["challenge_id"], "code": inbox.last_code(bob.email)},
+        format="json",
+    )
+    assert stolen.json()["code"] == "mfa_invalid"
 
 
 def test_duplicate_contact_is_rejected(api_client):

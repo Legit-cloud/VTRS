@@ -56,7 +56,7 @@ def test_the_audit_trail_is_for_admins_and_stays_in_the_organization(
     )
 
     other_org = make_org("Another Party")
-    stranger = client_as(make_member(Role.PARTY_ADMIN, organization=other_org, mfa_enabled=True))
+    stranger = client_as(make_member(Role.PARTY_ADMIN, organization=other_org))
     assert stranger.get("/api/v1/audit/events", {"action": "result."}).json()["results"] == []
 
     ward = f.client_as(f.officer(Role.WARD_OFFICER, f.wards[0]))

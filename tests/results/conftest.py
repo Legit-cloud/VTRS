@@ -143,7 +143,7 @@ def scenario(make_org, make_member, django_capture_on_commit_callbacks) -> Scena
                         assigned_by_id=admin.user.id,
                     )
         session = start_session(
-            user=member.user, membership=member.membership, mfa_at=None, ip=None
+            user=member.user, membership=member.membership, mfa_at=timezone.now(), ip=None
         )
         client = CommitClient(django_capture_on_commit_callbacks)
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {session.access_token}")

@@ -62,8 +62,6 @@ INSTALLED_APPS = [
     "django.contrib.postgres",
     "rest_framework",
     "drf_spectacular",
-    "django_otp",
-    "django_otp.plugins.otp_totp",
     "apps.core",
     "apps.audit",
     "apps.organizations",
@@ -280,8 +278,6 @@ EMAIL_HOST = env("EMAIL_HOST", "localhost")
 EMAIL_PORT = int(env("EMAIL_PORT", "1025"))
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "VTRS <no-reply@vtrs.invalid>")
 
-OTP_TOTP_ISSUER = "VTRS"
-
 # --- VTRS ---------------------------------------------------------------------------------
 # Resolves the acting user (role, organization, scope) for a request.
 VTRS_ACTOR_RESOLVER = "apps.core.api.actors.actor_from_auth"
@@ -295,12 +291,14 @@ VTRS_JWT_ISSUER = "vtrs"
 VTRS_JWT_AUDIENCE = "vtrs-api"
 VTRS_ACCESS_TOKEN_SECONDS = 600
 VTRS_WEB_SESSION_HOURS = 12
-# Mandatory second factor for admins and exporters. Only development settings turn this off.
+# A one-time code by email at every sign-in, for every role, and again before sensitive
+# actions. Only a developer's own settings may turn it off.
 VTRS_ENFORCE_MFA = True
 VTRS_MFA_STEP_UP_SECONDS = 600
 
 VTRS_OTP_PEPPER = env("VTRS_OTP_PEPPER")
-VTRS_OTP_HOURLY_PER_DESTINATION = 5
+# Sign-in and step-up codes count too, so an admin's busy hour fits inside it.
+VTRS_OTP_HOURLY_PER_DESTINATION = 10
 VTRS_OTP_HOURLY_PER_IP = 20
 VTRS_SMS_ALLOWED_PREFIXES = env_list("VTRS_SMS_ALLOWED_PREFIXES", "+234")
 VTRS_SMS_PROVIDER = env("VTRS_SMS_PROVIDER")

@@ -43,6 +43,8 @@ _OTP_PURPOSE_TEXT = {
     "REGISTRATION": "verify your VTRS registration",
     "PASSWORD_RESET": "reset your VTRS password",
     "INVITATION": "accept your VTRS invitation",
+    "SIGN_IN": "sign in to VTRS",
+    "STEP_UP": "confirm a change in VTRS",
 }
 
 

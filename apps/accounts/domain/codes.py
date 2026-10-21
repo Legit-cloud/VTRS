@@ -29,12 +29,3 @@ def generate_token() -> str:
 def hash_token(token: str) -> str:
     # A plain hash suffices: tokens carry 256 bits of entropy, so there is nothing to brute-force.
     return hashlib.sha256(token.encode()).hexdigest()
-
-
-def generate_recovery_code() -> str:
-    raw = secrets.token_hex(5).upper()
-    return f"{raw[:5]}-{raw[5:]}"
-
-
-def normalize_recovery_code(code: str) -> str:
-    return code.strip().upper().replace(" ", "")

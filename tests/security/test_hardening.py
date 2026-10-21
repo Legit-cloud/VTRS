@@ -22,7 +22,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def member(make_member, make_org):
-    return make_member(Role.PARTY_ADMIN, organization=make_org("Hardening Party"), mfa_enabled=True)
+    return make_member(Role.PARTY_ADMIN, organization=make_org("Hardening Party"))
 
 
 @pytest.fixture

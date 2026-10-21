@@ -208,7 +208,6 @@ class Command(BaseCommand):
                 email=f"sim-admin-{run}@sim.example",
                 email_index=blind_index("email", f"sim-admin-{run}@sim.example"),
                 status=UserStatus.ACTIVE,
-                mfa_enabled=True,
             )
             admin_m = Membership.objects.create(
                 user=admin, organization=org, role="PARTY_ADMIN", scope_type="ORG"
@@ -286,7 +285,8 @@ class Command(BaseCommand):
             ).access_token
             agents = []
             for u, m, unit in zip(users, memberships, units, strict=True):
-                token = start_session(user=u, membership=m, mfa_at=None, ip=None).access_token
+                # As if each agent had entered their emailed sign-in code.
+                token = start_session(user=u, membership=m, mfa_at=now, ip=None).access_token
                 agents.append({"token": token, "pu": unit, "user_id": u.id})
         aggregation.rebuild_contest(organization_id=org.id, contest_id=contest.id)
         return {

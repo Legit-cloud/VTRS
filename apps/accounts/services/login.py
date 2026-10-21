@@ -1,4 +1,4 @@
-"""Password sign-in with progressive lockout and an optional second step (spec section 7).
+"""Password sign-in with progressive lockout, then a code by email (spec section 7).
 
 Unknown accounts, wrong passwords and locked accounts all get the same error. Counters and
 audit rows are written before the error is raised, so they survive the failed request.
@@ -6,6 +6,7 @@ audit rows are written before the error is raised, so they survive the failed re
 
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
@@ -15,7 +16,6 @@ from django.utils import timezone
 from apps.audit import services as audit
 from apps.core.authz import mfa_mandatory
 from apps.core.crypto import blind_index
-from apps.core.domain.permissions import Perm, Role, effective_permissions
 from apps.organizations.models import OrganizationStatus
 
 from ..domain.contact import looks_like_email, normalize_email, normalize_phone
@@ -26,8 +26,8 @@ from ..errors import (
     InvalidMfaCode,
     OrganizationNotActive,
 )
-from ..models import User, UserStatus
-from . import mfa
+from ..models import OtpPurpose, User, UserStatus
+from . import mfa, otp
 from .sessions import TokenPair, active_membership, start_session
 
 MFA_TOKEN_SALT = "vtrs.login.mfa"  # noqa: S105 - a signing namespace, not a secret
@@ -39,18 +39,19 @@ _DUMMY_HASH = make_password("timing-equalizer-not-a-password")
 class LoginResult:
     tokens: TokenPair | None = None
     mfa_token: str | None = None
-    mfa_enrolment_required: bool = False
+    code: mfa.CodeSent | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        if self.mfa_token:
-            return {"mfa_required": True, "mfa_token": self.mfa_token}
+        if self.mfa_token and self.code:
+            return {
+                "mfa_required": True,
+                "mfa_token": self.mfa_token,
+                "challenge_id": self.code.challenge_id,
+                "destination_hint": self.code.destination_hint,
+            }
         if self.tokens is None:
             raise RuntimeError("LoginResult has neither tokens nor an MFA token")
-        return {
-            "mfa_required": False,
-            "mfa_enrolment_required": self.mfa_enrolment_required,
-            **self.tokens.as_dict(),
-        }
+        return {"mfa_required": False, **self.tokens.as_dict()}
 
 
 def find_user(identifier: str) -> User | None:
@@ -109,28 +110,44 @@ def login(*, identifier: str, password: str, ip: str | None) -> LoginResult:
         raise OrganizationNotActive()
 
     User.objects.filter(id=user.id).update(failed_login_count=0, locked_until=None)
-    if user.mfa_enabled:
-        token = signing.dumps({"uid": str(user.id)}, salt=MFA_TOKEN_SALT)
-        return LoginResult(mfa_token=token)
+    if mfa_mandatory():
+        sent = mfa.send_code(user, OtpPurpose.SIGN_IN, ip=ip)
+        token = signing.dumps(
+            {"uid": str(user.id), "cid": str(sent.challenge_id)}, salt=MFA_TOKEN_SALT
+        )
+        return LoginResult(mfa_token=token, code=sent)
 
+    # Development settings may turn the code off; the session then has no second factor.
     with transaction.atomic():
         pair = start_session(user=user, membership=membership, mfa_at=None, ip=ip)
-    role = Role(membership.role)
-    granted = [Perm(p) for p in membership.granted_permissions if p in Perm._value2member_map_]
-    needs_mfa = mfa_mandatory(role, effective_permissions(role, granted))
-    return LoginResult(tokens=pair, mfa_enrolment_required=needs_mfa)
+    return LoginResult(tokens=pair)
+
+
+def _pending(mfa_token: str) -> tuple[User, UUID]:
+    try:
+        data = signing.loads(mfa_token, salt=MFA_TOKEN_SALT, max_age=MFA_TOKEN_MAX_AGE)
+        challenge_id = UUID(data["cid"])
+    except (signing.BadSignature, KeyError, ValueError):
+        raise InvalidMfaCode() from None
+    user = User.objects.filter(id=data["uid"], status=UserStatus.ACTIVE).first()
+    if user is None:
+        raise InvalidMfaCode()
+    return user, challenge_id
+
+
+def resend_code(*, mfa_token: str, ip: str | None) -> None:
+    """Send a fresh sign-in code (60-second cooldown, hourly budgets)."""
+    _, challenge_id = _pending(mfa_token)
+    otp.resend(challenge_id, ip=ip)
 
 
 def complete_mfa(*, mfa_token: str, code: str, ip: str | None) -> TokenPair:
-    try:
-        data = signing.loads(mfa_token, salt=MFA_TOKEN_SALT, max_age=MFA_TOKEN_MAX_AGE)
-    except signing.BadSignature:
-        raise InvalidMfaCode() from None
-    user = User.objects.filter(id=data["uid"], status=UserStatus.ACTIVE).first()
-    membership = active_membership(user.id) if user else None
-    if user is None or membership is None:
+    user, challenge_id = _pending(mfa_token)
+    if active_membership(user.id) is None:
         raise InvalidMfaCode()
-    if not mfa.verify_second_factor(user, code):
+    mfa.verify_code(user, challenge_id, code, OtpPurpose.SIGN_IN)
+    membership = active_membership(user.id)
+    if membership is None:  # revoked while the code was in flight
         raise InvalidMfaCode()
     with transaction.atomic():
         return start_session(user=user, membership=membership, mfa_at=timezone.now(), ip=ip)

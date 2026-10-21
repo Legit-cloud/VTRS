@@ -1,68 +1,67 @@
-"""TOTP second factor with hashed single-use recovery codes (spec section 7).
+"""Second factor: a one-time code sent to the account's email address (spec section 7).
 
-Mandatory for admins and for anyone who can export; optional for other officers.
+Every role enters a code at sign-in, and sensitive actions ask for a fresh one (step-up). The
+codes are ordinary OTP challenges (`otp`): 6 digits, 5 minutes, 5 attempts, resend cooldown and
+hourly budgets. There is no authenticator app and there are no recovery codes.
 """
 
-import base64
-import hashlib
-import hmac
 from dataclasses import dataclass
+from uuid import UUID
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
-from django_otp.plugins.otp_totp.models import TOTPDevice
 
 from apps.audit import services as audit
 from apps.core.domain.actor import Actor
 
-from ..domain.codes import generate_recovery_code, normalize_recovery_code
-from ..errors import InvalidMfaCode, TokenRevoked
-from ..models import RecoveryCode, Session, User
+from ..domain.contact import mask_email
+from ..errors import InvalidMfaCode, OtpInvalid, SignInEmailMissing, TokenRevoked
+from ..models import OtpChallenge, OtpChannel, OtpPurpose, Session, User
+from . import otp
 from .sessions import access_token_for, active_membership
-
-RECOVERY_CODE_COUNT = 10
-
-
-def _hash_recovery(code: str) -> str:
-    pepper = settings.VTRS_OTP_PEPPER.encode()
-    return hmac.new(pepper, normalize_recovery_code(code).encode(), hashlib.sha256).hexdigest()
 
 
 @dataclass(frozen=True)
-class TotpEnrolment:
-    secret_base32: str
-    otpauth_uri: str
+class CodeSent:
+    challenge_id: UUID
+    destination_hint: str
 
 
-def begin_totp(actor: Actor) -> TotpEnrolment:
-    with transaction.atomic():
-        user = User.objects.get(id=actor.user_id)
-        TOTPDevice.objects.filter(user=user, confirmed=False).delete()
-        device = TOTPDevice.objects.create(user=user, name="authenticator", confirmed=False)
-    secret = base64.b32encode(device.bin_key).decode().rstrip("=")
-    return TotpEnrolment(secret_base32=secret, otpauth_uri=device.config_url)
+def send_code(user: User, purpose: OtpPurpose, *, ip: str | None) -> CodeSent:
+    """Email a code, or hand back the one sent moments ago (a double submit sends one email)."""
+    if not user.email:
+        raise SignInEmailMissing()
+    hint = mask_email(user.email)
+    recent = (
+        OtpChallenge.objects.filter(
+            subject_id=user.id,
+            purpose=purpose,
+            consumed_at__isnull=True,
+            last_sent_at__gt=timezone.now() - otp.RESEND_COOLDOWN,
+        )
+        .order_by("-last_sent_at")
+        .first()
+    )
+    if recent is not None:
+        return CodeSent(recent.id, hint)
+    challenge = otp.start(
+        purpose=purpose,
+        channel=OtpChannel.EMAIL,
+        destination=user.email,
+        subject_id=user.id,
+        ip=ip,
+    )
+    return CodeSent(challenge.id, hint)
 
 
-def _verify_totp(user: User, code: str, *, confirmed: bool) -> bool:
-    devices = TOTPDevice.objects.filter(user=user, confirmed=confirmed)
-    return any(device.verify_token(code.strip()) for device in devices)
-
-
-def _consume_recovery_code(user: User, code: str) -> bool:
-    match = RecoveryCode.objects.filter(
-        user=user, code_hash=_hash_recovery(code), used_at__isnull=True
-    ).first()
-    if match is None:
-        return False
-    match.used_at = timezone.now()
-    match.save(update_fields=["used_at"])
-    return True
-
-
-def verify_second_factor(user: User, code: str) -> bool:
-    """TOTP first; recovery codes as a fallback. Failures are recorded by django-otp."""
-    return _verify_totp(user, code, confirmed=True) or _consume_recovery_code(user, code)
+def verify_code(user: User, challenge_id: UUID, code: str, purpose: OtpPurpose) -> None:
+    """Consume the challenge if it is this user's and the code matches. Not inside atomic()."""
+    try:
+        challenge = otp.verify(challenge_id, code, purpose=purpose)
+    except OtpInvalid:
+        raise InvalidMfaCode() from None
+    if challenge.subject_id != user.id:
+        raise InvalidMfaCode()
 
 
 def _mark_session_verified(actor: Actor) -> tuple[str, str]:
@@ -78,30 +77,14 @@ def _mark_session_verified(actor: Actor) -> tuple[str, str]:
     return token, expires.isoformat()
 
 
-def confirm_totp(actor: Actor, code: str) -> dict[str, object]:
-    """Activate the pending authenticator and hand out recovery codes (shown once)."""
-    user = User.objects.get(id=actor.user_id)
-    if not _verify_totp(user, code, confirmed=False):
-        raise InvalidMfaCode()
-    codes = [generate_recovery_code() for _ in range(RECOVERY_CODE_COUNT)]
-    with transaction.atomic():
-        TOTPDevice.objects.filter(user=user, confirmed=True).delete()
-        TOTPDevice.objects.filter(user=user, confirmed=False).update(confirmed=True)
-        RecoveryCode.objects.filter(user=user).delete()
-        RecoveryCode.objects.bulk_create(
-            RecoveryCode(user=user, code_hash=_hash_recovery(c)) for c in codes
-        )
-        User.objects.filter(id=user.id).update(mfa_enabled=True)
-        token, expires = _mark_session_verified(actor)
-        audit.record(action="auth.mfa_enrolled", object_type="user", object_id=user.id, actor=actor)
-    return {"recovery_codes": codes, "access_token": token, "access_expires_at": expires}
+def request_step_up(actor: Actor, *, ip: str | None) -> CodeSent:
+    return send_code(User.objects.get(id=actor.user_id), OtpPurpose.STEP_UP, ip=ip)
 
 
-def step_up(actor: Actor, code: str) -> dict[str, str]:
+def step_up(actor: Actor, challenge_id: UUID, code: str) -> dict[str, str]:
     """Re-confirm the second factor; returns an access token carrying a fresh mfa_at."""
     user = User.objects.get(id=actor.user_id)
-    if not verify_second_factor(user, code):
-        raise InvalidMfaCode()
+    verify_code(user, challenge_id, code, OtpPurpose.STEP_UP)
     with transaction.atomic():
         token, expires = _mark_session_verified(actor)
         audit.record(action="auth.mfa_step_up", object_type="user", object_id=user.id, actor=actor)

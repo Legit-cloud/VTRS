@@ -178,7 +178,7 @@ def test_agents_and_other_tenants_get_nothing(busy, make_org, make_member, clien
     agent = busy.agents[busy.pus[0].id].client
     assert _dashboard(agent, busy).status_code == 403
     assert _results(agent, busy).status_code == 403
-    stranger = make_member(Role.PARTY_ADMIN, organization=make_org("Other Party"), mfa_enabled=True)
+    stranger = make_member(Role.PARTY_ADMIN, organization=make_org("Other Party"))
     outsider = client_as(stranger)
     assert _dashboard(outsider, busy).status_code == 404
     assert _results(outsider, busy).status_code == 404

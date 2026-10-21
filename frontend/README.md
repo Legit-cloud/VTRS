@@ -64,10 +64,10 @@ python manage.py prepare_demo_logins
 cd frontend/e2e && npx playwright install chromium && npm test
 ```
 
-Sign-in is throttled per address; run the API with relaxed throttle rates for a test run (the
-throttles themselves are covered by the backend suite), and with the second factor enforced
-(`VTRS_ENFORCE_MFA = True`; development turns it off), because the suite walks through
-enrolment. Each run enrols the admin's authenticator from scratch, so re-run
+Sign-in is throttled per address and sign-in codes have hourly budgets; run the API with
+relaxed throttle rates and code budgets for a test run (both are covered by the backend
+suite). The suite reads each emailed code from Mailpit (`E2E_MAILBOX_URL`, default
+http://localhost:8025), so the API must send mail there, as development does. Re-run
 `prepare_demo_logins` between runs. The phone-width project signs in as the demo agent
 (`agent@demo.example`), sends a result and uploads a generated sheet photo to the object store.
 
@@ -80,8 +80,8 @@ Master data, System health, Messaging providers, Audit log.
 
 - **Who they are.** A `PLATFORM_ADMIN` membership in the platform organization. No party admin
   can grant the role and no invitation can carry it: create one on a trusted machine with
-  `python manage.py create_platform_admin --email … --name … --password …`. They enrol an
-  authenticator on first sign-in, and every decision needs a fresh code.
+  `python manage.py create_platform_admin --email … --name … --password …`. They sign in with
+  a code sent to that email, like everyone, and every decision needs a fresh code.
 - **What they see.** Organisations, their admins (contact details masked), elections and their
   lock state, directory completeness, delivery rates, platform-wide audit. Never a party's
   results, evidence or people.
@@ -131,8 +131,9 @@ is still worth doing before the pilot (the browser suite runs at Pixel 5 size in
 
 - **Tokens.** Access token in memory, refresh token in an httpOnly, SameSite=Strict cookie
   scoped to `/session`. A refused refresh clears the cookie; a throttled one does not.
-- **Second factor.** Roles that need one are held on Settings until they enrol; the API would
-  refuse everything else. Actions that need a fresh code ask for it in place and retry.
+- **Second factor.** Everyone signs in with a password and then a 6-digit code from their
+  email ("Send a new code" after a minute). Actions that need a fresh code email one, ask for
+  it in place and retry.
 - **No map.** The directories carry names and counts, not boundaries, and there is no Mapbox
   token, so coverage is a tile grid (the design's sequential scale) rather than an inaccurate
   map. Add a map when boundary data exists.

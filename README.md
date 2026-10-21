@@ -94,15 +94,22 @@ table and fails on any view that does neither.
   rates and a platform-wide audit trail (`/api/v1/platform/*`), never a party's results,
   evidence or people. Decisions (approve, reject, suspend, reinstate) and master-data imports
   need a fresh second factor and are audited against the organization concerned.
-- **Agents and officers** are only ever invited (`POST /api/v1/invitations`). The invitee
-  accepts with the token from the SMS or email link, an OTP sent to the invited contact, and
-  a password. Agents open the link on their phone and use the same web app as everyone else;
+- **Agents and officers** are only ever invited (`POST /api/v1/invitations`), always with an
+  email address (a phone is optional). The invitee accepts with the token from the emailed
+  link, a code sent to that email, and a password. Agents open the link on their phone and use the same web app as everyone else;
   there is no device registration.
 - **Tokens:** access tokens are 10-minute EdDSA JWTs. Refresh tokens are opaque, rotated on
   every use, and a reused one revokes the whole session. Role and scope are re-read from the
   database on every request, so changes apply immediately.
-- **MFA:** TOTP with recovery codes. It is mandatory for admins and anyone who can export, and
-  role or scope changes need a fresh second factor.
+- **Second factor:** a 6-digit code sent to the account's email, for every role at every
+  sign-in (password, then code). There is no authenticator app and there are no recovery
+  codes. Codes are the same OTP challenges as registration: hashed, 5 minutes, 5 attempts,
+  60-second resend cooldown, hourly budgets. Sensitive actions (role or scope changes, locks,
+  reconciliation, exports, alert policy, operator decisions) ask for a fresh emailed code
+  (`POST /auth/mfa/step-up/request`, then `/auth/mfa/step-up`). An account without an email
+  cannot sign in (`email_required`). `VTRS_ENFORCE_MFA = False` turns codes off; only a
+  developer's own settings may do that, and development leaves them on (codes land in Mailpit,
+  http://localhost:8025).
 - **Row Level Security:** tenant tables only show the current organization's rows. The test
   suite runs as the `vtrs_app` role, so RLS and the restricted grants are exercised by every
   test.

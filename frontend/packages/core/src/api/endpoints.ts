@@ -48,9 +48,8 @@ import type {
   ServerTime,
   SubmissionOutcome,
   SubmissionStatus,
+  CodeSent,
   TokenPair,
-  TotpConfirm,
-  TotpSetup,
   Ward,
 } from "./types";
 import type {
@@ -87,6 +86,9 @@ export function createEndpoints(api: ApiClient) {
         post<LoginResponse>("/auth/login", body, { anonymous: true }),
       loginMfa: (body: { mfa_token: string; code: string }) =>
         post<TokenPair>("/auth/login/mfa", body, { anonymous: true }),
+      /** A fresh sign-in code by email; the server refuses within a minute of the last one. */
+      loginMfaResend: (body: { mfa_token: string }) =>
+        post<{ status: string }>("/auth/login/mfa/resend", body, { anonymous: true }),
       refresh: (body: { refresh_token: string }) =>
         post<TokenPair>("/auth/refresh", body, { anonymous: true }),
       logout: () => post<void>("/auth/logout"),
@@ -110,10 +112,10 @@ export function createEndpoints(api: ApiClient) {
         post<ChallengeResponse>("/auth/password/forgot", body, { anonymous: true }),
       resetPassword: (body: { reset_token: string; new_password: string }) =>
         post<void>("/auth/password/reset", body, { anonymous: true }),
-      totpSetup: () => post<TotpSetup>("/auth/mfa/totp/setup"),
-      totpConfirm: (code: string) => post<TotpConfirm>("/auth/mfa/totp/confirm", { code }),
-      stepUp: (code: string) =>
-        post<{ access_token: string; access_expires_at: string }>("/auth/mfa/step-up", { code }),
+      /** Email a code for a sensitive action (asking again within a minute reuses it). */
+      stepUpRequest: () => post<CodeSent>("/auth/mfa/step-up/request"),
+      stepUp: (body: { challenge_id: string; code: string }) =>
+        post<{ access_token: string; access_expires_at: string }>("/auth/mfa/step-up", body),
     },
 
     me: {

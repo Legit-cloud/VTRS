@@ -7,17 +7,13 @@ from apps.accounts.models import RefreshToken, Session, User
 from apps.audit.models import AuditEvent
 from apps.core.domain.permissions import Role
 
-from ..conftest import PASSWORD
+from ..conftest import PASSWORD, sign_in
 
 pytestmark = pytest.mark.django_db
 
 
-def _login(api, identifier, password=PASSWORD, **extra):
-    return api.post(
-        "/api/v1/auth/login",
-        {"identifier": identifier, "password": password, **extra},
-        format="json",
-    )
+def _login(api, identifier, password=PASSWORD):
+    return sign_in(api, identifier, password)
 
 
 def _bearer(client, token):
@@ -29,9 +25,7 @@ def test_login_by_email_or_phone(api_client, make_member):
     member = make_member(Role.WARD_OFFICER)
     for identifier in (member.email.upper(), member.phone, "0" + member.phone[4:]):
         body = _login(api_client, identifier).json()
-        assert body["mfa_required"] is False, identifier
-        assert body["mfa_enrolment_required"] is False
-        assert body["token_type"] == "Bearer"
+        assert body["token_type"] == "Bearer", identifier
 
 
 def test_unknown_user_and_wrong_password_look_identical(api_client, make_member):
@@ -62,9 +56,14 @@ def test_progressive_lockout(api_client, make_member):
 def test_login_throttle_per_ip(api_client, make_member, settings):
     settings.VTRS_THROTTLE_RATES = {**settings.VTRS_THROTTLE_RATES, "login_ip": "2/min"}
     member = make_member()
-    assert _login(api_client, member.email).status_code == 200
-    assert _login(api_client, member.email).status_code == 200
-    response = _login(api_client, member.email)
+
+    def password_step():
+        body = {"identifier": member.email, "password": PASSWORD}
+        return api_client.post("/api/v1/auth/login", body, format="json")
+
+    assert password_step().status_code == 200
+    assert password_step().status_code == 200
+    response = password_step()
     assert response.status_code == 429
     assert response.json()["code"] == "throttled"
     assert "Retry-After" in response

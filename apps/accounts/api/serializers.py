@@ -43,7 +43,11 @@ class LoginSerializer(StrictSerializer):
 
 class MfaLoginSerializer(StrictSerializer):
     mfa_token = serializers.CharField(max_length=1024)
-    code = serializers.CharField(max_length=16)
+    code = serializers.RegexField(r"^\s*\d{6}\s*$")
+
+
+class MfaResendSerializer(StrictSerializer):
+    mfa_token = serializers.CharField(max_length=1024)
 
 
 class RefreshSerializer(StrictSerializer):
@@ -71,8 +75,9 @@ class InvitationCompleteSerializer(StrictSerializer):
     password = serializers.CharField(max_length=128, trim_whitespace=False)
 
 
-class MfaCodeSerializer(StrictSerializer):
-    code = serializers.CharField(max_length=16)
+class StepUpSerializer(StrictSerializer):
+    challenge_id = serializers.UUIDField()
+    code = serializers.RegexField(r"^\s*\d{6}\s*$")
 
 
 class InvitationCreateSerializer(StrictSerializer):
@@ -109,7 +114,8 @@ class TokenPairSerializer(serializers.Serializer):
 class LoginResponseSerializer(serializers.Serializer):
     mfa_required = serializers.BooleanField()
     mfa_token = serializers.CharField(required=False)
-    mfa_enrolment_required = serializers.BooleanField(required=False)
+    challenge_id = serializers.UUIDField(required=False)
+    destination_hint = serializers.CharField(required=False)
     token_type = serializers.CharField(required=False)
     access_token = serializers.CharField(required=False)
     access_expires_at = serializers.DateTimeField(required=False)
@@ -144,13 +150,9 @@ class AccessTokenSerializer(serializers.Serializer):
     access_expires_at = serializers.DateTimeField()
 
 
-class TotpSetupSerializer(serializers.Serializer):
-    secret_base32 = serializers.CharField()
-    otpauth_uri = serializers.CharField()
-
-
-class TotpConfirmSerializer(AccessTokenSerializer):
-    recovery_codes = serializers.ListField(child=serializers.CharField())
+class CodeSentSerializer(serializers.Serializer):
+    challenge_id = serializers.UUIDField()
+    destination_hint = serializers.CharField()
 
 
 def _masked_email(value: str) -> str:
@@ -174,7 +176,6 @@ class MemberSerializer(serializers.ModelSerializer):
     email = serializers.SerializerMethodField()
     phone = serializers.SerializerMethodField()
     status = serializers.CharField(source="user.status")
-    mfa_enabled = serializers.BooleanField(source="user.mfa_enabled")
     scope = serializers.SerializerMethodField()
 
     class Meta:
@@ -185,7 +186,6 @@ class MemberSerializer(serializers.ModelSerializer):
             "email",
             "phone",
             "status",
-            "mfa_enabled",
             "role",
             "scope",
             "granted_permissions",
@@ -247,5 +247,4 @@ class MeSerializer(serializers.Serializer):
     role = serializers.CharField()
     scope = ScopeSerializer()
     permissions = serializers.ListField(child=serializers.CharField())
-    mfa_enabled = serializers.BooleanField()
     mfa_required = serializers.BooleanField()

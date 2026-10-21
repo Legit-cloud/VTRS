@@ -66,11 +66,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, [me, pathname, router]);
 
-  const mustEnrol = !!me && me.mfa_required && !me.mfa_enabled;
-  useEffect(() => {
-    if (mustEnrol && !pathname.startsWith("/settings")) router.replace("/settings?enrol=1");
-  }, [mustEnrol, pathname, router]);
-
   const flags = useQuery({
     queryKey: ["flags", "summary", election?.id],
     queryFn: () => ep.flags.summary(election!.id),

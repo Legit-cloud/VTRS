@@ -58,7 +58,7 @@ def _authenticate(token: str, election_id: UUID) -> tuple[Actor, Any]:
                 authorize(actor, Perm.DASHBOARD_VIEW)
             except APIException:
                 raise Refused(CLOSE_FORBIDDEN) from None
-            if mfa_mandatory(actor.role, actor.permissions) and actor.mfa_at is None:
+            if mfa_mandatory() and actor.mfa_at is None:
                 raise Refused(CLOSE_FORBIDDEN)
             try:
                 elections.election_for(actor, election_id)

@@ -143,7 +143,7 @@ def build_field(
         PollingUnit.objects.filter(id=pu.id).update(registered_voters=500 + index)
     pus = list(PollingUnit.objects.order_by("inec_code"))
     org = make_org("Aggregation Party")
-    admin = make_member(Role.PARTY_ADMIN, organization=org, mfa_enabled=True)
+    admin = make_member(Role.PARTY_ADMIN, organization=org)
     election = make_election(org, admin)
     ballot = make_ballot(org, election, ("AAA", "BBB"), own="AAA")
 
@@ -161,7 +161,7 @@ def build_field(
                 assigned_by_id=admin.user.id,
             )
         session = start_session(
-            user=member.user, membership=member.membership, mfa_at=None, ip=None
+            user=member.user, membership=member.membership, mfa_at=timezone.now(), ip=None
         )
         client = CommitClient(capture)
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {session.access_token}")

@@ -65,7 +65,6 @@ def organization_detail(actor: Actor, organization_id: UUID) -> dict[str, Any]:
             "user_id": m.user_id,
             "full_name": m.user.full_name,
             "status": m.user.status,
-            "mfa_enabled": m.user.mfa_enabled,
             "email": _mask_email(m.user.email),
             "phone": _mask_phone(m.user.phone),
         }

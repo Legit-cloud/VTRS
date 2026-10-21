@@ -7,18 +7,16 @@ from django.utils import timezone
 from rest_framework.exceptions import NotAuthenticated
 
 from .domain.actor import Actor
-from .domain.permissions import Perm, Role, requires_mfa
+from .domain.permissions import Perm
 from .errors import Forbidden, StepUpRequired
 
 # Pseudo-permission for endpoints any signed-in, active user may call.
 AUTHENTICATED = "authenticated"
 
 
-def mfa_mandatory(role: Role, permissions: frozenset[Perm]) -> bool:
-    """The domain rule, unless the deployment turns enforcement off (development only)."""
-    if not settings.VTRS_ENFORCE_MFA:
-        return False
-    return requires_mfa(role, permissions)
+def mfa_mandatory() -> bool:
+    """Every role signs in with an emailed code, unless a developer's settings turn it off."""
+    return bool(settings.VTRS_ENFORCE_MFA)
 
 
 def authorize(actor: Actor | None, perm: Perm | str) -> Actor:

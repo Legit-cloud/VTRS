@@ -59,8 +59,7 @@ export type SubmissionOutcome = S["SubmissionOutcome"];
 export type EvidenceUploadEntry = S["EvidenceUploadEntry"];
 export type EvidenceState = S["EvidenceState"];
 export type ChallengeResponse = S["ChallengeResponse"];
-export type TotpSetup = S["TotpSetup"];
-export type TotpConfirm = S["TotpConfirm"];
+export type CodeSent = S["CodeSent"];
 export type ServerTime = S["ServerTime"];
 
 export interface Page<T> {

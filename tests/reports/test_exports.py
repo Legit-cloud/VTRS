@@ -137,7 +137,6 @@ def test_exports_are_scoped_to_the_requesters_geography(busy, storage):
         scope_ids=[f.lgas[0].id],
         organization=f.org,
         granted=[Perm.REPORTS_EXPORT],
-        mfa_enabled=True,
     )
     job = _job(_post(f.client_as(member), _results_body(f)).json()["id"])
     rows = _csv_rows(storage, job)
@@ -228,7 +227,6 @@ def test_other_people_cannot_see_or_download_my_export(busy):
         scope_ids=[f.lgas[0].id],
         organization=f.org,
         granted=[Perm.REPORTS_EXPORT],
-        mfa_enabled=True,
     )
     client = f.client_as(other)
     assert client.get(f"/api/v1/exports/{mine}").status_code == 404

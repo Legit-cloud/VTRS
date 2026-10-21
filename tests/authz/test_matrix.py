@@ -889,8 +889,7 @@ ENDPOINTS = [
 # Self-service routes that act only on the caller's own session; covered by their own tests.
 SELF_SERVICE = {
     ("auth-logout", "POST"),
-    ("auth-totp-setup", "POST"),
-    ("auth-totp-confirm", "POST"),
+    ("auth-step-up-request", "POST"),
     ("auth-step-up", "POST"),
     # Each kind of export has its own permissions, checked in the service; covered in
     # tests/reports.

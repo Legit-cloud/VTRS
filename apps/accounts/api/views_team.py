@@ -43,8 +43,7 @@ class MeView(APIView):
                 "role": actor.role,
                 "scope": {"type": actor.scope.kind, "ids": sorted(str(i) for i in actor.scope.ids)},
                 "permissions": sorted(actor.permissions),
-                "mfa_enabled": user.mfa_enabled,
-                "mfa_required": mfa_mandatory(actor.role, actor.permissions),
+                "mfa_required": mfa_mandatory(),
             }
         )
 

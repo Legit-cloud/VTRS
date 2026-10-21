@@ -122,13 +122,6 @@ export default function TeamPage() {
               cell: (m) => <StatusChip status={userStatus(m.status)} />,
             },
             {
-              key: "mfa",
-              header: "Second factor",
-              cell: (m) =>
-                m.mfa_enabled ? "On" : <span className="text-signal-amber-text">Not set up</span>,
-              hideOnNarrow: true,
-            },
-            {
               key: "actions",
               header: "",
               cell: (m) =>

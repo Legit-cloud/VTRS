@@ -7,8 +7,10 @@ import pytest
 from django.core.management import call_command
 from django.urls import reverse
 
-from apps.accounts.models import Membership
+from apps.accounts.models import Membership, User
+from apps.accounts.services.sessions import active_membership, start_session
 from apps.audit.models import AuditEvent
+from apps.core.crypto import blind_index
 from apps.core.domain.permissions import Role
 from apps.core.rls import system_context
 from apps.geography.domain.synthetic import synthetic_master_data
@@ -27,7 +29,7 @@ def operator(make_member, make_org):
         platform = Organization.objects.create(
             name="VTRS platform", status=OrganizationStatus.ACTIVE, is_platform=True
         )
-    return make_member(Role.PLATFORM_ADMIN, organization=platform, mfa_enabled=True)
+    return make_member(Role.PLATFORM_ADMIN, organization=platform)
 
 
 def _org(name="Oyo Party", status=OrganizationStatus.PENDING_APPROVAL):
@@ -295,8 +297,12 @@ def test_the_command_creates_an_operator_who_enrols_before_doing_anything(api_cl
         format="json",
     )
     assert login.status_code == 200, login.json()
-    body = login.json()
-    assert body["mfa_enrolment_required"] is True
+    assert login.json()["mfa_required"] is True
+    # A session started without its code (settings that turn codes off) stays shut out.
+    operator = User.objects.get(email_index=blind_index("email", "ops@vtrs.example"))
+    body = start_session(
+        user=operator, membership=active_membership(operator.id), mfa_at=None, ip=None
+    ).as_dict()
 
     api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {body['access_token']}")
     me = api_client.get("/api/v1/me").json()

@@ -1,5 +1,5 @@
-"""AC-03 / AC-04 (server side): invite an agent to polling units; the agent activates on a
-registered device and sees only that assignment."""
+"""AC-03 / AC-04 (server side): invite an agent to polling units by email; the agent
+activates and sees only that assignment."""
 
 from datetime import timedelta
 
@@ -13,8 +13,11 @@ from apps.geography.domain.synthetic import synthetic_master_data
 from apps.geography.models import PollingUnit, Ward
 from apps.geography.services import import_master_data
 
+from ..conftest import sign_in
+
 pytestmark = pytest.mark.django_db
 AGENT_PHONE = "08035550001"
+AGENT_EMAIL = "agent.one@party.example"
 
 
 @pytest.fixture
@@ -43,20 +46,21 @@ def _agent_invite(client, pu_ids, key="inv-1"):
         role="PU_AGENT",
         scope_ids=[str(i) for i in pu_ids],
         full_name="Agent One",
+        email=AGENT_EMAIL,
         phone=AGENT_PHONE,
     )
 
 
 def _accept(client, inbox):
-    token = inbox.last_invitation_token("+2348035550001")
+    token = inbox.last_invitation_token(AGENT_EMAIL)
     started = client.post("/api/v1/auth/invitations/accept", {"token": token}, format="json").json()
-    assert started["destination_hint"] == "***********001"
+    assert (started["channel"], started["destination_hint"]) == ("EMAIL", "a***@party.example")
     return client.post(
         "/api/v1/auth/invitations/complete",
         {
             "token": token,
             "challenge_id": started["challenge_id"],
-            "code": inbox.last_code("+2348035550001"),
+            "code": inbox.last_code(AGENT_EMAIL),
             "password": "agent-strong-passphrase",
         },
         format="json",
@@ -82,13 +86,10 @@ def test_agent_onboarding_end_to_end(geography, admin, admin_client, api_client,
     assert "results.submit" in me["permissions"]
     assert me["organization"]["id"] == str(admin.organization.id)
 
-    # The agent signs in again to the same web app, from any browser: no device binding.
+    # The agent signs in again to the same web app, from any browser: no device binding. The
+    # phone still works as the identifier; the code goes to the email.
     assert "device_id" not in tokens and "device_id" not in me
-    login = api_client.post(
-        "/api/v1/auth/login",
-        {"identifier": AGENT_PHONE, "password": "agent-strong-passphrase"},
-        format="json",
-    )
+    login = sign_in(api_client, AGENT_PHONE, "agent-strong-passphrase")
     assert login.status_code == 200, login.json()
 
     # Agents cannot manage the team.
@@ -134,8 +135,10 @@ def test_otp_from_another_invitation_does_not_work(geography, admin_client, api_
     pus = list(PollingUnit.objects.values_list("id", flat=True)[:2])
     _agent_invite(admin_client, pus[:1], key="a")
     token_a = inbox.last_invitation_token()
-    _invite(admin_client, key="b", role="PU_AGENT", scope_ids=[str(pus[1])], phone="08035550002")
-    token_b = inbox.last_invitation_token("+2348035550002")
+    _invite(
+        admin_client, key="b", role="PU_AGENT", scope_ids=[str(pus[1])], email="b@party.example"
+    )
+    token_b = inbox.last_invitation_token("b@party.example")
     challenge_b = api_client.post(
         "/api/v1/auth/invitations/accept", {"token": token_b}, format="json"
     ).json()["challenge_id"]
@@ -144,7 +147,7 @@ def test_otp_from_another_invitation_does_not_work(geography, admin_client, api_
         {
             "token": token_a,
             "challenge_id": challenge_b,
-            "code": inbox.last_code("+2348035550002"),
+            "code": inbox.last_code("b@party.example"),
             "password": "agent-strong-passphrase",
         },
         format="json",
@@ -187,12 +190,12 @@ def test_ward_officer_invited_by_email(geography, admin_client, api_client, inbo
 @pytest.mark.parametrize(
     ("body", "field"),
     [
-        ({"role": "PU_AGENT", "scope_ids": [], "phone": AGENT_PHONE}, "scope_ids"),
+        ({"role": "PU_AGENT", "scope_ids": [], "email": AGENT_EMAIL}, "scope_ids"),
         (
             {
                 "role": "PU_AGENT",
                 "scope_ids": ["0190a6a0-0000-7000-8000-000000000000"],
-                "phone": AGENT_PHONE,
+                "email": AGENT_EMAIL,
             },
             "scope_ids",
         ),
@@ -249,7 +252,14 @@ def test_invitation_create_is_idempotent(geography, admin_client, inbox):
     assert first.json() == again.json()
     assert again["Idempotent-Replayed"] == "true"
     assert Invitation.objects.count() == 1
-    assert len(inbox.messages()) == 1  # no second SMS
+    assert len(inbox.messages()) == 1  # no second email
 
     missing = admin_client.post("/api/v1/invitations", {"role": "PARTY_ADMIN"}, format="json")
     assert missing.json()["code"] == "invalid_idempotency_key"
+
+
+def test_every_invitation_needs_an_email(geography, admin_client):
+    pu = PollingUnit.objects.values_list("id", flat=True)[0]
+    response = _invite(admin_client, role="PU_AGENT", scope_ids=[str(pu)], phone=AGENT_PHONE)
+    assert response.status_code == 400
+    assert "email" in response.json()["errors"]

@@ -12,7 +12,8 @@ import {
 interface LoginResult extends Partial<TokenPair> {
   mfa_required: boolean;
   mfa_token?: string;
-  mfa_enrolment_required?: boolean;
+  challenge_id?: string;
+  destination_hint?: string;
 }
 
 export async function POST(request: Request) {
@@ -31,16 +32,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       mfa_required: true,
       mfa_token: result.mfa_token,
-      mfa_enrolment_required: result.mfa_enrolment_required ?? false,
+      challenge_id: result.challenge_id,
+      destination_hint: result.destination_hint,
     });
   }
   const pair = result as TokenPair;
-  return withRefreshCookie(
-    NextResponse.json({
-      mfa_required: false,
-      mfa_enrolment_required: result.mfa_enrolment_required ?? false,
-      ...publicTokens(pair),
-    }),
-    pair,
-  );
+  return withRefreshCookie(NextResponse.json({ mfa_required: false, ...publicTokens(pair) }), pair);
 }

@@ -48,7 +48,8 @@ export class ApiError extends Error {
   get needsStepUp(): boolean {
     return this.code === "mfa_step_up_required";
   }
-  get needsMfaEnrolment(): boolean {
+  /** The session never had its emailed sign-in code: sign in again. */
+  get needsSignInCode(): boolean {
     return this.code === "mfa_required";
   }
   /** A stale edit: reload, then try again. */

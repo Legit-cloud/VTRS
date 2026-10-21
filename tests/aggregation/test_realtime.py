@@ -127,7 +127,7 @@ def test_an_lga_officer_hears_about_the_whole_lga(field_):
 def test_refusals(field_, make_org, make_member):
     admin_token = _token(field_, field_.admin)
     agent_token = _token(field_, field_.agents[field_.pus[0].id].member)
-    stranger = make_member(Role.PARTY_ADMIN, organization=make_org("Elsewhere"), mfa_enabled=True)
+    stranger = make_member(Role.PARTY_ADMIN, organization=make_org("Elsewhere"))
     stranger_token = _token(field_, stranger)
 
     async def scenario():

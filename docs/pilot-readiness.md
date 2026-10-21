@@ -53,7 +53,7 @@ have).
 | PB-04 | Candidate and election configuration rules | Met (rules enforced; lock fingerprints the configuration) | Confirmation |
 | PB-05 | Result-sheet fields and validation | Every configured party, plus accredited, total cast and rejected; valid is the sum of the parties. The two arithmetic limits reject (open decision #12) | Confirm the field set, and reject versus flag for the limits |
 | PB-06 | Agent deployment model | Decided: up to three agents per polling unit | None |
-| PB-07 | OTP, SMS, email providers | Adapters built (Twilio SMS and WhatsApp, Turnstile or hCaptcha or reCAPTCHA, ClamAV) and tested against their protocols | Pick vendors, supply credentials, run each against the real service once |
+| PB-07 | OTP, SMS, email providers | Sign-in and step-up codes go by email for every role, so production needs a reliable transactional email service (SMTP). Adapters built (Twilio SMS and WhatsApp, Turnstile or hCaptcha or reCAPTCHA, ClamAV) and tested against their protocols | Pick vendors, including email; supply credentials; run each against the real service once |
 | PB-08 | Biometric / face verification | Not implemented (feature flag off) | Legal and privacy decision |
 | PB-09 | Evidence retention, access and export policy | Defaults implemented and documented (README, `VTRS_RETENTION_YEARS`) | Legal sign-off |
 | PB-10 | Anomaly rules and escalation matrix | Industry-standard defaults implemented, all tunable (`VTRS_ANOMALY_THRESHOLDS`, `VTRS_ESCALATION_MATRIX`, per-organization override) | Confirm thresholds and the officer chain |

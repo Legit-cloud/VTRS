@@ -9,6 +9,7 @@ auth_urls = [
     path("auth/otp/verify", auth.OtpVerifyView.as_view(), name="auth-otp-verify"),
     path("auth/login", auth.LoginView.as_view(), name="auth-login"),
     path("auth/login/mfa", auth.MfaLoginView.as_view(), name="auth-login-mfa"),
+    path("auth/login/mfa/resend", auth.MfaResendView.as_view(), name="auth-login-mfa-resend"),
     path("auth/refresh", auth.RefreshView.as_view(), name="auth-refresh"),
     path("auth/logout", auth.LogoutView.as_view(), name="auth-logout"),
     path("auth/password/forgot", auth.PasswordForgotView.as_view(), name="auth-password-forgot"),
@@ -23,8 +24,11 @@ auth_urls = [
         auth.InvitationCompleteView.as_view(),
         name="auth-invitation-complete",
     ),
-    path("auth/mfa/totp/setup", auth.TotpSetupView.as_view(), name="auth-totp-setup"),
-    path("auth/mfa/totp/confirm", auth.TotpConfirmView.as_view(), name="auth-totp-confirm"),
+    path(
+        "auth/mfa/step-up/request",
+        auth.StepUpRequestView.as_view(),
+        name="auth-step-up-request",
+    ),
     path("auth/mfa/step-up", auth.StepUpView.as_view(), name="auth-step-up"),
 ]
 

@@ -10,11 +10,9 @@ import {
   formatRelative,
   severity,
   type RoleCode,
-  type TotpSetup,
 } from "@vtrs/core";
-import { Bell, Check, ShieldCheck } from "lucide-react";
-import QRCode from "qrcode";
-import { Suspense, useEffect, useState } from "react";
+import { Bell } from "lucide-react";
+import { Suspense, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, Skeleton } from "@/components/ui/card";
 import { StatusChip } from "@/components/ui/chip";
@@ -79,147 +77,33 @@ function ProfileCard() {
 }
 
 function SecurityCard() {
-  const { me, reloadMe, adoptToken } = useAuth();
-  const [setup, setSetup] = useState<TotpSetup | null>(null);
-  const [qr, setQr] = useState<string | null>(null);
-  const [code, setCode] = useState("");
-  const [recovery, setRecovery] = useState<string[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!setup) return;
-    let alive = true;
-    QRCode.toDataURL(setup.otpauth_uri, { margin: 1, width: 192 }).then(
-      (url) => alive && setQr(url),
-    );
-    return () => {
-      alive = false;
-    };
-  }, [setup]);
-
-  const begin = useMutation({
-    mutationFn: () => ep.auth.totpSetup(),
-    onSuccess: (data) => {
-      setSetup(data);
-      setError(null);
-    },
-    onError: (e) => setError(fail(e, "Could not start setup.")),
-  });
-  const confirm = useMutation({
-    mutationFn: () => ep.auth.totpConfirm(code.trim()),
-    onSuccess: async (data) => {
-      adoptToken(data.access_token, data.access_expires_at);
-      setRecovery(data.recovery_codes);
-      setSetup(null);
-      setCode("");
-      await reloadMe();
-    },
-    onError: (e) => setError(fail(e, "That code did not match. Check the 6 digits and try again.")),
-  });
-
+  const { me } = useAuth();
   if (!me) return null;
-
   return (
     <Card>
       <CardHeader
         title="Sign-in security"
-        description={
-          me.mfa_required
-            ? "Your role needs a second factor on every sign-in."
-            : "A second factor protects your account if your password leaks."
-        }
+        description="Every sign-in, and every sensitive change, asks for a 6-digit code sent to your email."
         actions={
-          me.mfa_enabled ? (
-            <StatusChip
-              status={{ label: "Authenticator on", tone: "teal", icon: "shield-check" }}
-            />
+          me.mfa_required ? (
+            <StatusChip status={{ label: "Email codes on", tone: "teal", icon: "shield-check" }} />
           ) : (
-            <StatusChip status={{ label: "Not set up", tone: "amber", icon: "shield-alert" }} />
+            <StatusChip
+              status={{ label: "Codes off on this server", tone: "amber", icon: "shield-alert" }}
+            />
           )
         }
       />
-      <div className="flex flex-col gap-4 p-5 pt-2">
-        {!me.mfa_enabled && me.mfa_required && !setup ? (
-          <InlineAlert tone="warning" title="Set up your authenticator to continue">
-            Until you do, you can only use this page.
-          </InlineAlert>
-        ) : null}
-        {error ? (
-          <InlineAlert tone="danger" title="That did not work">
-            {error}
-          </InlineAlert>
-        ) : null}
-
-        {recovery ? (
-          <InlineAlert tone="success" title="Save your recovery codes">
-            <p>Each code works once if you lose your phone. They are not shown again.</p>
-            <ul className="mono mt-2 grid grid-cols-2 gap-1">
-              {recovery.map((c) => (
-                <li key={c}>{c}</li>
-              ))}
-            </ul>
-            <Button className="mt-3" size="sm" variant="outline" onClick={() => setRecovery(null)}>
-              I have saved them
-            </Button>
-          </InlineAlert>
-        ) : null}
-
-        {!me.mfa_enabled && !setup ? (
-          <div>
-            <Button
-              loading={begin.isPending}
-              onClick={() => begin.mutate()}
-              leading={<ShieldCheck className="h-4 w-4" aria-hidden />}
-            >
-              Set up authenticator
-            </Button>
-          </div>
-        ) : null}
-
-        {setup ? (
-          <div className="flex flex-col gap-4 sm:flex-row">
-            <div className="flex flex-col items-center gap-2">
-              {setup && qr ? (
-                // The QR is a data: URL generated in the browser; next/image adds nothing here.
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={qr} alt="QR code for your authenticator app" width={192} height={192} />
-              ) : (
-                <Skeleton className="h-48 w-48" />
-              )}
-            </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-3">
-              <p className="text-body">
-                Scan the code with an authenticator app, or type this key in by hand:
-              </p>
-              <code className="mono break-all rounded-md bg-muted p-2 text-body-sm">
-                {setup.secret_base32}
-              </code>
-              <Field label="6-digit code from the app">
-                {(p) => (
-                  <Input
-                    {...p}
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    className="max-w-48 tabular-nums tracking-widest"
-                  />
-                )}
-              </Field>
-              <div>
-                <Button
-                  loading={confirm.isPending}
-                  disabled={code.trim().length < 6}
-                  leading={<Check className="h-4 w-4" aria-hidden />}
-                  onClick={() => confirm.mutate()}
-                >
-                  Turn on authenticator
-                </Button>
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </div>
+      <p className="p-5 pt-2 text-body">
+        {me.email ? (
+          <>
+            Codes go to <span className="font-medium">{me.email}</span>. Each one works once and
+            expires after 5 minutes. To use a different address, ask your admin.
+          </>
+        ) : (
+          "This account has no email address, so it cannot receive codes. Ask your admin to add one."
+        )}
+      </p>
     </Card>
   );
 }
@@ -474,8 +358,8 @@ function AlertPolicyCard() {
         </div>
         {policy.data?.updated_at ? (
           <p className="text-caption text-subtle-foreground">
-            Last changed {formatDateTime(policy.data.updated_at)}. Saving needs your authenticator
-            code.
+            Last changed {formatDateTime(policy.data.updated_at)}. Saving asks for a code sent to
+            your email.
           </p>
         ) : null}
       </div>

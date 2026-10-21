@@ -78,15 +78,9 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }, [onAllowedPage, router]);
 
   // Operators must have a second factor before anything else is shown.
-  const mustEnrol = !!me && me.mfa_required && !me.mfa_enabled;
-  useEffect(() => {
-    if (mustEnrol && !pathname.startsWith("/settings")) router.replace("/settings?enrol=1");
-  }, [mustEnrol, pathname, router]);
-
   const pending = useQuery({
     queryKey: ["platform", "overview", "nav"],
     queryFn: () => ep.platform.overview(),
-    enabled: !mustEnrol,
     refetchInterval: 60_000,
   });
 

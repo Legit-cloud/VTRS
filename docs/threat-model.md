@@ -53,8 +53,8 @@ code or a test, so it can be checked rather than believed.
 | Stolen access token | 10-minute EdDSA tokens; role and scope re-read from the database on every request, so removal or demotion is immediate | `apps/accounts/services/sessions.py::resolve_actor` |
 | Token forgery (alg none, algorithm confusion, tampered claims, wrong audience, unknown key id) | Pinned algorithm and key set, required claims, audience and issuer | `tests/security/test_hardening.py` |
 | Refresh token theft | Rotation on every use; reuse revokes the whole session | `tests/accounts` (reuse detection) |
-| Admin account takeover | TOTP MFA mandatory for admins and anyone who can export; step-up for locks, exports, downloads and alert policy | `apps/core/domain/permissions.py::requires_mfa` |
-| Open registration of agents | Agents exist only by invitation, with an OTP to the invited contact | `apps/accounts/services/invitations.py` |
+| Account takeover | A code emailed to the account at every sign-in, for every role (hashed, 5 minutes, 5 attempts, single use, bound to that sign-in); step-up with a fresh emailed code for locks, exports, downloads and alert policy. Residual risk: whoever controls the mailbox controls the second factor, so mailbox security matters | `apps/accounts/services/mfa.py`, `tests/accounts/test_registration_and_mfa.py` |
+| Open registration of agents | Agents exist only by invitation, with a code to the invited email | `apps/accounts/services/invitations.py` |
 | SMS pumping through public OTP endpoints | Bot challenge (Turnstile, hCaptcha or reCAPTCHA) fail-closed, per-destination and per-IP OTP budgets, allowed country prefixes | `apps/accounts/bot_challenge.py`, `tests/providers` |
 | Forged delivery receipts | Twilio signature verified in constant time; endpoint closed until configured | `tests/providers/test_webhook.py` |
 

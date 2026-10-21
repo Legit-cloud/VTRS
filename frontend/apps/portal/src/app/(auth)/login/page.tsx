@@ -8,7 +8,8 @@ import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/field";
 import { InlineAlert } from "@/components/ui/feedback";
-import { useAuth } from "@/lib/auth";
+import { ep, useAuth } from "@/lib/auth";
+import { useCooldown } from "@/lib/cooldown";
 
 function LoginForm() {
   const { login, verifyMfa, status, me } = useAuth();
@@ -18,7 +19,10 @@ function LoginForm() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState("");
   const [code, setCode] = useState("");
+  const [resent, setResent] = useState(false);
+  const resend = useCooldown(60);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -30,7 +34,7 @@ function LoginForm() {
   // its own destination below, so it is left alone.
   useEffect(() => {
     if (status !== "authenticated" || submitting.current || !me) return;
-    router.replace(me.mfa_required && !me.mfa_enabled ? "/settings?enrol=1" : destination);
+    router.replace(destination);
   }, [status, me, destination, router]);
 
   const describe = (e: unknown): ApiError =>
@@ -58,8 +62,12 @@ function LoginForm() {
       const outcome = await login(normalised, password);
       if (outcome.kind === "mfa") {
         setMfaToken(outcome.mfaToken);
+        setSentTo(outcome.destinationHint);
+        setCode("");
+        setResent(false);
+        resend.start();
       } else {
-        router.replace(outcome.enrolmentRequired ? "/settings?enrol=1" : destination);
+        router.replace(destination);
       }
     } catch (e) {
       setError(describe(e));
@@ -69,15 +77,29 @@ function LoginForm() {
     }
   }
 
-  const locked = error?.status === 429 || error?.code === "account_locked";
+  async function sendAgain() {
+    if (!mfaToken) return;
+    setError(null);
+    try {
+      await ep.auth.loginMfaResend({ mfa_token: mfaToken });
+      setResent(true);
+      resend.start();
+    } catch (e) {
+      setError(describe(e));
+    }
+  }
+
+  const locked =
+    (error?.status === 429 && error.code !== "otp_resend_too_soon") ||
+    error?.code === "account_locked";
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-5" noValidate>
       <div>
-        <h1 className="text-h1">{mfaToken ? "Enter your code" : "Sign in"}</h1>
+        <h1 className="text-h1">{mfaToken ? "Check your email" : "Sign in"}</h1>
         <p className="mt-1 text-body text-subtle-foreground">
           {mfaToken
-            ? "Open your authenticator app and enter the 6-digit code. A recovery code works too."
+            ? `We sent a 6-digit code to ${sentTo}. It expires in 5 minutes.`
             : "Use the phone number or email address you were invited with."}
         </p>
       </div>
@@ -91,7 +113,7 @@ function LoginForm() {
       {error ? (
         <InlineAlert
           tone={locked ? "warning" : "danger"}
-          title={locked ? "Too many attempts" : "Couldn't sign in"}
+          title={locked ? "Too many attempts" : mfaToken ? "That didn't work" : "Couldn't sign in"}
         >
           {error.isNetwork
             ? "Could not reach the server. Check your connection and try again."
@@ -102,16 +124,23 @@ function LoginForm() {
         </InlineAlert>
       ) : null}
 
+      {resent && !error ? (
+        <InlineAlert tone="info" title="New code sent">
+          Use the newest email; the earlier code no longer works.
+        </InlineAlert>
+      ) : null}
+
       {mfaToken ? (
-        <Field label="Authenticator code">
+        <Field label="Code from the email">
           {(props) => (
             <Input
               {...props}
               inputMode="numeric"
               autoComplete="one-time-code"
               autoFocus
+              maxLength={6}
               value={code}
-              onChange={(e) => setCode(e.target.value)}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               className="tabular-nums tracking-widest"
             />
           )}
@@ -154,17 +183,28 @@ function LoginForm() {
       </Button>
 
       {mfaToken ? (
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            setMfaToken(null);
-            setCode("");
-            setError(null);
-          }}
-        >
-          Use a different account
-        </Button>
+        <div className="flex flex-col gap-1">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={resend.remaining > 0}
+            onClick={() => void sendAgain()}
+          >
+            {resend.remaining > 0 ? `Send a new code in ${resend.remaining} s` : "Send a new code"}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setMfaToken(null);
+              setCode("");
+              setError(null);
+              setResent(false);
+            }}
+          >
+            Use a different account
+          </Button>
+        </div>
       ) : (
         <Link
           href="/forgot-password"

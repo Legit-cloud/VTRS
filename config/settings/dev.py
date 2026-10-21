@@ -18,7 +18,6 @@ apply_defaults()
 from .base import *
 
 DEBUG = True
-VTRS_ENFORCE_MFA = False
 ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = [

@@ -65,7 +65,8 @@ export function AgentShell({ children }: { children: ReactNode }) {
       {!online ? (
         <div className="mx-auto max-w-xl px-4 pt-3">
           <InlineAlert tone="warning" title="No connection">
-            Anything you type stays on this phone. Keep this page open: sending starts again when the connection is back.
+            Anything you type stays on this phone. Keep this page open: sending starts again when
+            the connection is back.
           </InlineAlert>
         </div>
       ) : null}

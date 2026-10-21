@@ -1,6 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { ADMIN, OFFICER, expectSignedIn, nextTotpWindow, signIn, totp } from "./helpers";
+import { ADMIN, OFFICER, confirmIfAsked, expectSignedIn, signIn } from "./helpers";
 
 async function accessible(page: Page, label: string) {
   const results = await new AxeBuilder({ page })
@@ -53,7 +53,6 @@ test.describe("party admin", () => {
   test.describe.configure({ mode: "serial" });
 
   let context: BrowserContext;
-  let secret = "";
 
   test.beforeAll(async ({ browser }) => {
     context = await browser.newContext();
@@ -62,39 +61,29 @@ test.describe("party admin", () => {
     await context.close();
   });
 
-  test("is held to a second factor, then enrols one", async () => {
+  test("needs the code from their email; the password alone is not enough", async () => {
     const page = await context.newPage();
-    await signIn(page, ADMIN);
-    // Admins cannot get past setup until an authenticator is on the account.
-    await expect(page).toHaveURL(/\/settings/);
-    await expect(page.getByText("Set up your authenticator to continue")).toBeVisible();
+    await page.goto("/login");
+    await page.getByLabel("Phone number or email").fill(ADMIN.identifier);
+    await page.getByLabel("Password").fill(ADMIN.password);
+    await page.getByRole("button", { name: "Continue" }).click();
+    await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+    await expect(page.getByText(/We sent a 6-digit code to a\*\*\*@demo\.example/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Send a new code in \d+ s/ })).toBeDisabled();
+    await accessible(page, "sign-in code");
 
-    // Every other page sends them back here.
+    await page.getByLabel("Code from the email").fill("000000");
+    await page.getByRole("button", { name: "Verify" }).click();
+    await expect(page.getByText("That didn't work")).toBeVisible();
     await page.goto("/war-room");
-    await expect(page).toHaveURL(/\/settings/);
-
-    await page.getByRole("button", { name: "Set up authenticator" }).click();
-    const secretBox = page.locator("code.mono").first();
-    await expect(secretBox).toBeVisible();
-    secret = (await secretBox.innerText()).trim();
-    await page.getByLabel("6-digit code from the app").fill(totp(secret));
-    await page.getByRole("button", { name: "Turn on authenticator" }).click();
-
-    await expect(page.getByText("Save your recovery codes")).toBeVisible();
-    await page.getByRole("button", { name: "I have saved them" }).click();
-    await expect(page.getByText("Authenticator on")).toBeVisible();
+    await expect(page).toHaveURL(/\/login/);
     await page.close();
   });
 
-  test("signs in with the second factor and sees the whole state", async ({ browser }) => {
-    // A code is good once: the one used to enrol cannot sign in, so wait for the next window.
-    await nextTotpWindow();
+  test("signs in with the emailed code and sees the whole state", async ({ browser }) => {
     const fresh = await browser.newContext();
     const page = await fresh.newPage();
     await signIn(page, ADMIN);
-    await expect(page.getByRole("heading", { name: "Enter your code" })).toBeVisible();
-    await page.getByLabel("Authenticator code").fill(totp(secret));
-    await page.getByRole("button", { name: "Verify" }).click();
     await expectSignedIn(page);
 
     const nav = page.getByRole("navigation", { name: "Main" });
@@ -217,7 +206,9 @@ test.describe("party admin", () => {
     await expect(page.getByRole("heading", { name: "Add contestants" })).toBeVisible();
     await page.getByLabel("Candidate's name").fill(runParties[0]!.candidate);
     await page.getByRole("button", { name: "Add contestant" }).last().click();
-    await expect(page.getByText(`${runParties[0]!.candidate} (${runParties[0]!.abbreviation}) added`)).toBeVisible();
+    await expect(
+      page.getByText(`${runParties[0]!.candidate} (${runParties[0]!.abbreviation}) added`),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Done" }).click();
     await expect(page.getByText(/has one contestant/).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Mark as ready" })).toBeDisabled();
@@ -225,7 +216,9 @@ test.describe("party admin", () => {
     await page.getByRole("button", { name: "Add contestant" }).first().click();
     await page.getByLabel("Candidate's name").fill(runParties[1]!.candidate);
     await page.getByRole("button", { name: "Add contestant" }).last().click();
-    await expect(page.getByText(`${runParties[1]!.candidate} (${runParties[1]!.abbreviation}) added`)).toBeVisible();
+    await expect(
+      page.getByText(`${runParties[1]!.candidate} (${runParties[1]!.abbreviation}) added`),
+    ).toBeVisible();
     await page.getByRole("button", { name: "Done" }).click();
 
     await expect(page.getByRole("button", { name: "Mark as ready" })).toBeEnabled();
@@ -250,20 +243,11 @@ test.describe("party admin", () => {
     const agent = (await row.getByRole("cell").first().innerText()).trim();
     await row.getByRole("button", { name: "Assign" }).click();
     await page.getByRole("radio", { name: /SYN-/ }).check();
+    let since = Date.now();
     await page.getByRole("button", { name: "Assign agent" }).click();
 
-    // A recent sign-in is fresh enough; otherwise a code is asked for.
-    const prompt = page.getByLabel("Authenticator code");
-    if (
-      await prompt.waitFor({ state: "visible", timeout: 2_000 }).then(
-        () => true,
-        () => false,
-      )
-    ) {
-      await nextTotpWindow();
-      await prompt.fill(totp(secret));
-      await page.getByRole("button", { name: "Confirm" }).click();
-    }
+    // A recent sign-in is fresh enough; otherwise a code is emailed and asked for.
+    await confirmIfAsked(page, ADMIN.identifier, since);
     await expect(page.getByText("Agent assigned")).toBeVisible();
     const assigned = page.getByRole("row").filter({ hasText: agent });
     await expect(assigned.locator(".mono")).toBeVisible();
@@ -271,18 +255,9 @@ test.describe("party admin", () => {
     // Deactivating says what will happen, and the unit is released.
     await assigned.getByRole("button", { name: "Deactivate" }).click();
     await expect(page.getByText(/removed from 1 polling unit/)).toBeVisible();
+    since = Date.now();
     await page.getByRole("button", { name: "Deactivate agent" }).click();
-    const again = page.getByLabel("Authenticator code");
-    if (
-      await again.waitFor({ state: "visible", timeout: 2_000 }).then(
-        () => true,
-        () => false,
-      )
-    ) {
-      await nextTotpWindow();
-      await again.fill(totp(secret));
-      await page.getByRole("button", { name: "Confirm" }).click();
-    }
+    await confirmIfAsked(page, ADMIN.identifier, since);
     await expect(
       page.getByRole("row").filter({ hasText: agent }).getByText("Deactivated"),
     ).toBeVisible();
@@ -301,18 +276,9 @@ test.describe("party admin", () => {
 
     await page.getByRole("button", { name: "Delete election" }).click();
     await expect(page.getByText(/This cannot be undone/)).toBeVisible();
+    const since = Date.now();
     await page.getByRole("dialog").getByRole("button", { name: "Delete election" }).click();
-    const prompt = page.getByLabel("Authenticator code");
-    if (
-      await prompt.waitFor({ state: "visible", timeout: 2_000 }).then(
-        () => true,
-        () => false,
-      )
-    ) {
-      await nextTotpWindow();
-      await prompt.fill(totp(secret));
-      await page.getByRole("button", { name: "Confirm" }).click();
-    }
+    await confirmIfAsked(page, ADMIN.identifier, since);
     await expect(page.getByText(`${name} was deleted`)).toBeVisible();
     await expect(picker.locator("option", { hasText: name })).toHaveCount(0);
 

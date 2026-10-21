@@ -134,7 +134,6 @@ def test_a_pack_only_holds_what_the_requester_may_see(photographed, storage):
         scope_ids=[f.lgas[0].id],
         organization=f.org,
         granted=[Perm.EVIDENCE_VIEW, Perm.EVIDENCE_EXPORT],
-        mfa_enabled=True,
     )
     job = _request(f.client_as(member), f)
     manifest = json.loads(_zip(storage, job).read("manifest.json"))

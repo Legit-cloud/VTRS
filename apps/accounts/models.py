@@ -1,8 +1,7 @@
 """Identity: users, memberships (role + scope), sessions and one-time credentials.
 
 Contact details are encrypted per field; lookups go through HMAC blind indexes (section 16).
-Every secret (OTP, refresh token, invitation token, reset token, recovery code) is stored
-hashed only.
+Every secret (OTP, refresh token, invitation token, reset token) is stored hashed only.
 """
 
 from typing import Any, ClassVar
@@ -49,7 +48,6 @@ class User(AbstractBaseUser, UUIDv7Model):
     status = models.CharField(
         max_length=24, choices=UserStatus.choices, default=UserStatus.PENDING_VERIFICATION
     )
-    mfa_enabled = models.BooleanField(default=False)
     failed_login_count = models.PositiveIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
     # Bumped to invalidate every outstanding access token at once.
@@ -169,6 +167,8 @@ class OtpPurpose(models.TextChoices):
     REGISTRATION = "REGISTRATION"
     PASSWORD_RESET = "PASSWORD_RESET"  # noqa: S105 - an enum label, not a password
     INVITATION = "INVITATION"
+    SIGN_IN = "SIGN_IN"
+    STEP_UP = "STEP_UP"
 
 
 class OtpChannel(models.TextChoices):
@@ -240,13 +240,3 @@ class PasswordResetToken(UUIDv7Model):
 
     class Meta:
         db_table = "account_password_reset"
-
-
-class RecoveryCode(UUIDv7Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="recovery_codes")
-    code_hash = models.CharField(max_length=64)
-    used_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = "account_recovery_code"

@@ -1,9 +1,10 @@
 """Invite-only onboarding (FR-6.1.5, FR-6.2.1 - FR-6.2.4, AC-03).
 
-Admin invites with role, scope and contact -> a 256-bit token goes out by SMS/email (only its
-hash is stored) -> the invitee opens the link in the web app, presents the token and gets an
-OTP on the *invited* contact -> with the code they set a password -> the account is ACTIVE and
-signed in. Used, expired, revoked and unknown tokens all fail the same way.
+Admin invites with role, scope, email and optionally a phone -> a 256-bit token goes out by
+email (only its hash is stored) -> the invitee opens the link in the web app, presents the
+token and gets a code at the *invited* email -> with the code they set a password -> the
+account is ACTIVE and signed in. Email is required because every sign-in code goes there.
+Used, expired, revoked and unknown tokens all fail the same way.
 """
 
 from dataclasses import dataclass
@@ -91,10 +92,8 @@ def create_invitation(
     role_enum = Role(role)
     kind, scope_ids, granted = validate_grant(actor, role_enum, scope_ids, granted_permissions)
     email, phone = normalized_contact(email, phone)
-    if role_enum is Role.PU_AGENT and not phone:
-        raise ValidationError({"phone": ["Agents are invited by phone."]})
-    if not email and not phone:
-        raise ValidationError({"phone": ["Give a phone number or an email address."]})
+    if not email:
+        raise ValidationError({"email": ["Give an email address: sign-in codes are sent there."]})
     email_index = blind_index("email", email) if email else None
     phone_index = blind_index("phone", phone) if phone else None
     if _contact_in_use(email_index, phone_index):
@@ -129,12 +128,9 @@ def create_invitation(
                 "granted": granted,
             },
         )
-        channel, destination = ("SMS", phone) if phone else ("EMAIL", email)
         link = settings.VTRS_INVITATION_LINK.format(token=token)
         org_name = invitation.organization.name
-        transaction.on_commit(
-            lambda: notifications.send_invitation(channel, destination, link, org_name)
-        )
+        transaction.on_commit(lambda: notifications.send_invitation("EMAIL", email, link, org_name))
     return invitation
 
 
@@ -178,8 +174,9 @@ class AcceptanceStarted:
 def start_acceptance(token: str, *, ip: str | None) -> AcceptanceStarted:
     with transaction.atomic(), system_context():
         invitation = _usable(token)
-        channel = OtpChannel.SMS if invitation.phone else OtpChannel.EMAIL
-        destination = invitation.phone or invitation.email
+        # Invitations from before email was required may only have a phone.
+        channel = OtpChannel.EMAIL if invitation.email else OtpChannel.SMS
+        destination = invitation.email or invitation.phone
         challenge = otp.start(
             purpose=OtpPurpose.INVITATION,
             channel=channel,
@@ -250,5 +247,7 @@ def complete_acceptance(
             diff={"user_id": user.id},
         )
         membership.user = user
-        pair = start_session(user=user, membership=membership, mfa_at=None, ip=ip)
+        # The code they just entered came by email, the same proof a sign-in asks for.
+        proven = now if challenge.channel == OtpChannel.EMAIL else None
+        pair = start_session(user=user, membership=membership, mfa_at=proven, ip=ip)
     return AcceptanceResult(user=user, membership=membership, tokens=pair)

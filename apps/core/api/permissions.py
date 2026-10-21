@@ -55,7 +55,7 @@ class PolicyPermission(BasePermission):
         rls.set_tenant(actor.organization_id)
         request.actor = actor  # type: ignore[attr-defined]
         if (
-            mfa_mandatory(actor.role, actor.permissions)
+            mfa_mandatory()
             and actor.mfa_at is None
             and not getattr(view, "allow_without_mfa", False)
         ):

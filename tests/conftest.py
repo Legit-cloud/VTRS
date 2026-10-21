@@ -154,7 +154,6 @@ def make_member(db, make_org) -> Callable[..., Member]:
         scope_ids: Iterable[UUID] = (),
         organization: Organization | None = None,
         granted: Iterable[str] = (),
-        mfa_enabled: bool = False,
     ) -> Member:
         n = next(_counter)
         org = organization or make_org()
@@ -170,7 +169,6 @@ def make_member(db, make_org) -> Callable[..., Member]:
                 phone=phone,
                 phone_index=blind_index("phone", phone),
                 status=UserStatus.ACTIVE,
-                mfa_enabled=mfa_enabled,
             )
             membership = Membership.objects.create(
                 user=user,
@@ -250,3 +248,18 @@ class Inbox:
 @pytest.fixture
 def inbox() -> Inbox:
     return Inbox()
+
+
+def sign_in(client, identifier: str, password: str = PASSWORD):
+    """Password, then the code from the latest email, as the web app does. Failures come back
+    as the first response."""
+    first = client.post(
+        "/api/v1/auth/login", {"identifier": identifier, "password": password}, format="json"
+    )
+    if first.status_code != 200 or not first.json().get("mfa_required"):
+        return first
+    return client.post(
+        "/api/v1/auth/login/mfa",
+        {"mfa_token": first.json()["mfa_token"], "code": Inbox().last_code()},
+        format="json",
+    )

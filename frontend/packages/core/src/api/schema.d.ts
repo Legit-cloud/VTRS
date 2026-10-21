@@ -184,6 +184,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/login/mfa/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Send a fresh sign-in code (60-second cooldown, hourly budgets). */
+        post: operations["auth_login_mfa_resend_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/logout": {
         parameters: {
             query?: never;
@@ -216,7 +233,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/mfa/totp/confirm": {
+    "/api/v1/auth/mfa/step-up/request": {
         parameters: {
             query?: never;
             header?: never;
@@ -225,23 +242,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["auth_mfa_totp_confirm_create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/auth/mfa/totp/setup": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["auth_mfa_totp_setup_create"];
+        /** @description Email a code for a sensitive action. Asking again within a minute reuses the code. */
+        post: operations["auth_mfa_step_up_request_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1861,6 +1863,11 @@ export interface components {
          * @enum {string}
          */
         ChannelEnum: "SMS" | "EMAIL";
+        CodeSent: {
+            /** Format: uuid */
+            challenge_id: string;
+            destination_hint: string;
+        };
         /**
          * @description * `NUMBERS_SUBMITTED` - NUMBERS_SUBMITTED
          *     * `COMPLETE` - COMPLETE
@@ -2530,7 +2537,9 @@ export interface components {
         LoginResponse: {
             mfa_required: boolean;
             mfa_token?: string;
-            mfa_enrolment_required?: boolean;
+            /** Format: uuid */
+            challenge_id?: string;
+            destination_hint?: string;
             token_type?: string;
             access_token?: string;
             /** Format: date-time */
@@ -2579,7 +2588,6 @@ export interface components {
             role: string;
             scope: components["schemas"]["Scope"];
             permissions: string[];
-            mfa_enabled: boolean;
             mfa_required: boolean;
         };
         /**
@@ -2596,7 +2604,6 @@ export interface components {
             readonly email: string;
             readonly phone: string;
             status: string;
-            mfa_enabled: boolean;
             role: components["schemas"]["RoleEnum"];
             readonly scope: components["schemas"]["Scope"];
             granted_permissions?: string[];
@@ -2617,13 +2624,13 @@ export interface components {
             sent_to: string;
         };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
-        MfaCodeRequest: {
-            code: string;
-        };
-        /** @description Rejects fields the serializer does not declare (spec section 9). */
         MfaLoginRequest: {
             mfa_token: string;
             code: string;
+        };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        MfaResendRequest: {
+            mfa_token: string;
         };
         MyAssignmentWithResult: {
             /** Format: uuid */
@@ -3226,6 +3233,12 @@ export interface components {
         Status: {
             status: string;
         };
+        /** @description Rejects fields the serializer does not declare (spec section 9). */
+        StepUpRequest: {
+            /** Format: uuid */
+            challenge_id: string;
+            code: string;
+        };
         SubmissionOutcome: {
             /** Format: uuid */
             version_id: string | null;
@@ -3332,16 +3345,6 @@ export interface components {
             valid: number;
             rejected: number | null;
             total_cast: number | null;
-        };
-        TotpConfirm: {
-            access_token: string;
-            /** Format: date-time */
-            access_expires_at: string;
-            recovery_codes: string[];
-        };
-        TotpSetup: {
-            secret_base32: string;
-            otpauth_uri: string;
         };
         /** @description Rejects fields the serializer does not declare (spec section 9). */
         TransitionRequest: {
@@ -3709,6 +3712,29 @@ export interface operations {
             };
         };
     };
+    auth_login_mfa_resend_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MfaResendRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Status"];
+                };
+            };
+        };
+    };
     auth_logout_create: {
         parameters: {
             query?: never;
@@ -3736,7 +3762,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["MfaCodeRequest"];
+                "application/json": components["schemas"]["StepUpRequest"];
             };
         };
         responses: {
@@ -3750,30 +3776,7 @@ export interface operations {
             };
         };
     };
-    auth_mfa_totp_confirm_create: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MfaCodeRequest"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TotpConfirm"];
-                };
-            };
-        };
-    };
-    auth_mfa_totp_setup_create: {
+    auth_mfa_step_up_request_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -3782,12 +3785,12 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TotpSetup"];
+                    "application/json": components["schemas"]["CodeSent"];
                 };
             };
         };

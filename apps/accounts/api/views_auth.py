@@ -113,6 +113,20 @@ class MfaLoginView(PublicView):
         return Response(pair.as_dict())
 
 
+class MfaResendView(PublicView):
+    """Send a fresh sign-in code (60-second cooldown, hourly budgets)."""
+
+    throttle_classes = (OtpIpThrottle,)
+
+    @extend_schema(
+        request=s.MfaResendSerializer, responses={202: s.StatusSerializer}, tags=["auth"]
+    )
+    def post(self, request: Request) -> Response:
+        data = _valid(s.MfaResendSerializer, request)
+        login.resend_code(**data, ip=get_client_ip())
+        return Response({"status": "sent"}, status=202)
+
+
 class RefreshView(PublicView):
     throttle_classes = (RefreshIpThrottle,)
 
@@ -193,28 +207,20 @@ class InvitationCompleteView(PublicView):
         return Response(result.tokens.as_dict())
 
 
-class TotpSetupView(APIView):
+class StepUpRequestView(APIView):
+    """Email a code for a sensitive action. Asking again within a minute reuses the code."""
+
     required_permission = AUTHENTICATED
     allow_without_mfa = True
+    throttle_classes = (OtpIpThrottle,)
 
-    @extend_schema(request=None, responses={200: s.TotpSetupSerializer}, tags=["auth"])
+    @extend_schema(request=None, responses={202: s.CodeSentSerializer}, tags=["auth"])
     def post(self, request: Request) -> Response:
-        enrolment = mfa.begin_totp(request.actor)  # type: ignore[attr-defined]
+        sent = mfa.request_step_up(request.actor, ip=get_client_ip())  # type: ignore[attr-defined]
         return Response(
-            {"secret_base32": enrolment.secret_base32, "otpauth_uri": enrolment.otpauth_uri}
+            {"challenge_id": sent.challenge_id, "destination_hint": sent.destination_hint},
+            status=202,
         )
-
-
-class TotpConfirmView(APIView):
-    required_permission = AUTHENTICATED
-    allow_without_mfa = True
-
-    @extend_schema(
-        request=s.MfaCodeSerializer, responses={200: s.TotpConfirmSerializer}, tags=["auth"]
-    )
-    def post(self, request: Request) -> Response:
-        data = _valid(s.MfaCodeSerializer, request)
-        return Response(mfa.confirm_totp(request.actor, data["code"]))  # type: ignore[attr-defined]
 
 
 class StepUpView(APIView):
@@ -222,8 +228,9 @@ class StepUpView(APIView):
     allow_without_mfa = True
 
     @extend_schema(
-        request=s.MfaCodeSerializer, responses={200: s.AccessTokenSerializer}, tags=["auth"]
+        request=s.StepUpSerializer, responses={200: s.AccessTokenSerializer}, tags=["auth"]
     )
     def post(self, request: Request) -> Response:
-        data = _valid(s.MfaCodeSerializer, request)
-        return Response(mfa.step_up(request.actor, data["code"]))  # type: ignore[attr-defined]
+        data = _valid(s.StepUpSerializer, request)
+        actor = request.actor  # type: ignore[attr-defined]
+        return Response(mfa.step_up(actor, data["challenge_id"], data["code"].strip()))

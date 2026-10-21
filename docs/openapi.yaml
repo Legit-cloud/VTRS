@@ -299,6 +299,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/TokenPair'
           description: ''
+  /api/v1/auth/login/mfa/resend:
+    post:
+      operationId: auth_login_mfa_resend_create
+      description: Send a fresh sign-in code (60-second cooldown, hourly budgets).
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MfaResendRequest'
+        required: true
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+          description: ''
   /api/v1/auth/logout:
     post:
       operationId: auth_logout_create
@@ -318,7 +337,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/MfaCodeRequest'
+              $ref: '#/components/schemas/StepUpRequest'
         required: true
       security:
       - bearerAuth: []
@@ -329,39 +348,21 @@ paths:
               schema:
                 $ref: '#/components/schemas/AccessToken'
           description: ''
-  /api/v1/auth/mfa/totp/confirm:
+  /api/v1/auth/mfa/step-up/request:
     post:
-      operationId: auth_mfa_totp_confirm_create
-      tags:
-      - auth
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/MfaCodeRequest'
-        required: true
-      security:
-      - bearerAuth: []
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TotpConfirm'
-          description: ''
-  /api/v1/auth/mfa/totp/setup:
-    post:
-      operationId: auth_mfa_totp_setup_create
+      operationId: auth_mfa_step_up_request_create
+      description: Email a code for a sensitive action. Asking again within a minute
+        reuses the code.
       tags:
       - auth
       security:
       - bearerAuth: []
       responses:
-        '200':
+        '202':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TotpSetup'
+                $ref: '#/components/schemas/CodeSent'
           description: ''
   /api/v1/auth/organizations:
     post:
@@ -3138,6 +3139,17 @@ components:
       description: |-
         * `SMS` - SMS
         * `EMAIL` - EMAIL
+    CodeSent:
+      type: object
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        destination_hint:
+          type: string
+      required:
+      - challenge_id
+      - destination_hint
     CompletionEnum:
       enum:
       - NUMBERS_SUBMITTED
@@ -4736,8 +4748,11 @@ components:
           type: boolean
         mfa_token:
           type: string
-        mfa_enrolment_required:
-          type: boolean
+        challenge_id:
+          type: string
+          format: uuid
+        destination_hint:
+          type: string
         token_type:
           type: string
         access_token:
@@ -4839,14 +4854,11 @@ components:
           type: array
           items:
             type: string
-        mfa_enabled:
-          type: boolean
         mfa_required:
           type: boolean
       required:
       - email
       - full_name
-      - mfa_enabled
       - mfa_required
       - organization
       - permissions
@@ -4879,8 +4891,6 @@ components:
           readOnly: true
         status:
           type: string
-        mfa_enabled:
-          type: boolean
         role:
           $ref: '#/components/schemas/RoleEnum'
         scope:
@@ -4900,7 +4910,6 @@ components:
       - created_at
       - email
       - full_name
-      - mfa_enabled
       - phone
       - role
       - scope
@@ -4940,16 +4949,6 @@ components:
           type: string
       required:
       - sent_to
-    MfaCodeRequest:
-      type: object
-      description: Rejects fields the serializer does not declare (spec section 9).
-      properties:
-        code:
-          type: string
-          minLength: 1
-          maxLength: 16
-      required:
-      - code
     MfaLoginRequest:
       type: object
       description: Rejects fields the serializer does not declare (spec section 9).
@@ -4961,9 +4960,19 @@ components:
         code:
           type: string
           minLength: 1
-          maxLength: 16
+          pattern: ^\s*\d{6}\s*$
       required:
       - code
+      - mfa_token
+    MfaResendRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        mfa_token:
+          type: string
+          minLength: 1
+          maxLength: 1024
+      required:
       - mfa_token
     MyAssignmentWithResult:
       type: object
@@ -6211,6 +6220,20 @@ components:
           type: string
       required:
       - status
+    StepUpRequest:
+      type: object
+      description: Rejects fields the serializer does not declare (spec section 9).
+      properties:
+        challenge_id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          minLength: 1
+          pattern: ^\s*\d{6}\s*$
+      required:
+      - challenge_id
+      - code
     SubmissionOutcome:
       type: object
       properties:
@@ -6465,32 +6488,6 @@ components:
       - rejected
       - total_cast
       - valid
-    TotpConfirm:
-      type: object
-      properties:
-        access_token:
-          type: string
-        access_expires_at:
-          type: string
-          format: date-time
-        recovery_codes:
-          type: array
-          items:
-            type: string
-      required:
-      - access_expires_at
-      - access_token
-      - recovery_codes
-    TotpSetup:
-      type: object
-      properties:
-        secret_base32:
-          type: string
-        otpauth_uri:
-          type: string
-      required:
-      - otpauth_uri
-      - secret_base32
     TransitionRequest:
       type: object
       description: Rejects fields the serializer does not declare (spec section 9).

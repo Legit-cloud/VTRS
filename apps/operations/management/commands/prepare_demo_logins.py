@@ -3,11 +3,10 @@
 `simulate_election_day` mints tokens for its users, so none of them has a password. This turns
 the latest simulated organization into something a person (or the browser tests in
 `frontend/e2e`) can use: the admin, a ward coordinator, an LGA coordinator and one agent,
-each with a password.
-The admin has no second factor yet, so signing in walks through enrolment.
+each with a password. Sign-in codes go to these addresses; in development they land in the
+local mailbox (Mailpit, http://localhost:8025).
 
-Development databases only, like the simulator. Safe to run again: it resets the passwords and
-switches the second factor off for these accounts.
+Development databases only, like the simulator. Safe to run again: it resets the passwords.
 """
 
 import os
@@ -77,7 +76,6 @@ class Command(BaseCommand):
             admin.email_index = blind_index("email", admin.email)
             admin.full_name = "Adaeze Bello"
             admin.password = password
-            admin.mfa_enabled = False
             admin.status = UserStatus.ACTIVE
             admin.save()
 
@@ -100,7 +98,6 @@ class Command(BaseCommand):
                         scope_ids=scope_ids,
                     )
                 user.password = password
-                user.mfa_enabled = False
                 user.save()
 
             unit = first.polling_unit
@@ -119,7 +116,6 @@ class Command(BaseCommand):
             agent.email_index = agent_index
             agent.full_name = "Kemi Adebayo"
             agent.password = password
-            agent.mfa_enabled = False
             agent.save()
 
         # A platform operator, and registrations waiting for them to decide on.
@@ -133,9 +129,6 @@ class Command(BaseCommand):
             verbosity=0,
         )
         with transaction.atomic(), system_context():
-            operator = User.objects.get(email_index=blind_index("email", f"ops@{DOMAIN}"))
-            operator.mfa_enabled = False
-            operator.save(update_fields=["mfa_enabled"])
             Organization.objects.filter(
                 name__startswith="Pending Party", status=OrganizationStatus.PENDING_APPROVAL
             ).delete()
@@ -149,11 +142,12 @@ class Command(BaseCommand):
 
         self.stdout.write(
             f"Ready: {org.name}, election {election.name}.\n"
-            f"  admin@{DOMAIN} (party admin, no second factor yet)\n"
+            f"  admin@{DOMAIN} (party admin)\n"
             f"  ward@{DOMAIN}  (ward coordinator)\n"
             f"  lga@{DOMAIN}   (LGA coordinator)\n"
             f"  agent@{DOMAIN} (polling unit agent, {unit.inec_code})\n"
             f"  password: {options['password']}\n"
-            f"  ops@{DOMAIN}   (platform operator, no second factor yet)\n"
-            f"  password: {operator_password}"
+            f"  ops@{DOMAIN}   (platform operator)\n"
+            f"  password: {operator_password}\n"
+            "  sign-in codes: http://localhost:8025"
         )

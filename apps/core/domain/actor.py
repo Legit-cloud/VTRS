@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from uuid import UUID
 
-from .permissions import Perm, Role, effective_permissions, requires_mfa
+from .permissions import Perm, Role, effective_permissions
 
 
 class ScopeKind(StrEnum):
@@ -54,10 +54,6 @@ class Actor:
     @property
     def permissions(self) -> frozenset[Perm]:
         return effective_permissions(self.role, self.granted)
-
-    @property
-    def requires_mfa(self) -> bool:
-        return requires_mfa(self.role, self.permissions)
 
     def has_perm(self, perm: Perm) -> bool:
         return perm in self.permissions

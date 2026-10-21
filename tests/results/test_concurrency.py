@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from django.db import connection, transaction
+from django.utils import timezone
 
 from apps.accounts.models import Membership, Session, User, UserStatus
 from apps.accounts.services.sessions import start_session
@@ -66,7 +67,7 @@ def _agent(org, election, pu, n):
         assigned_by_id=user.id,
     )
     with transaction.atomic():
-        start_session(user=user, membership=membership, mfa_at=None, ip=None)
+        start_session(user=user, membership=membership, mfa_at=timezone.now(), ip=None)
     session = Session.objects.get(user=user)
     actor = Actor(
         user.id,

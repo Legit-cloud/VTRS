@@ -23,7 +23,6 @@ export interface PlatformOrgDetail {
     user_id: string;
     full_name: string;
     status: string;
-    mfa_enabled: boolean;
     email: string;
     phone: string;
   }>;

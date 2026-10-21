@@ -67,8 +67,17 @@ class SmsDestinationNotAllowed(APIException):
 
 class InvalidMfaCode(CommitsSideEffects, APIException):
     status_code = 400
-    default_detail = "The authentication code is not valid."
+    default_detail = "The code is not valid. Request a new one if it has expired."
     default_code = "mfa_invalid"
+
+
+class SignInEmailMissing(APIException):
+    # Sign-in codes go by email only; an account without an address cannot receive one.
+    status_code = 403
+    default_detail = (
+        "This account has no email address for sign-in codes. Ask your admin to add one."
+    )
+    default_code = "email_required"
 
 
 class InvitationInvalid(APIException):
